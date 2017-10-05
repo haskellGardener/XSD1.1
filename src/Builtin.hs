@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2017-10-04 18:19:45 robert>
+{-| Time-stamp: <2017-10-05 12:07:35 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017
@@ -115,7 +115,7 @@ module Builtin
     , DayTimeDuration    -- Value constructor(s) must not be exported.                                                                               -- ⚡
     , Decimal (..)       -- Value constructor is OK to export.
     , Doublexs (..)      -- Value constructor is OK to export.
-    , Durationxs (..)    -- Value constructor is OK to export.
+    , Durationxs         -- Value constructor(s) must not be exported.                                                                               -- ⚡
     , ENTITIES           -- Value constructor(s) must not be exported.                                                                               -- ⚡
     , ENTITY             -- Value constructor(s) must not be exported.                                                                               -- ⚡
     , FacetC(..)
