@@ -1,0 +1,117 @@
+name:                XMLstudy
+version:             0.1.0.0
+-- synopsis:
+-- description:
+
+license:             ISC
+license-file:        LICENSE
+author:              Robert Lee
+maintainer:          robert.lee@chicago.vc
+copyright:           © 2017 Robert Lee
+homepage:            https://github.com/haskellGardener/XMLstudy
+bug-reports:         https://github.com/haskellGardener/XMLstudy/issues
+
+category:            Test
+build-type:          Simple
+stability:           alpha (experimental)
+cabal-version:       >=1.10
+
+extra-source-files:
+  README.md
+  stack.yaml
+
+source-repository head
+  type:     git
+  location: https://github.com/haskellHacker/XMLstudy
+
+library
+  default-language:   Haskell2010
+  ghc-options:        -Wall
+  -- -Werror -O2
+  default-extensions: NoImplicitPrelude
+                    , OverloadedStrings
+                    , RecordWildCards
+  hs-source-dirs:     src
+  exposed-modules:    Builtin
+  build-depends:      attoparsec
+                    , base >= 4.8 && < 5
+                    , base16-bytestring
+                    , base64-bytestring
+                    , bytestring
+                    , classy-prelude
+                    , hourglass
+                    , text
+                    , xml-conduit
+                    , scientific
+
+executable XMLstudy-exe
+  default-language:  Haskell2010
+  ghc-options:       -Wall -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
+  default-extensions: NoImplicitPrelude
+                    , OverloadedStrings
+                    , RecordWildCards
+  hs-source-dirs:    src-exe
+  main-is:           Main.hs
+  build-depends:      XMLstudy
+                    , base >= 4.8 && < 5
+                    , base64-bytestring
+                    , bytestring
+                    , classy-prelude
+                    , text
+                    , xml-conduit
+
+test-suite XMLstudy-test
+  type:              exitcode-stdio-1.0
+  default-language:  Haskell2010
+  ghc-options:       -O2 -threaded -rtsopts -with-rtsopts=-N
+  default-extensions: NoImplicitPrelude
+                    , OverloadedStrings
+                    , RecordWildCards
+  hs-source-dirs:    src-test
+  main-is:           Main.hs
+  build-depends:     base >= 4.8 && < 5
+                   , QuickCheck
+                   , XMLstudy
+                   , base16-bytestring
+                   , base64-bytestring
+                   , bytestring
+                   , classy-prelude
+                   , hourglass
+                   , smallcheck
+                   , tasty >= 0.11
+                   , tasty-fail-fast
+                   , tasty-hunit >= 0.9
+                   , tasty-quickcheck
+                   , tasty-smallcheck
+                   , text
+                   , scientific
+                   
+-- test-suite XMLstudy-doctest
+--   type:              exitcode-stdio-1.0
+--   default-language:  Haskell2010
+--   ghc-options:       -Wall -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
+--   default-extensions: NoImplicitPrelude
+--                     , OverloadedStrings
+--                     , RecordWildCards
+--   hs-source-dirs:    src-doctest
+--   main-is:           Main.hs
+--   build-depends:     base >= 4.8 && < 5
+--                    , classy-prelude
+--                    , doctest >=0.10
+--                    , Glob >= 0.7
+--                    , QuickCheck >= 2.5
+--                    , XMLstudy
+
+-- benchmark XMLstudy-benchmark
+--   type:              exitcode-stdio-1.0
+--   default-language:  Haskell2010
+--   default-extensions: NoImplicitPrelude
+--                     , OverloadedStrings
+--                     , RecordWildCards
+--   ghc-options:       -Wall -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
+--   hs-source-dirs:    src-benchmark
+--   main-is:           Main.hs
+--   build-depends:     base >= 4.8 && < 5
+--                    , classy-prelude
+--                    , criterion >= 1.1
+--                    , XMLstudy
