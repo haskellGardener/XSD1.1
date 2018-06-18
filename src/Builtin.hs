@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-18 16:34:20 CDT>
+{-| Time-stamp: <2018-06-18 17:49:44 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017
@@ -166,6 +166,8 @@ module Builtin
     , durationNormalize
     , eitherToMaybe
     , entitiesParser
+    , gYearP
+    , gMonthP
     , hexBinaryParser
     , iDREFSParser
     , integerParser
@@ -209,6 +211,7 @@ module Builtin
     , unsignedLongParser
     , unsignedShortParser
     , xmlWhite
+    , yearMonthDayP
     -- , doIt
     -- , makeFundies
     )
@@ -252,7 +255,7 @@ tShow a = T.pack $ show a
 
 leastTime :: H.TimeOfDay
 leastTime = H.TimeOfDay 0 0 0 0
-          
+
 preFillWith :: Show showable => Char -> Int -> showable -> String
 preFillWith c n s = let ss = show s
                         lng = length ss
@@ -347,99 +350,99 @@ class Aggregatio a b where   -- Aggregatio    ➙ Aggregate
 -- Facets ------------------------------------------------------------------------------------------------------------------------------------------
 
 class AnySimpleType a
-instance AnySimpleType Stringxs
+instance AnySimpleType AnyURI
+instance AnySimpleType Base64Binary
 instance AnySimpleType Boolean
+instance AnySimpleType Byte
+instance AnySimpleType DateTimeStampxs
+instance AnySimpleType DateTimexs
+instance AnySimpleType Datexs
+instance AnySimpleType DayTimeDuration
 instance AnySimpleType Decimal
-instance AnySimpleType Floatxs
 instance AnySimpleType Doublexs
 instance AnySimpleType Durationxs
-instance AnySimpleType DateTimexs
-instance AnySimpleType Timexs
-instance AnySimpleType Datexs
-instance AnySimpleType GYearMonth
-instance AnySimpleType GYear
-instance AnySimpleType GMonthDay
+instance AnySimpleType ENTITIES
+instance AnySimpleType ENTITY
+instance AnySimpleType Floatxs
 instance AnySimpleType GDay
 instance AnySimpleType GMonth
+instance AnySimpleType GMonthDay
+instance AnySimpleType GYear
+instance AnySimpleType GYearMonth
 instance AnySimpleType HexBinary
-instance AnySimpleType Base64Binary
-instance AnySimpleType AnyURI
-instance AnySimpleType QName
-instance AnySimpleType NOTATION
-instance AnySimpleType NormalizedString
-instance AnySimpleType Token
-instance AnySimpleType Language
-instance AnySimpleType NMTOKEN
-instance AnySimpleType NMTOKENS
-instance AnySimpleType Name
-instance AnySimpleType NCName
 instance AnySimpleType ID
 instance AnySimpleType IDREF
 instance AnySimpleType IDREFS
-instance AnySimpleType ENTITY
-instance AnySimpleType ENTITIES
 instance AnySimpleType Integer
-instance AnySimpleType NonPositiveInteger
-instance AnySimpleType NegativeInteger
-instance AnySimpleType Long
 instance AnySimpleType Intxs
-instance AnySimpleType Short
-instance AnySimpleType Byte
+instance AnySimpleType Language
+instance AnySimpleType Long
+instance AnySimpleType NCName
+instance AnySimpleType NMTOKEN
+instance AnySimpleType NMTOKENS
+instance AnySimpleType NOTATION
+instance AnySimpleType Name
+instance AnySimpleType NegativeInteger
 instance AnySimpleType NonNegativeInteger
-instance AnySimpleType UnsignedLong
-instance AnySimpleType UnsignedInt
-instance AnySimpleType UnsignedShort
-instance AnySimpleType UnsignedByte
+instance AnySimpleType NonPositiveInteger
+instance AnySimpleType NormalizedString
 instance AnySimpleType PositiveInteger
+instance AnySimpleType QName
+instance AnySimpleType Short
+instance AnySimpleType Stringxs
+instance AnySimpleType Timexs
+instance AnySimpleType Token
+instance AnySimpleType UnsignedByte
+instance AnySimpleType UnsignedInt
+instance AnySimpleType UnsignedLong
+instance AnySimpleType UnsignedShort
 instance AnySimpleType YearMonthDuration
-instance AnySimpleType DayTimeDuration
-instance AnySimpleType DateTimeStampxs
 
 class AnySimpleType a => AnyAtomicType a
-instance AnyAtomicType Stringxs
+instance AnyAtomicType AnyURI
+instance AnyAtomicType Base64Binary
 instance AnyAtomicType Boolean
+instance AnyAtomicType Byte
+instance AnyAtomicType DateTimeStampxs
+instance AnyAtomicType DateTimexs
+instance AnyAtomicType Datexs
+instance AnyAtomicType DayTimeDuration
 instance AnyAtomicType Decimal
-instance AnyAtomicType Floatxs
 instance AnyAtomicType Doublexs
 instance AnyAtomicType Durationxs
-instance AnyAtomicType DateTimexs
-instance AnyAtomicType Timexs
-instance AnyAtomicType Datexs
-instance AnyAtomicType GYearMonth
-instance AnyAtomicType GYear
-instance AnyAtomicType GMonthDay
+instance AnyAtomicType ENTITY
+instance AnyAtomicType Floatxs
 instance AnyAtomicType GDay
 instance AnyAtomicType GMonth
+instance AnyAtomicType GMonthDay
+instance AnyAtomicType GYear
+instance AnyAtomicType GYearMonth
 instance AnyAtomicType HexBinary
-instance AnyAtomicType Base64Binary
-instance AnyAtomicType AnyURI
-instance AnyAtomicType QName
-instance AnyAtomicType NOTATION
-instance AnyAtomicType NormalizedString
-instance AnyAtomicType Token
-instance AnyAtomicType Language
-instance AnyAtomicType NMTOKEN
-instance AnyAtomicType Name
-instance AnyAtomicType NCName
 instance AnyAtomicType ID
 instance AnyAtomicType IDREF
-instance AnyAtomicType ENTITY
 instance AnyAtomicType Integer
-instance AnyAtomicType NonPositiveInteger
-instance AnyAtomicType NegativeInteger
-instance AnyAtomicType Long
 instance AnyAtomicType Intxs
-instance AnyAtomicType Short
-instance AnyAtomicType Byte
+instance AnyAtomicType Language
+instance AnyAtomicType Long
+instance AnyAtomicType NCName
+instance AnyAtomicType NMTOKEN
+instance AnyAtomicType NOTATION
+instance AnyAtomicType Name
+instance AnyAtomicType NegativeInteger
 instance AnyAtomicType NonNegativeInteger
-instance AnyAtomicType UnsignedLong
-instance AnyAtomicType UnsignedInt
-instance AnyAtomicType UnsignedShort
-instance AnyAtomicType UnsignedByte
+instance AnyAtomicType NonPositiveInteger
+instance AnyAtomicType NormalizedString
 instance AnyAtomicType PositiveInteger
+instance AnyAtomicType QName
+instance AnyAtomicType Short
+instance AnyAtomicType Stringxs
+instance AnyAtomicType Timexs
+instance AnyAtomicType Token
+instance AnyAtomicType UnsignedByte
+instance AnyAtomicType UnsignedInt
+instance AnyAtomicType UnsignedLong
+instance AnyAtomicType UnsignedShort
 instance AnyAtomicType YearMonthDuration
-instance AnyAtomicType DayTimeDuration
-instance AnyAtomicType DateTimeStampxs
 
 class AnyAtomicType a => PrimitiveType a
 instance PrimitiveType Stringxs
@@ -463,32 +466,31 @@ instance PrimitiveType QName
 instance PrimitiveType NOTATION
 
 class AnyAtomicType a => OtherBuiltinType a
-instance OtherBuiltinType NormalizedString
-instance OtherBuiltinType Token
-instance OtherBuiltinType Language
-instance OtherBuiltinType NMTOKEN
-instance OtherBuiltinType Name
-instance OtherBuiltinType NCName
+instance OtherBuiltinType Byte
+instance OtherBuiltinType DateTimeStampxs
+instance OtherBuiltinType DayTimeDuration
+instance OtherBuiltinType ENTITY
 instance OtherBuiltinType ID
 instance OtherBuiltinType IDREF
-instance OtherBuiltinType ENTITY
 instance OtherBuiltinType Integer
-instance OtherBuiltinType NonPositiveInteger
-instance OtherBuiltinType NegativeInteger
-instance OtherBuiltinType Long
 instance OtherBuiltinType Intxs
-instance OtherBuiltinType Short
-instance OtherBuiltinType Byte
+instance OtherBuiltinType Language
+instance OtherBuiltinType Long
+instance OtherBuiltinType NCName
+instance OtherBuiltinType NMTOKEN
+instance OtherBuiltinType Name
+instance OtherBuiltinType NegativeInteger
 instance OtherBuiltinType NonNegativeInteger
-instance OtherBuiltinType UnsignedLong
-instance OtherBuiltinType UnsignedInt
-instance OtherBuiltinType UnsignedShort
-instance OtherBuiltinType UnsignedByte
+instance OtherBuiltinType NonPositiveInteger
+instance OtherBuiltinType NormalizedString
 instance OtherBuiltinType PositiveInteger
+instance OtherBuiltinType Short
+instance OtherBuiltinType Token
+instance OtherBuiltinType UnsignedByte
+instance OtherBuiltinType UnsignedInt
+instance OtherBuiltinType UnsignedLong
+instance OtherBuiltinType UnsignedShort
 instance OtherBuiltinType YearMonthDuration
-instance OtherBuiltinType DayTimeDuration
-instance OtherBuiltinType DateTimeStampxs
-
 
 type Annotation = () -- Placeholder
 
@@ -886,8 +888,7 @@ instance FacetC DateTimeStampxs
         facetBoundedC     _ = False
         facetCardinalityC _ = CardInfinite
         facetNumericC     _ = False
-
-
+        explicitTimezone    = Just ([], False, TZOffRequired, const False)
 
 -- Types -------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -1992,8 +1993,8 @@ instance Res DayTimeDuration Durationxs
 -- pairAlts [] = pure []
 -- pairAlts parsers = choice $ map parse2 parsers
 
-tzOff :: Parser H.TimezoneOffset -- Lexical Representation   (0[0-9]|1[0-3]):[0-5][0-9]|14:00
-tzOff = do
+tzOffParser :: Parser H.TimezoneOffset -- Lexical Representation   (0[0-9]|1[0-3]):[0-5][0-9]|14:00
+tzOffParser = do
   (s,h,m) <- zulu <|> signedTz
   pure H.TimezoneOffset { timezoneOffsetToMinutes = (s == '-' ? negate $ id) (read h * 60 + read m) }
   where zulu = char 'Z' >> pure ('+',"00","00")
@@ -2068,7 +2069,7 @@ gYearParser = do
   yDigits <- many1 digit >>= pure . (firstDigit:)
   guard $ not (firstDigit == '0' && length yDigits > 4)
        && inRange (4,periodMaxN) (length yDigits) -- See 5.4 Partial Implementation of Infinite Datatypes.                                           -- ⚡
-  mTzOff <- optional tzOff
+  mTzOff <- optional tzOffParser
   pure GYear { gYear = (negativeP ? negate $ id) $ read yDigits -- NB the read is safe due to precise syntactic parsing.
              , gYearTzOff = mTzOff
              }
@@ -2096,7 +2097,7 @@ gMonthParser = do
   void "--"
   mDigits <- parse2 (char '0' , cinClass "1-9")
          <|> parse2 (char '1' , cinClass "0-2")
-  mTzOff <- optional tzOff
+  mTzOff <- optional tzOffParser
   pure GMonth { gMonth = read mDigits -- NB the read is safe due to precise syntactic parsing.
               , gMonthTzOff = mTzOff
               }
@@ -2126,7 +2127,7 @@ gDayParser = do
         <|> parse2 (cinClass "12" , digit         )
         <|> parse2 (char     '3'  , cinClass "01" )
 
-  mTzOff <- optional tzOff
+  mTzOff <- optional tzOffParser
   pure GDay { gDay = read digits -- NB the read is safe due to precise syntactic parsing.
             , gDayTzOff = mTzOff
             }
@@ -2165,7 +2166,7 @@ gYearMonthParser = do
   void "-"
   mDigits <- parse2 (char '0' , cinClass "1-9")
          <|> parse2 (char '1' , cinClass "0-2")
-  mTzOff <- optional tzOff
+  mTzOff <- optional tzOffParser
   pure GYearMonth { gYMYear = (negativeP ? negate $ id) $ read yDigits
                   , gYMonth = read mDigits
                   , gYearMonthTzOff = mTzOff
@@ -2201,7 +2202,7 @@ gMonthDayParser = do
   dDigits <- parse2 (char     '0'  , cinClass "1-9")
          <|> parse2 (cinClass "12" , digit         )
          <|> parse2 (char     '3'  , cinClass "01" )
-  mTzOff <- optional tzOff
+  mTzOff <- optional tzOffParser
   let month = read mDigits
       day = read dDigits
   guard $ gMonthDayP month day
@@ -2264,7 +2265,7 @@ datexsParser = do
   dDigits <- parse2 (char     '0'  , cinClass "1-9")
          <|> parse2 (cinClass "12" , digit         )
          <|> parse2 (char     '3'  , cinClass "01" )
-  mTzOff <- optional tzOff
+  mTzOff <- optional tzOffParser
   let month = read mDigits
       day = read dDigits
       year = read yDigits
@@ -2277,7 +2278,7 @@ datexsParser = do
 
 -- day is no more than 28 if ·month· is 2 and ·year· is not divisible by 4, or is divisible by 100 but not by 400. See 3.3.9.1 Value Space.
 yearMonthDayP :: Int -> Int -> Int -> Bool
-yearMonthDayP year month day = H.daysInMonth year (toEnum month) == day
+yearMonthDayP year month day = H.daysInMonth year (toEnum $ month - 1) >= day
 
 data Timexs = Timexs { timeOfDay :: H.TimeOfDay
                      , timeTzOff :: Maybe H.TimezoneOffset
@@ -2326,7 +2327,7 @@ timexsParser = do
                                f = fromMaybe 0 (unsafeStringToNS <$> mFrac)
                            pure (h,m,s,f)
                       ]
-  mTzOff <- optional tzOff
+  mTzOff <- optional tzOffParser
   pure Timexs { timeOfDay = H.TimeOfDay h m s f
               , timeTzOff = mTzOff
               }
@@ -2367,7 +2368,7 @@ dateTimexsParser = do
   Datexs{..} <- datexsParser
   void "T"                                          -- Mandatory T
   Timexs{..} <- timexsParser
-  pure DateTimexs { dateTimeYear  = dateYear 
+  pure DateTimexs { dateTimeYear  = dateYear
                   , dateTimeMonth = dateMonth
                   , dateTimeDay   = dateDay
                   , dateTimeOfDay = timeOfDay
@@ -2395,7 +2396,7 @@ instance Transformatio DateTimexs
         scribe (DateTimexs year month day tod (Just H.TimezoneOffset {..})) =
           T.append (scribe $ DateTimexs year month day tod Nothing)
                    (tzTx timezoneOffsetToMinutes)
-                           
+
 instance Res DateTimexs (Int, Int, Int, H.TimeOfDay, Maybe H.TimezoneOffset)
   where redde (DateTimexs year month day tod mTzOff) = (year, month, day, tod, mTzOff)
         recipe (year, month, day, tod@(H.TimeOfDay (H.Hours hour) (H.Minutes minute) (H.Seconds seconds) (H.NanoSeconds nanos)), mTzOff)
@@ -2409,7 +2410,7 @@ instance Res DateTimexs (Int, Int, Int, H.TimeOfDay, Maybe H.TimezoneOffset)
           | otherwise = Nothing
 
 instance Res DateTimexs (Datexs, Timexs)
-  where redde (DateTimexs year month day tod mTzOff) = (Datexs year month day mTzOff, Timexs tod mTzOff) 
+  where redde (DateTimexs year month day tod mTzOff) = (Datexs year month day mTzOff, Timexs tod mTzOff)
         recipe (Datexs year month day (Just tzDate), Timexs tod Nothing) = Just $ DateTimexs year month day tod (Just tzDate)
         recipe (Datexs year month day Nothing, Timexs tod (Just tzTime)) = Just $ DateTimexs year month day tod (Just tzTime)
         recipe (Datexs year month day mTzOffDxs, Timexs tod mTzOffTxs)
@@ -2417,7 +2418,7 @@ instance Res DateTimexs (Datexs, Timexs)
           | otherwise = Nothing
 
 instance Res DateTimexs Datexs
-  where redde (DateTimexs year month day _ mTzOff) = Datexs year month day mTzOff 
+  where redde (DateTimexs year month day _ mTzOff) = Datexs year month day mTzOff
         recipe (Datexs year month day mTzOff) = Just $ DateTimexs year month day leastTime mTzOff
 
 
@@ -2452,7 +2453,7 @@ instance Res DateTimeStampxs (Datexs, Timexs)
 instance Res DateTimeStampxs Datexs
   where redde dts = redde (redde dts :: DateTimexs)
         recipe datexs = (recipe datexs :: Maybe DateTimexs) >>= recipe
-                   
+
 
 
 
