@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2017-10-05 12:07:35 CDT>
+{-| Time-stamp: <2018-06-18 16:34:20 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017
@@ -16,7 +16,6 @@ Description : Provide lexical and value correct types for use with XML Schema 1.
 3.2 Special Built-in Datatypes  Support    Haskell type
     3.2.2 anyAtomicType         ✓          AnyAtomicType
 
-
 3.3 Primitive datatypes         Support    Haskell type
     3.3.1  string               ✓          Stringxs
     3.3.2  boolean              ✓          Boolean
@@ -24,7 +23,7 @@ Description : Provide lexical and value correct types for use with XML Schema 1.
     3.3.4  float                ✓          Floatxs
     3.3.5  double               ✓          Doublexs
     3.3.6  duration             ✓          Durationxs
-    3.3.7  dateTime                        DateTimexs
+    3.3.7  dateTime             ✓          DateTimexs
     3.3.8  time                 ✓          Timexs
     3.3.9  date                 ✓          Datexs
     3.3.10 gYearMonth           ✓          GYearMonth
@@ -66,6 +65,7 @@ Description : Provide lexical and value correct types for use with XML Schema 1.
     3.4.25 positiveInteger      ✓          PositiveInteger
     3.4.26 yearMonthDuration    ✓          YearMonthDuration
     3.4.27 dayTimeDuration      ✓          DayTimeDuration
+    3.4.28 dateTimeStamp        ✓          DateTimeStampxs
 -}
 
 {-
@@ -250,6 +250,9 @@ import Data.Attoparsec.Text
 tShow :: Show a => a -> T.Text
 tShow a = T.pack $ show a
 
+leastTime :: H.TimeOfDay
+leastTime = H.TimeOfDay 0 0 0 0
+          
 preFillWith :: Show showable => Char -> Int -> showable -> String
 preFillWith c n s = let ss = show s
                         lng = length ss
@@ -2274,10 +2277,7 @@ datexsParser = do
 
 -- day is no more than 28 if ·month· is 2 and ·year· is not divisible by 4, or is divisible by 100 but not by 400. See 3.3.9.1 Value Space.
 yearMonthDayP :: Int -> Int -> Int -> Bool
-yearMonthDayP year 2 day | year `mod` 4 /= 0 || (year `mod` 100 == 0 && year `mod` 400 /= 0) = inRange (1,28) day
-                         | otherwise = inRange (1,29) day
-yearMonthDayP _ month day = gMonthDayP month day
-
+yearMonthDayP year month day = H.daysInMonth year (toEnum month) == day
 
 data Timexs = Timexs { timeOfDay :: H.TimeOfDay
                      , timeTzOff :: Maybe H.TimezoneOffset
@@ -2340,8 +2340,122 @@ timexsParser = do
 
 
 
-newtype DateTimexs = DateTimexs ()
-newtype DateTimeStampxs = DateTimeStampxs ()
+
+{-
+The dateTimeLexicalRep production is equivalent to this regular expression once whitespace is removed.
+
+    -?([1-9][0-9]{3,}|0[0-9]{3})                                                 -- Datexs identical
+    -(0[1-9]|1[0-2])                                                             -- Datexs identical
+    -(0[1-9]|[12][0-9]|3[01])                                                    -- Datexs identical
+    T                                                                            -- Mandatory T
+    (([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?|(24:00:00(\.0+)?))      -- Timexs identical
+    (Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00))?                                -- Datexs/Timexs identical
+
+-}
+
+
+data DateTimexs = DateTimexs { dateTimeYear  :: Int -- The year can be negative
+                             , dateTimeMonth :: Int
+                             , dateTimeDay   :: Int
+                             , dateTimeOfDay :: H.TimeOfDay
+                             , dateTimeTzOff :: Maybe H.TimezoneOffset
+                             }
+                  deriving (Show, Eq)
+
+dateTimexsParser :: Parser DateTimexs
+dateTimexsParser = do
+  Datexs{..} <- datexsParser
+  void "T"                                          -- Mandatory T
+  Timexs{..} <- timexsParser
+  pure DateTimexs { dateTimeYear  = dateYear 
+                  , dateTimeMonth = dateMonth
+                  , dateTimeDay   = dateDay
+                  , dateTimeOfDay = timeOfDay
+                  , dateTimeTzOff = timeTzOff
+                  }
+
+instance Transformatio DateTimexs
+  where fac candidate = parseCollapse dateTimexsParser $ candidate
+        scribe (DateTimexs year month day (H.TimeOfDay (H.Hours hour) (H.Minutes minute) (H.Seconds seconds) nanos) Nothing)
+          = T.concat [ yearTx (fromIntegral year)
+                     , "-"
+                     , T.pack $ preFillWith '0' 2 month
+                     , "-"
+                     , T.pack $ preFillWith '0' 2 day
+                     , "T"
+                     , T.pack $ preFillWith '0' 2 hour
+                     , ":"
+                     , T.pack $ preFillWith '0' 2 minute
+                     , ":"
+                     , T.pack $ preFillWith '0' 2 seconds
+                     , if nanos == 0
+                       then T.empty
+                       else T.pack . drop 1 $ nsToString nanos
+                     ]
+        scribe (DateTimexs year month day tod (Just H.TimezoneOffset {..})) =
+          T.append (scribe $ DateTimexs year month day tod Nothing)
+                   (tzTx timezoneOffsetToMinutes)
+                           
+instance Res DateTimexs (Int, Int, Int, H.TimeOfDay, Maybe H.TimezoneOffset)
+  where redde (DateTimexs year month day tod mTzOff) = (year, month, day, tod, mTzOff)
+        recipe (year, month, day, tod@(H.TimeOfDay (H.Hours hour) (H.Minutes minute) (H.Seconds seconds) (H.NanoSeconds nanos)), mTzOff)
+          |    gYearP year
+            && yearMonthDayP year month day
+            && inRange (0,23) hour
+            && inRange (0,59) minute
+            && inRange (0,59) seconds -- Seconds have been denuded of leap second capability in 1.1 of the standard. See I.3 Date/time Datatypes.
+            && i64_p99P nanos
+            && gTzOffP mTzOff = Just $ DateTimexs year month day tod mTzOff
+          | otherwise = Nothing
+
+instance Res DateTimexs (Datexs, Timexs)
+  where redde (DateTimexs year month day tod mTzOff) = (Datexs year month day mTzOff, Timexs tod mTzOff) 
+        recipe (Datexs year month day (Just tzDate), Timexs tod Nothing) = Just $ DateTimexs year month day tod (Just tzDate)
+        recipe (Datexs year month day Nothing, Timexs tod (Just tzTime)) = Just $ DateTimexs year month day tod (Just tzTime)
+        recipe (Datexs year month day mTzOffDxs, Timexs tod mTzOffTxs)
+          | mTzOffDxs == mTzOffTxs = Just $ DateTimexs year month day tod mTzOffDxs
+          | otherwise = Nothing
+
+instance Res DateTimexs Datexs
+  where redde (DateTimexs year month day _ mTzOff) = Datexs year month day mTzOff 
+        recipe (Datexs year month day mTzOff) = Just $ DateTimexs year month day leastTime mTzOff
+
+
+data DateTimeStampxs = DateTimeStampxs { dateTimeStampYear  :: Int -- The year can be negative
+                                       , dateTimeStampMonth :: Int
+                                       , dateTimeStampDay   :: Int
+                                       , dateTimeStampOfDay :: H.TimeOfDay
+                                       , dateTimeStampTzOff :: H.TimezoneOffset -- DateTimeStampxs has timezone as mandatory.
+                                       }
+                       deriving (Show, Eq)
+
+dateTimeStampxsParser :: Parser DateTimeStampxs
+dateTimeStampxsParser = do
+  dtxs <- dateTimexsParser
+  case recipe dtxs of
+    Just dts -> pure dts
+    Nothing -> fail "Timezone is mandatory on DateTimeStamp"
+
+instance Transformatio DateTimeStampxs
+  where fac candidate = parseCollapse dateTimeStampxsParser $ candidate
+        scribe (DateTimeStampxs year month day tod tzOff) = scribe (DateTimexs year month day tod (Just tzOff))
+
+instance Res DateTimeStampxs DateTimexs
+  where redde (DateTimeStampxs year month day tod tzOff) = DateTimexs year month day tod (Just tzOff)
+        recipe (DateTimexs year month day tod (Just tzDate)) = Just $ DateTimeStampxs year month day tod tzDate
+        recipe _ = Nothing
+
+instance Res DateTimeStampxs (Datexs, Timexs)
+  where redde dts = redde (redde dts :: DateTimexs)
+        recipe pair = (recipe pair :: Maybe DateTimexs) >>= recipe
+
+instance Res DateTimeStampxs Datexs
+  where redde dts = redde (redde dts :: DateTimexs)
+        recipe datexs = (recipe datexs :: Maybe DateTimexs) >>= recipe
+                   
+
+
+
 newtype AnyURI = AnyURI ()
 
 

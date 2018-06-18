@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification #-}
-{-| Time-stamp: <2017-10-02 13:52:23 robert>
+{-| Time-stamp: <2018-06-18 13:13:06 CDT>
 
 Module      : Main
 Copyright   : (c) Robert Lee, 2017
@@ -121,7 +121,7 @@ import qualified Test.QuickCheck           as Q
 import qualified Test.QuickCheck.Gen       as Q
 import qualified Test.QuickCheck.Modifiers as Q
 import qualified Test.SmallCheck           as S
-import qualified Test.Tasty.Ingredients.FailFast as TF -- This is not working to stop a test group.
+-- import qualified Test.Tasty.Ingredients.FailFast as TF -- This is not working to stop a test group.
 import qualified Test.Tasty.Options        as TO
 import qualified Test.Tasty.QuickCheck     as QC
 import qualified Test.Tasty.SmallCheck     as TS
@@ -143,12 +143,13 @@ import Test.Tasty.Runners
 
 infixl 1 ?
 
+nrpt :: anytype  
 nrpt = error "NRPT"
 
 main :: IO ()
 main = do
   SE.setEnv "TASTY_NUM_THREADS" "4"
-  defaultMainWithIngredients [ listingTests, TF.failFast consoleTestReporter] $ TestGroup "all-tests" tests
+  defaultMainWithIngredients [ listingTests, consoleTestReporter] $ TestGroup "all-tests" tests
   -- NB: defaultMain exits the program so anything in the do stanza following defaultMain will not run.
 
 ramp :: Int -> Int
