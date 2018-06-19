@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-18 17:49:44 CDT>
+{-| Time-stamp: <2018-06-18 21:45:49 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017
@@ -2034,6 +2034,9 @@ gTzOffP :: Maybe H.TimezoneOffset -> Bool
 gTzOffP Nothing = True
 gTzOffP (Just H.TimezoneOffset {..}) = inRange (-840, 840) timezoneOffsetToMinutes
 
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- GYear stanzas
+
 data GYear = GYear { gYear :: Int
                    , gYearTzOff :: Maybe H.TimezoneOffset
                    }
@@ -2074,6 +2077,9 @@ gYearParser = do
              , gYearTzOff = mTzOff
              }
 
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- GMonth stanzas
+
 data GMonth = GMonth { gMonth      :: Int
                      , gMonthTzOff :: Maybe H.TimezoneOffset
                      }
@@ -2101,6 +2107,9 @@ gMonthParser = do
   pure GMonth { gMonth = read mDigits -- NB the read is safe due to precise syntactic parsing.
               , gMonthTzOff = mTzOff
               }
+
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- GDay stanzas
 
 data GDay = GDay { gDay :: Int
                  , gDayTzOff :: Maybe H.TimezoneOffset
@@ -2131,6 +2140,9 @@ gDayParser = do
   pure GDay { gDay = read digits -- NB the read is safe due to precise syntactic parsing.
             , gDayTzOff = mTzOff
             }
+
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- GYearMonth stanzas
 
 data GYearMonth = GYearMonth { gYMYear         :: Int -- The year can be negative
                              , gYMonth         :: Int -- The month is never negative
@@ -2226,6 +2238,9 @@ gMonthDayP 11 day = inRange (1,30) day -- November
 gMonthDayP 12 day = inRange (1,31) day -- December
 gMonthDayP _ _ = False
 
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- Datexs stanzas
+
 data Datexs = Datexs { dateYear  :: Int -- The year can be negative
                      , dateMonth :: Int
                      , dateDay   :: Int
@@ -2279,6 +2294,9 @@ datexsParser = do
 -- day is no more than 28 if ·month· is 2 and ·year· is not divisible by 4, or is divisible by 100 but not by 400. See 3.3.9.1 Value Space.
 yearMonthDayP :: Int -> Int -> Int -> Bool
 yearMonthDayP year month day = H.daysInMonth year (toEnum $ month - 1) >= day
+
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- Timexs stanzas
 
 data Timexs = Timexs { timeOfDay :: H.TimeOfDay
                      , timeTzOff :: Maybe H.TimezoneOffset
@@ -2339,11 +2357,11 @@ timexsParser = do
           pure digits
         unsafeStringToNS = fromJust . mStringToNS
 
-
-
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- DateTimexs stanzas
 
 {-
-The dateTimeLexicalRep production is equivalent to this regular expression once whitespace is removed.
+The dateTimeLexicalRep production is equivalent to this regular expression once whitespace/comment is removed.
 
     -?([1-9][0-9]{3,}|0[0-9]{3})                                                 -- Datexs identical
     -(0[1-9]|1[0-2])                                                             -- Datexs identical
@@ -2353,7 +2371,6 @@ The dateTimeLexicalRep production is equivalent to this regular expression once 
     (Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00))?                                -- Datexs/Timexs identical
 
 -}
-
 
 data DateTimexs = DateTimexs { dateTimeYear  :: Int -- The year can be negative
                              , dateTimeMonth :: Int
@@ -2421,12 +2438,23 @@ instance Res DateTimexs Datexs
   where redde (DateTimexs year month day _ mTzOff) = Datexs year month day mTzOff
         recipe (Datexs year month day mTzOff) = Just $ DateTimexs year month day leastTime mTzOff
 
+instance Res DateTimexs (H.DateTime, Maybe H.TimezoneOffset)
+  where redde (DateTimexs year month day tod mTzOff) = (H.DateTime { dtDate = H.Date year (toEnum $ month - 1) day, dtTime = tod }, mTzOff)
+        recipe (H.DateTime{..}, mTzOff) = recipe (H.dateYear dtDate, fromEnum (H.dateMonth dtDate) + 1, H.dateDay dtDate, dtTime, mTzOff)
+
+instance Res DateTimexs H.DateTime
+  where redde (DateTimexs year month day tod mTzOff) = H.DateTime { dtDate = H.Date year (toEnum $ month - 1) day, dtTime = tod }
+        recipe H.DateTime{..} = recipe (H.dateYear dtDate, fromEnum (H.dateMonth dtDate) + 1, H.dateDay dtDate, dtTime, Nothing :: Maybe H.TimezoneOffset)
+
+
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- DateTimeStampxs stanzas
 
 data DateTimeStampxs = DateTimeStampxs { dateTimeStampYear  :: Int -- The year can be negative
                                        , dateTimeStampMonth :: Int
                                        , dateTimeStampDay   :: Int
                                        , dateTimeStampOfDay :: H.TimeOfDay
-                                       , dateTimeStampTzOff :: H.TimezoneOffset -- DateTimeStampxs has timezone as mandatory.
+                                       , dateTimeStampTzOff :: H.TimezoneOffset -- DateTimeStamp has timezone as mandatory unlike DateTime.
                                        }
                        deriving (Show, Eq)
 
@@ -2454,13 +2482,205 @@ instance Res DateTimeStampxs Datexs
   where redde dts = redde (redde dts :: DateTimexs)
         recipe datexs = (recipe datexs :: Maybe DateTimexs) >>= recipe
 
+instance Res DateTimeStampxs (H.DateTime, H.TimezoneOffset)
+  where redde (DateTimeStampxs year month day tod tzOff) = (H.DateTime { dtDate = H.Date year (toEnum $ month - 1) day, dtTime = tod }, tzOff)
+        recipe (H.DateTime{..}, tzOff) =
+          (recipe (H.dateYear dtDate, fromEnum (H.dateMonth dtDate) + 1, H.dateDay dtDate, dtTime, Just tzOff) :: Maybe DateTimexs)
+          >>= recipe
 
-
+-- --------------------------------------------------------------------------------------------------------------------------------------------------
+-- AnyURI stanzas
 
 newtype AnyURI = AnyURI ()
 
+-- | irelative-ref  = irelative-part [ "?" iquery ] [ "#" ifragment ]
+data IrelativeRef = IrelativeRef { irefIrelative_part :: T.Text
+                                 , irefIqueries       :: [] T.Text
+                                 , irefIfragments     :: [] T.Text
+                                 }
+
+-- | IRI-reference  = IRI / irelative-ref
+data IRIReference = IRIRefIRI IRI
+                  | IRIRefRelative T.Text
+
+-- | IRI = scheme ":" ihier-part [ "?" iquery ] [ "#" ifragment ]
+data IRI = IRI { scheme     :: T.Text
+               , ihier_part :: IhierPart
+               , iqueries   :: [] T.Text
+               , ifragments :: [] T.Text
+               }
+
+-- | ihier-part = "//" iauthority ipath-abempty
+--              / ipath-absolute
+--              / ipath-rootless
+--              / ipath-empty
+data IhierPart = IhierPartIAuth T.Text T.Text
+               | IhierPart_absolute T.Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
+               | IhierPart_rootless T.Text -- | ipath-rootless = isegment-nz *( "/" isegment )
+               | IhierPart_empty    T.Text -- | ipath-empty    = 0<ipchar>
+
+-- | irelative-part = "//" iauthority ipath-abempty
+--                  / ipath-absolute
+--                  / ipath-noscheme
+--                  / ipath-empty
+data IrelativePart = IrelPartIauthority     T.Text T.Text -- | ipath-abempty  = *( "/" isegment )
+                   | IrelPartIpath_absolute T.Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
+                   | IrelPartIpath_noscheme T.Text -- | ipath-noscheme = isegment-nz-nc *( "/" isegment )
+                   | IrelPartIpath_empty    T.Text -- | ipath-empty    = 0<ipchar>
 
 
+-- | iauthority = [ iuserinfo "@" ] ihost [ ":" port ]
+data IAuthority = IAuthority { iauthMIuserinfo :: Maybe T.Text
+                             , iauthIhost :: T.Text
+                             , iauthMPort :: Maybe T.Text
+                             }
+
+-- | iuserinfo = *( iunreserved / pct-encoded / sub-delims / ":" )
+data IUserInfo = IUserInfoIunreserved T.Text
+               | IUserInfoPCT_encoded T.Text
+               | IUserInfoSUB_delims  T.Text
+
+-- | ihost = IP-literal / IPv4address / ireg-name
+data IHost = IHostIP_literal  T.Text
+           | IHostIPV4address T.Text
+           | IHostIReg_name   T.Text
+
+-- | ipath = ipath-abempty   ; begins with "/" or is empty
+--         / ipath-absolute  ; begins with "/" but not "//"
+--         / ipath-noscheme  ; begins with a non-colon segment
+--         / ipath-rootless  ; begins with a segment
+--         / ipath-empty     ; zero characters
+data IPath = IPath_abempty   T.Text -- | ipath-abempty  = *( "/" isegment )
+           | IPath_absolute  T.Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
+           | IPath_noscheme  T.Text -- | ipath-noscheme = isegment-nz-nc *( "/" isegment )
+           | IPath_rootless  T.Text -- | ipath-rootless = isegment-nz *( "/" isegment )
+           | IPath_empty     T.Text -- | ipath-empty    = 0<ipchar>
+
+
+pORT :: Parser Char
+pORT = dIGIT
+
+dIGIT :: Parser Char
+dIGIT = satisfy $ inRange ('0','9')
+
+aLPHA :: Parser Char
+aLPHA = choice [ satisfy $ inRange ( C.chr 0x41, C.chr 0x5A)
+               , satisfy $ inRange ( C.chr 0x61, C.chr 0x7A)
+               , satisfy $ inRange ('A','Z')
+               , satisfy $ inRange ('a','z')
+               ]
+
+iunreserved :: Parser Char
+iunreserved = choice [ aLPHA, dIGIT, char '-', char '.', char '_', char '~', ucschar]
+
+genDelims :: Parser Char
+genDelims  = satisfy $ inClass ":/?#[]@"
+
+subDelims :: Parser Char
+subDelims = satisfy $ inClass "!$&\'()*+,;="
+
+unreserved :: Parser Char
+unreserved = choice [ aLPHA, dIGIT, char '-', char '.', char '_', char '~' ]
+
+reserved :: Parser Char
+reserved = choice [ genDelims, subDelims ]
+
+hEXDIG :: Parser Char
+hEXDIG = choice [ dIGIT, satisfy $ inClass "ABCDEF" ]
+
+pctEncoded :: Parser T.Text
+pctEncoded = do
+  a <- char '%'
+  b <- hEXDIG
+  c <- hEXDIG
+  pure $ T.pack [a,b,c]
+
+decOctet :: Parser T.Text
+decOctet = choice [ twoHun50
+                  , twoHun49
+                  , oneHun
+                  , ten99
+                  , dIGIT >>= pure . T.singleton
+                  ]
+  where ten99 = do numeral <- satisfy $ inClass "123456789"
+                   d <- dIGIT
+                   pure $ T.pack [numeral, d]
+
+        oneHun = do void "1"
+                    d10 <- dIGIT
+                    d1 <- dIGIT
+                    pure $ T.pack ['1',d10,d1]
+        twoHun49 = do void "2"
+                      d10 <- satisfy $ inClass "01234"
+                      d1 <- dIGIT
+                      pure $ T.pack ['2',d10,d1]
+
+        twoHun50 = do void "25"
+                      d1 <- satisfy $ inClass "012345"
+                      pure $ T.snoc "25" d1
+
+iPv4address :: Parser (T.Text, T.Text, T.Text, T.Text)
+iPv4address = do
+  a <-        decOctet
+  b <- "." >> decOctet
+  c <- "." >> decOctet
+  d <- "." >> decOctet
+  pure (a,b,c,d)
+
+h16 :: Parser T.Text
+h16 = choice [ do a <- hEXDIG
+                  b <- hEXDIG
+                  c <- hEXDIG
+                  d <- hEXDIG
+                  pure $ T.pack [a,b,c,d]
+             , do a <- hEXDIG
+                  b <- hEXDIG
+                  c <- hEXDIG
+                  pure $ T.pack [a,b,c]
+             , do a <- hEXDIG
+                  b <- hEXDIG
+                  pure $ T.pack [a,b]
+             , hEXDIG >>= pure . T.singleton
+             ]
+      
+ls32 :: Parser (Either (T.Text,T.Text) (T.Text, T.Text, T.Text, T.Text))
+ls32 = choice [ do a <- h16
+                   void ":"
+                   b <- h16
+                   pure $ Left (a,b)
+              , iPv4address >>= pure . Right
+              ]
+
+ucschar :: Parser Char
+ucschar = choice [ satisfy $ inRange ( C.chr 0xA0    , C.chr 0xD7FF  )
+                 , satisfy $ inRange ( C.chr 0xF900  , C.chr 0xFDCF  )
+                 , satisfy $ inRange ( C.chr 0x10000 , C.chr 0x1FFFD )
+                 , satisfy $ inRange ( C.chr 0x20000 , C.chr 0x2FFFD )
+                 , satisfy $ inRange ( C.chr 0x30000 , C.chr 0x3FFFD )
+                 , satisfy $ inRange ( C.chr 0x40000 , C.chr 0x4FFFD )
+                 , satisfy $ inRange ( C.chr 0x50000 , C.chr 0x5FFFD )
+                 , satisfy $ inRange ( C.chr 0x60000 , C.chr 0x6FFFD )
+                 , satisfy $ inRange ( C.chr 0x70000 , C.chr 0x7FFFD )
+                 , satisfy $ inRange ( C.chr 0x80000 , C.chr 0x8FFFD )
+                 , satisfy $ inRange ( C.chr 0x90000 , C.chr 0x9FFFD )
+                 , satisfy $ inRange ( C.chr 0xA0000 , C.chr 0xAFFFD )
+                 , satisfy $ inRange ( C.chr 0xB0000 , C.chr 0xBFFFD )
+                 , satisfy $ inRange ( C.chr 0xC0000 , C.chr 0xCFFFD )
+                 , satisfy $ inRange ( C.chr 0xD0000 , C.chr 0xDFFFD )
+                 , satisfy $ inRange ( C.chr 0xE1000 , C.chr 0xEFFFD )
+                 ]
+
+iprivate :: Parser Char
+iprivate = choice [ satisfy $ inRange ( C.chr 0xE000   , C.chr 0xF8FF   )
+                  , satisfy $ inRange ( C.chr 0xF0000  , C.chr 0xFFFFD  )
+                  , satisfy $ inRange ( C.chr 0x100000 , C.chr 0x10FFFD )
+                  ]
+
+iriParser :: Parser IRI
+iriParser = do
+  pure $ error "NRPT"
+
+  where x = 1
 
 
 -- newtype IRI = IRI Text -- Placeholder for Internationalized Resource Identifiers (IRIs)
