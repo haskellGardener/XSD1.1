@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-18 21:45:49 CDT>
+{-| Time-stamp: <2018-06-18 23:39:30 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017
@@ -2504,7 +2504,7 @@ data IRIReference = IRIRefIRI IRI
                   | IRIRefRelative T.Text
 
 -- | IRI = scheme ":" ihier-part [ "?" iquery ] [ "#" ifragment ]
-data IRI = IRI { scheme     :: T.Text
+data IRI = IRI { ischeme    :: T.Text
                , ihier_part :: IhierPart
                , iqueries   :: [] T.Text
                , ifragments :: [] T.Text
@@ -2557,8 +2557,8 @@ data IPath = IPath_abempty   T.Text -- | ipath-abempty  = *( "/" isegment )
            | IPath_empty     T.Text -- | ipath-empty    = 0<ipchar>
 
 
-pORT :: Parser Char
-pORT = dIGIT
+pORT :: Parser T.Text
+pORT = many dIGIT >>= pure . T.pack
 
 dIGIT :: Parser Char
 dIGIT = satisfy $ inRange ('0','9')
@@ -2627,6 +2627,117 @@ iPv4address = do
   d <- "." >> decOctet
   pure (a,b,c,d)
 
+-- | scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+scheme :: Parser T.Text
+scheme = do
+  one <- aLPHA
+  rest <- many $ choice [ aLPHA, dIGIT, char '+', char '-', char '.' ]
+  pure $ T.pack $ one:rest
+       
+-- | IP-literal = "[" ( IPv6address / IPvFuture  ) "]"
+iPliteral :: Parser (Either ([T.Text], Maybe (Either (T.Text,T.Text) (T.Text, T.Text, T.Text, T.Text))) (T.Text,T.Text))
+iPliteral = do
+  void "["
+  res <- choice [iPv6address >>= pure . Left, iPvFuture >>= pure . Right]
+  void "]"
+  pure res
+
+-- | IPvFuture = "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )       
+iPvFuture :: Parser (T.Text, T.Text)
+iPvFuture = do
+  void "v"
+  hexDigs <- many1 hEXDIG
+  void "."
+  rest <- many1 $ choice [ unreserved, subDelims, char ':' ]
+  pure (T.pack hexDigs, T.pack rest)
+
+-- | IPv6address =                            6( h16 ":" ) ls32
+--               /                       "::" 5( h16 ":" ) ls32
+--               / [               h16 ] "::" 4( h16 ":" ) ls32
+--               / [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
+--               / [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
+--               / [ *3( h16 ":" ) h16 ] "::"    h16 ":"   ls32
+--               / [ *4( h16 ":" ) h16 ] "::"              ls32
+--               / [ *5( h16 ":" ) h16 ] "::"              h16
+--               / [ *6( h16 ":" ) h16 ] "::"
+iPv6address :: Parser ([T.Text], Maybe (Either (T.Text,T.Text) (T.Text, T.Text, T.Text, T.Text)))
+iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i]
+  where
+    hPat = do h <- h16
+              void ":"
+              pure h
+
+    v6a = do hs <- count 6 hPat                                            --                           6( h16 ":" ) ls32
+             ls <- ls32
+             pure (hs, Just ls)
+
+    v6b = do void "::"                                                     --                      "::" 5( h16 ":" ) ls32
+             hs <- count 5 hPat
+             ls <- ls32
+             pure (hs, Just ls)
+
+    v6c = do h1 <- option "" h16                                           -- [               h16 ] "::" 4( h16 ":" ) ls32
+             void "::"
+             hs <- count 4 hPat
+             ls <- ls32
+             pure (filter (not . T.null) $ h1:hs, Just ls)
+
+    v6d = do hi <- option [] $ do                                          -- [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
+                     hp <- option "" hPat
+                     hz <- h16
+                     pure [hp,hz]
+             void "::"
+             hs <- count 3 hPat
+             ls <- ls32
+             pure (filter (not . T.null) $ hi++hs, Just ls)
+
+    v6e = do hi <- option [] $ do                                          -- [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
+                     hp <- many hPat
+                     guard (length hp <= 2)
+                     hz <- h16
+                     pure $ hp ++ [hz]
+             void "::"
+             hs <- count 2 hPat
+             ls <- ls32
+             pure (filter (not . T.null) $ hi++hs, Just ls)
+
+    v6f = do hi <- option [] $ do                                          -- [ *3( h16 ":" ) h16 ] "::"    h16 ":"   ls32
+                     hp <- many hPat
+                     guard (length hp <= 3)
+                     hz <- h16
+                     pure $ hp ++ [hz]
+             void "::"
+             hn <- hPat
+             ls <- ls32
+             pure (filter (not . T.null) $ hi++[hn], Just ls)
+
+    v6g = do hi <- option [] $ do                                          -- [ *4( h16 ":" ) h16 ] "::"              ls32
+                     hp <- many hPat
+                     guard (length hp <= 4)
+                     hz <- h16
+                     pure $ hp ++ [hz]
+             void "::"
+             ls <- ls32
+             pure (filter (not . T.null) hi, Just ls)
+
+    v6h = do hi <- option [] $ do                                          -- [ *5( h16 ":" ) h16 ] "::"              h16
+                     hp <- many hPat
+                     guard (length hp <= 5)
+                     hz <- h16
+                     pure $ hp ++ [hz]
+             void "::"
+             h <- h16
+             pure (filter (not . T.null) $ hi ++ [h], Nothing)
+
+    v6i = do hi <- option [] $ do                                          -- [ *6( h16 ":" ) h16 ] "::"
+                     hp <- many hPat
+                     guard (length hp <= 6)
+                     hz <- h16
+                     pure $ hp ++ [hz]
+             void "::"
+             pure (filter (not . T.null) $ hi, Nothing)
+
+-- | h16 = 1*4HEXDIG
 h16 :: Parser T.Text
 h16 = choice [ do a <- hEXDIG
                   b <- hEXDIG
@@ -2642,11 +2753,10 @@ h16 = choice [ do a <- hEXDIG
                   pure $ T.pack [a,b]
              , hEXDIG >>= pure . T.singleton
              ]
-      
+
 ls32 :: Parser (Either (T.Text,T.Text) (T.Text, T.Text, T.Text, T.Text))
 ls32 = choice [ do a <- h16
-                   void ":"
-                   b <- h16
+                   b <- ":" >> h16
                    pure $ Left (a,b)
               , iPv4address >>= pure . Right
               ]
