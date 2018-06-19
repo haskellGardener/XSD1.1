@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-18 23:39:30 CDT>
+{-| Time-stamp: <2018-06-19 09:26:28 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017
@@ -121,7 +121,6 @@ module Builtin
     , FacetC(..)
     , Ords(..)
     , Cardinalities(..)
---    , FacetLength(..)
     , PrimitiveType
     , OtherBuiltinType
     , Floatxs (..)       -- Value constructor is OK to export.
@@ -175,6 +174,7 @@ module Builtin
     , languageParser
     , languagePattern
     , longParser
+    , minMax
     , mStringToNS
     , nCNameCharParser
     , nCNameCharPattern
@@ -212,6 +212,7 @@ module Builtin
     , unsignedShortParser
     , xmlWhite
     , yearMonthDayP
+    , zeroMax
     -- , doIt
     -- , makeFundies
     )
@@ -1661,7 +1662,7 @@ floatxsParser = choice [floatxs, inf, notANumber]
           frac <- choice [ char '.' >> many digit >>= pure . ('.':)
                          , pure ""
                          ]
-          pure $ whole ++ (frac == "." ? ".0" $ frac) -- read will fail without a numeral trailing a '.'.
+          pure $ whole ++ (frac == "." ? ".0" $ frac) -- read will fail without a numeral trailing an orphan '.'.
         dotNums = do
           void "."
           digits <- many1 digit
@@ -2557,6 +2558,12 @@ data IPath = IPath_abempty   T.Text -- | ipath-abempty  = *( "/" isegment )
            | IPath_empty     T.Text -- | ipath-empty    = 0<ipchar>
 
 
+minMax :: Int -> Int -> Parser a -> Parser [a]
+minMax mini maxi parsi = choice . map (flip count parsi) $ reverse [mini .. maxi]
+
+zeroMax :: Int -> Parser a -> Parser [a]
+zeroMax maxi parsi = minMax 0 maxi parsi
+                         
 pORT :: Parser T.Text
 pORT = many dIGIT >>= pure . T.pack
 
@@ -2589,11 +2596,7 @@ hEXDIG :: Parser Char
 hEXDIG = choice [ dIGIT, satisfy $ inClass "ABCDEF" ]
 
 pctEncoded :: Parser T.Text
-pctEncoded = do
-  a <- char '%'
-  b <- hEXDIG
-  c <- hEXDIG
-  pure $ T.pack [a,b,c]
+pctEncoded = char '%' >> count 2 hEXDIG >>= pure . T.pack
 
 decOctet :: Parser T.Text
 decOctet = choice [ twoHun50
@@ -2638,7 +2641,9 @@ scheme = do
 iPliteral :: Parser (Either ([T.Text], Maybe (Either (T.Text,T.Text) (T.Text, T.Text, T.Text, T.Text))) (T.Text,T.Text))
 iPliteral = do
   void "["
-  res <- choice [iPv6address >>= pure . Left, iPvFuture >>= pure . Right]
+  res <- choice [ iPv6address >>= pure . Left
+                , iPvFuture >>= pure . Right
+                ]
   void "]"
   pure res
 
@@ -2692,8 +2697,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i]
              pure (filter (not . T.null) $ hi++hs, Just ls)
 
     v6e = do hi <- option [] $ do                                          -- [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
-                     hp <- many hPat
-                     guard (length hp <= 2)
+                     hp <- minMax 0 2 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -2702,8 +2706,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i]
              pure (filter (not . T.null) $ hi++hs, Just ls)
 
     v6f = do hi <- option [] $ do                                          -- [ *3( h16 ":" ) h16 ] "::"    h16 ":"   ls32
-                     hp <- many hPat
-                     guard (length hp <= 3)
+                     hp <- minMax 0 3 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -2712,8 +2715,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i]
              pure (filter (not . T.null) $ hi++[hn], Just ls)
 
     v6g = do hi <- option [] $ do                                          -- [ *4( h16 ":" ) h16 ] "::"              ls32
-                     hp <- many hPat
-                     guard (length hp <= 4)
+                     hp <- minMax 0 4 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -2721,8 +2723,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i]
              pure (filter (not . T.null) hi, Just ls)
 
     v6h = do hi <- option [] $ do                                          -- [ *5( h16 ":" ) h16 ] "::"              h16
-                     hp <- many hPat
-                     guard (length hp <= 5)
+                     hp <- minMax 0 5 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -2730,8 +2731,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i]
              pure (filter (not . T.null) $ hi ++ [h], Nothing)
 
     v6i = do hi <- option [] $ do                                          -- [ *6( h16 ":" ) h16 ] "::"
-                     hp <- many hPat
-                     guard (length hp <= 6)
+                     hp <- minMax 0 6 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -2739,20 +2739,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i]
 
 -- | h16 = 1*4HEXDIG
 h16 :: Parser T.Text
-h16 = choice [ do a <- hEXDIG
-                  b <- hEXDIG
-                  c <- hEXDIG
-                  d <- hEXDIG
-                  pure $ T.pack [a,b,c,d]
-             , do a <- hEXDIG
-                  b <- hEXDIG
-                  c <- hEXDIG
-                  pure $ T.pack [a,b,c]
-             , do a <- hEXDIG
-                  b <- hEXDIG
-                  pure $ T.pack [a,b]
-             , hEXDIG >>= pure . T.singleton
-             ]
+h16 = minMax 1 4 hEXDIG >>= pure . T.pack
 
 ls32 :: Parser (Either (T.Text,T.Text) (T.Text, T.Text, T.Text, T.Text))
 ls32 = choice [ do a <- h16
