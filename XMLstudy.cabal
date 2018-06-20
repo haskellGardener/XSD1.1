@@ -33,6 +33,8 @@ library
                     , RecordWildCards
   hs-source-dirs:     src
   exposed-modules:    Builtin
+                    , Lading
+                    , Parsers
   build-depends:      attoparsec
                     , base >= 4.8 && < 5
                     , base16-bytestring
