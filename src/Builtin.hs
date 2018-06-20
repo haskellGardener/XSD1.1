@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-19 13:09:14 CDT>
+{-| Time-stamp: <2018-06-20 08:09:03 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017
@@ -33,7 +33,7 @@ Description : Provide lexical and value correct types for use with XML Schema 1.
     3.3.14 gMonth               ✓          GMonth
     3.3.15 hexBinary            ✓          HexBinary
     3.3.16 base64Binary         ✓          Base64Binary
-    3.3.17 anyURI                          AnyURI
+    3.3.17 anyURI               ✓          AnyURI
     3.3.18 QName                ✓          QName
     3.3.19 NOTATION             ✓          NOTATION
 
@@ -214,7 +214,8 @@ module Builtin
     , xmlWhite
     , yearMonthDayP
     , zeroMax
-      
+    , asMany
+
     , aLPHA
     , absoluteIRI
     , dIGIT
@@ -241,7 +242,7 @@ module Builtin
     , iregName
     , irelativePart
     , irelativeRef
-    , iri
+    , iriParser
     , iriReference
     , isegment
     , isegmentNz
@@ -297,11 +298,25 @@ import Data.Attoparsec.Text
 tShow :: Show a => a -> T.Text
 tShow a = T.pack $ show a
 
-minMax :: Int -> Int -> Parser a -> Parser [a]
-minMax mini maxi parsi = choice . map (flip count parsi) $ reverse [mini .. maxi]
+-- | asMany tries to complete as much of its parser list as it can.
+--   asMany will fail if no parser (assuming the parser list is not empty) succeeds.          
+asMany :: [Parser a] -> Parser [a]
+asMany [] = pure []
+asMany (p:[]) = p >>= pure . (:[])
+asMany (p:ps) = do a <- p
+                   rest <- asMany ps <|> pure []
+                   pure (a:rest)
 
+-- | zeroMax does not fail, but is constrained by maxi.                        
 zeroMax :: Int -> Parser a -> Parser [a]
-zeroMax maxi parsi = minMax 0 maxi parsi
+zeroMax maxi parsi = asMany (replicate maxi parsi) <|> pure []
+
+minMax :: Int -> Int -> Parser a -> Parser [a]
+minMax mini maxi parsi | mini < maxi = do minis <- count mini parsi
+                                          rest <- zeroMax (maxi - mini) parsi
+                                          pure $ minis ++ rest
+                       | mini == maxi = count mini parsi
+                       | otherwise = fail "minimum is greater than maximum"
 
 leastTime :: H.TimeOfDay
 leastTime = H.TimeOfDay 0 0 0 0
@@ -2549,7 +2564,11 @@ instance Res DateTimeStampxs (H.DateTime, H.TimezoneOffset)
 -- --------------------------------------------------------------------------------------------------------------------------------------------------
 -- AnyURI stanzas
 
-newtype AnyURI = AnyURI ()
+newtype AnyURI = AnyURI T.Text deriving (Show)
+
+instance Transformatio AnyURI
+  where fac candidate = const (AnyURI $ collapse candidate) <$> parseCollapse iriParser candidate
+        scribe (AnyURI text) = text
 
 data IAddrTx = IAddrTxIPv4       (T.Text, T.Text, T.Text, T.Text)
              | IAddrTxIPv4Future (T.Text, T.Text)
@@ -2639,18 +2658,18 @@ aLPHA = choice [ satisfy $ inRange ('A','Z')
 iriReference :: Parser (Either (T.Text, (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text, Maybe T.Text)
                                ((Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text, Maybe T.Text)
                        )
-iriReference = choice [ iri          >>= pure . Left
+iriReference = choice [ iriParser    >>= pure . Left
                       , irelativeRef >>= pure . Right
                       ]
 
 -- | IRI = scheme ":" ihier-part [ "?" iquery ] [ "#" ifragment ]
-iri :: Parser (T.Text, (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text, Maybe T.Text)
-iri = do schemeL <- scheme
-         void ":"
-         ihP <- ihierPart
-         mIquery   <- option Nothing (iquery    >>= pure . Just)
-         mFragment <- option Nothing (ifragment >>= pure . Just)
-         pure (schemeL, ihP, mIquery, mFragment)
+iriParser :: Parser (T.Text, (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text, Maybe T.Text)
+iriParser = do schemeL <- scheme
+               void ":"
+               ihP <- ihierPart
+               mIquery   <- option Nothing (iquery    >>= pure . Just)
+               mFragment <- option Nothing (ifragment >>= pure . Just)
+               pure (schemeL, ihP, mIquery, mFragment)
 
 -- | absolute-IRI = scheme ":" ihier-part [ "?" iquery ]
 absoluteIRI :: Parser (T.Text, (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text)
