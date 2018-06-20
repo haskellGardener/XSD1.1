@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification #-}
-{-| Time-stamp: <2018-06-20 12:57:56 CDT>
+{-| Time-stamp: <2018-06-20 14:06:46 CDT>
 
 Module      : Main
 Copyright   : (c) Robert Lee, 2017-2018
@@ -62,6 +62,7 @@ Description : Provide testing for lexical and value correct types for use with X
     3.4.25 positiveInteger    Unit       PositiveInteger
     3.4.26 yearMonthDuration  QC         YearMonthDuration
     3.4.27 dayTimeDuration    QC         DayTimeDuration
+    3.4.28 dateTimeStamp                 DateTimeStampxs
 -}
 
 {-
