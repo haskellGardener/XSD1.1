@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-20 13:45:19 CDT>
+{-| Time-stamp: <2018-06-21 09:44:52 CDT>
 
 Module      : Parsers
 Copyright   : (c) Robert Lee, 2017-2018
@@ -515,7 +515,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i] >>= pure . IAddrTx
              pure (filter (not . T.null) $ hi++hs, Just ls)
 
     v6e = do hi <- option [] $ do                                          -- [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
-                     hp <- minMax 0 2 hPat
+                     hp <- zeroMax 2 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -524,7 +524,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i] >>= pure . IAddrTx
              pure (filter (not . T.null) $ hi++hs, Just ls)
 
     v6f = do hi <- option [] $ do                                          -- [ *3( h16 ":" ) h16 ] "::"    h16 ":"   ls32
-                     hp <- minMax 0 3 hPat
+                     hp <- zeroMax 3 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -533,7 +533,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i] >>= pure . IAddrTx
              pure (filter (not . T.null) $ hi++[hn], Just ls)
 
     v6g = do hi <- option [] $ do                                          -- [ *4( h16 ":" ) h16 ] "::"              ls32
-                     hp <- minMax 0 4 hPat
+                     hp <- zeroMax 4 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -541,7 +541,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i] >>= pure . IAddrTx
              pure (filter (not . T.null) hi, Just ls)
 
     v6h = do hi <- option [] $ do                                          -- [ *5( h16 ":" ) h16 ] "::"              h16
-                     hp <- minMax 0 5 hPat
+                     hp <- zeroMax 5 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
@@ -549,7 +549,7 @@ iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i] >>= pure . IAddrTx
              pure (filter (not . T.null) $ hi ++ [h], Nothing)
 
     v6i = do hi <- option [] $ do                                          -- [ *6( h16 ":" ) h16 ] "::"
-                     hp <- minMax 0 6 hPat
+                     hp <- zeroMax 6 hPat
                      hz <- h16
                      pure $ hp ++ [hz]
              void "::"
