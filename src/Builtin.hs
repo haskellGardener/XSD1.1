@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-20 13:02:33 CDT>
+{-| Time-stamp: <2018-06-25 08:22:45 robert>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -66,6 +66,17 @@ Description : Provide lexical and value correct types for use with XML Schema 1.
     3.4.26 yearMonthDuration    ✓          YearMonthDuration
     3.4.27 dayTimeDuration      ✓          DayTimeDuration
     3.4.28 dateTimeStamp        ✓          DateTimeStampxs
+
+
+ /$$   /$$  /$$$$$$  /$$$$$$$          /$$         /$$
+| $$  / $$ /$$__  $$| $$__  $$       /$$$$       /$$$$
+|  $$/ $$/| $$  \__/| $$  \ $$      |_  $$      |_  $$
+ \  $$$$/ |  $$$$$$ | $$  | $$        | $$        | $$
+  >$$  $$  \____  $$| $$  | $$        | $$        | $$
+ /$$/\  $$ /$$  \ $$| $$  | $$        | $$        | $$
+| $$  \ $$|  $$$$$$/| $$$$$$$/       /$$$$$$ /$$ /$$$$$$
+|__/  |__/ \______/ |_______/       |______/|__/|______/
+
 -}
 
 {-
@@ -266,7 +277,7 @@ where
 
 import Lading
 import Parsers
-  
+
 -- Explicit Imports
 
 import Data.Int    (Int8, Int16, Int32, Int64)
