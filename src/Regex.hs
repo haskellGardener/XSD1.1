@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-25 09:30:31 robert>
+{-| Time-stamp: <2018-06-25 11:21:54 robert>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -11,61 +11,7 @@ Portability : non-portable (GHC extensions)
 
 Contumacy   : Best viewed with unbroken/unwrapped 154 column display.
 
-Description : Provide lexical and value correct types for use with XML Schema 1.1.
-
-3.2 Special Built-in Datatypes  Support    Haskell type
-    3.2.2 anyAtomicType         ✓          AnyAtomicType
-
-3.3 Primitive datatypes         Support    Haskell type
-    3.3.1  string               ✓          Stringxs
-    3.3.2  boolean              ✓          Boolean
-    3.3.3  decimal              ✓          Decimal
-    3.3.4  float                ✓          Floatxs
-    3.3.5  double               ✓          Doublexs
-    3.3.6  duration             ✓          Durationxs
-    3.3.7  dateTime             ✓          DateTimexs
-    3.3.8  time                 ✓          Timexs
-    3.3.9  date                 ✓          Datexs
-    3.3.10 gYearMonth           ✓          GYearMonth
-    3.3.11 gYear                ✓          GYear
-    3.3.12 gMonthDay            ✓          GMonthDay
-    3.3.13 gDay                 ✓          GDay
-    3.3.14 gMonth               ✓          GMonth
-    3.3.15 hexBinary            ✓          HexBinary
-    3.3.16 base64Binary         ✓          Base64Binary
-    3.3.17 anyURI               ✓          AnyURI
-    3.3.18 QName                ✓          QName
-    3.3.19 NOTATION             ✓          NOTATION
-
-3.4 Derived datatypes           Support    Haskell type
-    3.4.1  normalizedString     ✓          NormalizedString
-    3.4.2  token                ✓          Token
-    3.4.3  language             ✓          Language
-    3.4.4  NMTOKEN              ✓          NMTOKEN
-    3.4.5  NMTOKENS             ✓          NMTOKENS
-    3.4.6  Name                 ✓          Name
-    3.4.7  NCName               ✓          NCName
-    3.4.8  ID                   ✓          ID
-    3.4.9  IDREF                ✓          IDREF
-    3.4.10 IDREFS               ✓          IDREFS
-    3.4.11 ENTITY               ✓          ENTITY
-    3.4.12 ENTITIES             ✓          ENTITIES
-    3.4.13 integer              ✓          Integer
-    3.4.14 nonPositiveInteger   ✓          NonPositiveInteger
-    3.4.15 negativeInteger      ✓          NegativeInteger
-    3.4.16 long                 ✓          Long
-    3.4.17 int                  ✓          Intxs
-    3.4.18 short                ✓          Short
-    3.4.19 byte                 ✓          Byte
-    3.4.20 nonNegativeInteger   ✓          NonNegativeInteger
-    3.4.21 unsignedLong         ✓          UnsignedLong
-    3.4.22 unsignedInt          ✓          UnsignedInt
-    3.4.23 unsignedShort        ✓          UnsignedShort
-    3.4.24 unsignedByte         ✓          UnsignedByte
-    3.4.25 positiveInteger      ✓          PositiveInteger
-    3.4.26 yearMonthDuration    ✓          YearMonthDuration
-    3.4.27 dayTimeDuration      ✓          DayTimeDuration
-    3.4.28 dateTimeStamp        ✓          DateTimeStampxs
+Description : Provide regex support for use with XML Schema 1.1.
 
  /$$   /$$  /$$$$$$  /$$$$$$$          /$$         /$$         /$$$$$$$
 | $$  / $$ /$$__  $$| $$__  $$       /$$$$       /$$$$        | $$__  $$
@@ -143,39 +89,189 @@ import Data.Attoparsec.Text
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 
-
+-- | G.1 Regular expressions and branches
+--   A regular expression is composed from zero or more ·branches·, separated by '|' characters.
 data RE = RE [Branch]
+          deriving (Show, Eq)
 
+-- | A branch consists of zero or more ·pieces·, concatenated together.
 data Branch = Branch [Piece]
+              deriving (Show, Eq)
 
+-- | G.2 Pieces, atoms, quantifiers
+--   A piece is an ·atom·, possibly followed by a ·quantifier·. 
 data Piece = Piece Atom (Maybe Quantifier)
+             deriving (Show, Eq)
 
-data Atom = Atom
+-- | An atom is either a ·normal character·, a ·character class·, or a parenthesized ·regular expression·.
+data Atom = AtomNormal    NormalChar
+          | AtomCharClass CharClass
+          | AtomRE        RE
+            deriving (Show, Eq)
+                     
+-- | A quantifier is one of '?', '*', or '+', or a string of the form {n,m} or {n,} ,
+--   which have the meanings defined in the table above. 
+data Quantifier = QuantifierMaybeOne  Quantity
+                | QuantifierMaybeMany Quantity
+                | QuantifierMany      Quantity
+                  deriving (Show, Eq)
 
-data Quantifier = Quantifier
+data Quantity = QuantRange  QuantExact QuantExact
+              | QuantMin    QuantExact
+              | QuantExactQ QuantExact
+                deriving (Show, Eq)
 
+data QuantExact = QuantExact Int                         
+                  deriving (Show, Eq)
+
+-- | G.3 Characters and metacharacters
 data NormalChar = NormalChar Char
+                  deriving (Show, Eq)
 
-data CharClass = SingleCharEsc
+-- | G.4 Character Classes
+data CharClass = SingleCharEscC SingleCharEsc
                | CharClassEsc
                | CharClassExprC CharGroup
-               | WildcardEsc
+               | WildcardEscC   WildcardEsc
+                 deriving (Show, Eq)
 
--- | A character class expression (charClassExpr) is a ·character group· surrounded by '[' and ']' characters.                  
+-- | G.4.1 Character class expressions
+-- | A character class expression (charClassExpr) is a ·character group· surrounded by '[' and ']' characters.
 data CharClassExpr = CharClassExpr CharGroup
+                     deriving (Show, Eq)
 
 data CharGroup = CharGroup (Either PosCharGroup NegCharGroup) (Maybe CharClassExpr)
+                 deriving (Show, Eq)
 
 data PosCharGroup = PosCharGroup [CharGroupPart]
+                    deriving (Show, Eq)
 
 data NegCharGroup = NegCharGroup PosCharGroup
+                    deriving (Show, Eq)
 
-data CharGroupPart = CharGroupPartSingle SingleChar
-                   | CharGroupPartRange
-                   | CharGroupPartClass
+data CharGroupPart = CharGroupPartSingle   SingleChar
+                   | CharGroupPartRange    CharRange
+                   | CharGroupPartClassEsc SingleCharEsc
+                     deriving (Show, Eq)
 
-data SingleChar = SingleCharEsc
-                | SingleCharNoEsc
+data SingleChar = SingleChar (Either SingleCharEsc SingleCharNoEsc)
+                  deriving (Show, Eq)
 
+data CharRange = CharRange SingleChar SingleChar
+                 deriving (Show, Eq)
 
+-- | G.4.2 Character Class Escapes
+data SingleCharNoEsc = SingleCharNoEsc Char
+                       deriving (Show, Eq)
 
+-- | G.4.2.1 Single-character escapes
+data SingleCharEsc = SingleCharEsc Char
+                     deriving (Show, Eq)
+
+{- | G.4.2 Character Class Escapes
+     A character class escape is a short sequence of characters that identifies a predefined
+     character class.  The valid character class escapes are the ·multi-character escapes·,
+     and the ·category escapes· (including the ·block escapes·).
+-}
+data CharClassEsc = CharClassEscMultiCharEsc MultiCharEsc
+                  | CharClassEscCatEsc       CatEsc
+                  | CharClassEscComplEsc     ComplEsc
+                    deriving (Show, Eq)
+
+{- | G.4.2.2 Category escapes
+     [Unicode Database] specifies a number of possible values for the "General Category" property
+     and provides mappings from code points to specific character properties.
+     The set containing all characters that have property X can be identified with a category
+     escape \p{X} (using a lower-case 'p').  The complement of this set is specified with the
+     category escape  \P{X} (using an upper-case 'P').  For all X, if X is a recognized
+     character-property code, then [\P{X}] = [^\p{X}].
+-}
+
+data CatEsc = CatEsc CharProp
+              deriving (Show, Eq)
+
+data ComplEsc = ComplEsc CharProp
+                deriving (Show, Eq)
+
+data CharProp = CharProp (Either IsCategory IsBlock)
+                deriving (Show, Eq)
+
+{- | Categories
+     [88] IsCategory  ::= Letters | Marks | Numbers | Punctuation | Separators | Symbols | Others
+     [89] Letters     ::= 'L' [ultmo]?
+     [90] Marks       ::= 'M' [nce]?
+     [91] Numbers     ::= 'N' [dlo]?
+     [92] Punctuation ::= 'P' [cdseifo]?
+     [93] Separators  ::= 'Z' [slp]?
+     [94] Symbols     ::= 'S' [mcko]?
+     [95] Others      ::= 'C' [cfon]?
+-}
+data IsCategory = LettersCat     Letters
+                | MarksCat       Marks
+                | NumbersCat     Numbers
+                | PunctuationCat Punctuation
+                | SeparatorsCat  Separators
+                | SymbolsCat     Symbols
+                | OthersCat      Others
+                  deriving (Show, Eq)
+
+data Letters = L  -- | All Letters
+             | Lu -- | uppercase
+             | Ll -- | lowercase
+             | Lt -- | titlecase
+             | Lm -- | modifier
+             | Lo -- | other
+               deriving (Show, Eq)
+
+data Marks = M  -- | All Marks
+           | Mn -- | nonspacing
+           | Mc -- | spacing combining
+           | Me -- | enclosing
+             deriving (Show, Eq)
+
+data Numbers = N  -- | All Numbers
+             | Nd -- | decimal digit
+             | Nl -- | letter
+             | No -- | other
+               deriving (Show, Eq)
+
+data Punctuation = P  -- | All Punctuation
+                 | Pc -- | connector
+                 | Pd -- | dash
+                 | Ps -- | open
+                 | Pe -- | close
+                 | Pi -- | initial quote (may behave like Ps or Pe depending on usage)
+                 | Pf -- | final quote (may behave like Ps or Pe depending on usage)
+                 | Po -- | other
+                   deriving (Show, Eq)
+
+data Separators = Z  -- | All Separators
+                | Zs -- | space
+                | Zl -- | line
+                | Zp -- | paragraph
+                  deriving (Show, Eq)
+
+data Symbols = S  -- | All Symbols
+             | Sm -- | math
+             | Sc -- | currency
+             | Sk -- | modifier
+             | So -- | other
+               deriving (Show, Eq)
+
+data Others = C  -- | All Others
+            | Cc -- | control
+            | Cf -- | format
+            | Co -- | private use
+            | Cn -- | not assigned
+              deriving (Show, Eq)
+
+data IsBlock = IsBlock
+               deriving (Show, Eq)
+
+-- | A multi-character escape provides a simple way to identify any of a commonly used set of characters.
+data MultiCharEsc = MultiCharEsc
+                    deriving (Show, Eq)
+
+-- | The wildcard character is a metacharacter which matches almost any single character
+data WildcardEsc = WildcardEsc
+                   deriving (Show, Eq)
