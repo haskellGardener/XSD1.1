@@ -35,6 +35,7 @@ library
   exposed-modules:    Builtin
                     , Lading
                     , Parsers
+                    , Regex
   build-depends:      attoparsec
                     , base >= 4.8 && < 5
                     , base16-bytestring
