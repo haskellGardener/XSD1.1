@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-26 15:12:08 robert>
+{-| Time-stamp: <2018-06-26 15:15:49 robert>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -296,13 +296,13 @@ data IsBlock = IsBlock
                deriving (Show, Eq)
 
 -- | A multi-character escape provides a simple way to identify any of a commonly used set of characters.
-data MultiCharEsc = MultiCharEsc
+data MultiCharEsc = MultiCharEsc Char
                     deriving (Show, Eq)
 
-multiCharEsc :: Parser Char
+multiCharEsc :: Parser MultiCharEsc
 multiCharEsc = do
   void $ char '\\'
-  satisfy $ inClass "sSiIcCdDwW"
+  satisfy (inClass "sSiIcCdDwW") >>= pure . MultiCharEsc
                              
 -- | The wildcard character is a metacharacter which matches almost any single character
 data WildcardEsc = WildcardEsc
