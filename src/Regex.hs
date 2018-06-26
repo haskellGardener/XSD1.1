@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-25 11:21:54 robert>
+{-| Time-stamp: <2018-06-26 08:22:52 robert>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -10,6 +10,7 @@ Stability   : None
 Portability : non-portable (GHC extensions)
 
 Contumacy   : Best viewed with unbroken/unwrapped 154 column display.
+Latin       : Dies irae, dies illa solvet saeclum in favilla.
 
 Description : Provide regex support for use with XML Schema 1.1.
 
