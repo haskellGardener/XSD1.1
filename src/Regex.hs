@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-26 15:15:49 robert>
+{-| Time-stamp: <2018-06-27 07:47:55 robert>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -222,28 +222,28 @@ data Letters = L  -- | All Letters
              | Lt -- | titlecase
              | Lm -- | modifier
              | Lo -- | other
-               deriving (Show, Eq, Bounded, Enum, Read)
+               deriving (Show, Eq, Bounded, Enum)
 
 letters :: Parser IsCategory
-letters = choice (map (string . T.pack . show) (enumFromTo minBound maxBound :: [] Letters)) >>= pure . LettersCat . read . T.unpack
+letters = choice (map parserPair (enumFromTo minBound maxBound :: [] Letters)) >>= pure . LettersCat . fst
                         
 data Marks = M  -- | All Marks
            | Mn -- | nonspacing
            | Mc -- | spacing combining
            | Me -- | enclosing
-             deriving (Show, Eq, Bounded, Enum, Read)
+             deriving (Show, Eq, Bounded, Enum)
 
 marks :: Parser IsCategory
-marks = choice (map (string . T.pack . show) (enumFromTo minBound maxBound :: [] Marks)) >>= pure . MarksCat . read . T.unpack
+marks = choice (map parserPair (enumFromTo minBound maxBound :: [] Marks)) >>= pure . MarksCat . fst
 
 data Numbers = N  -- | All Numbers
              | Nd -- | decimal digit
              | Nl -- | letter
              | No -- | other
-               deriving (Show, Eq, Bounded, Enum, Read)
+               deriving (Show, Eq, Bounded, Enum)
 
 numbers :: Parser IsCategory
-numbers = choice (map (string . T.pack . show) (enumFromTo minBound maxBound :: [] Numbers)) >>= pure . NumbersCat . read . T.unpack
+numbers = choice (map parserPair (enumFromTo minBound maxBound :: [] Numbers)) >>= pure . NumbersCat . fst
 
 data Punctuation = P  -- | All Punctuation
                  | Pc -- | connector
@@ -253,44 +253,48 @@ data Punctuation = P  -- | All Punctuation
                  | Pi -- | initial quote (may behave like Ps or Pe depending on usage)
                  | Pf -- | final quote (may behave like Ps or Pe depending on usage)
                  | Po -- | other
-                   deriving (Show, Eq, Bounded, Enum, Read)
+                   deriving (Show, Eq, Bounded, Enum)
 
 punctuation :: Parser IsCategory
-punctuation = choice (map (string . T.pack . show) (enumFromTo minBound maxBound :: [] Punctuation)) >>= pure . PunctuationCat . read . T.unpack
+punctuation = choice (map parserPair (enumFromTo minBound maxBound :: [] Punctuation)) >>= pure . PunctuationCat . fst
 
 data Separators = Z  -- | All Separators
                 | Zs -- | space
                 | Zl -- | line
                 | Zp -- | paragraph
-                  deriving (Show, Eq, Bounded, Enum, Read)
+                  deriving (Show, Eq, Bounded, Enum)
 
 separators :: Parser IsCategory
-separators = choice (map (string . T.pack . show) (enumFromTo minBound maxBound :: [] Separators)) >>= pure . SeparatorsCat . read . T.unpack
+separators = choice (map parserPair (enumFromTo minBound maxBound :: [] Separators)) >>= pure . SeparatorsCat . fst
 
 data Symbols = S  -- | All Symbols
              | Sm -- | math
              | Sc -- | currency
              | Sk -- | modifier
              | So -- | other
-               deriving (Show, Eq, Bounded, Enum, Read)
+               deriving (Show, Eq, Bounded, Enum)
 
 symbols :: Parser IsCategory
-symbols = choice (map (string . T.pack . show) (enumFromTo minBound maxBound :: [] Symbols)) >>= pure . SymbolsCat . read . T.unpack
+symbols = choice (map parserPair (enumFromTo minBound maxBound :: [] Symbols)) >>= pure . SymbolsCat . fst
 
 data Others = C  -- | All Others
             | Cc -- | control
             | Cf -- | format
             | Co -- | private use
             | Cn -- | not assigned
-              deriving (Show, Eq, Bounded, Enum, Read)
+              deriving (Show, Eq, Bounded, Enum)
 
 others :: Parser IsCategory
-others = choice (map (string . T.pack . show) (enumFromTo minBound maxBound :: [] Others)) >>= pure . OthersCat . read . T.unpack
+others = choice (map parserPair (enumFromTo minBound maxBound :: [] Others)) >>= pure . OthersCat . fst
                        
 isCategory :: Parser IsCategory
 isCategory = do
   choice [letters, marks, numbers, punctuation, separators, symbols, others]
 
+parserPair :: (Show a) => a -> Parser (a, Text)
+parserPair a = do
+  res <- string . T.pack $ show a
+  pure (a, res)
                        
 data IsBlock = IsBlock
                deriving (Show, Eq)
