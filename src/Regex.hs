@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-27 07:47:55 robert>
+{-| Time-stamp: <2018-06-27 08:00:22 robert>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -100,7 +100,7 @@ data Branch = Branch [Piece]
               deriving (Show, Eq)
 
 -- | G.2 Pieces, atoms, quantifiers
---   A piece is an ·atom·, possibly followed by a ·quantifier·. 
+--   A piece is an ·atom·, possibly followed by a ·quantifier·.
 data Piece = Piece Atom (Maybe Quantifier)
              deriving (Show, Eq)
 
@@ -109,9 +109,9 @@ data Atom = AtomNormal    NormalChar
           | AtomCharClass CharClass
           | AtomRE        RE
             deriving (Show, Eq)
-                     
+
 -- | A quantifier is one of '?', '*', or '+', or a string of the form {n,m} or {n,} ,
---   which have the meanings defined in the table above. 
+--   which have the meanings defined in the table above.
 data Quantifier = QuantifierMaybeOne  Quantity
                 | QuantifierMaybeMany Quantity
                 | QuantifierMany      Quantity
@@ -122,7 +122,7 @@ data Quantity = QuantRange  QuantExact QuantExact
               | QuantExactQ QuantExact
                 deriving (Show, Eq)
 
-data QuantExact = QuantExact Int                         
+data QuantExact = QuantExact Int
                   deriving (Show, Eq)
 
 -- | G.3 Characters and metacharacters
@@ -225,8 +225,8 @@ data Letters = L  -- | All Letters
                deriving (Show, Eq, Bounded, Enum)
 
 letters :: Parser IsCategory
-letters = choice (map parserPair (enumFromTo minBound maxBound :: [] Letters)) >>= pure . LettersCat . fst
-                        
+letters = choice (map parserPair (revEnum :: [] Letters)) >>= pure . LettersCat . fst
+
 data Marks = M  -- | All Marks
            | Mn -- | nonspacing
            | Mc -- | spacing combining
@@ -234,7 +234,7 @@ data Marks = M  -- | All Marks
              deriving (Show, Eq, Bounded, Enum)
 
 marks :: Parser IsCategory
-marks = choice (map parserPair (enumFromTo minBound maxBound :: [] Marks)) >>= pure . MarksCat . fst
+marks = choice (map parserPair (revEnum :: [] Marks)) >>= pure . MarksCat . fst
 
 data Numbers = N  -- | All Numbers
              | Nd -- | decimal digit
@@ -243,7 +243,7 @@ data Numbers = N  -- | All Numbers
                deriving (Show, Eq, Bounded, Enum)
 
 numbers :: Parser IsCategory
-numbers = choice (map parserPair (enumFromTo minBound maxBound :: [] Numbers)) >>= pure . NumbersCat . fst
+numbers = choice (map parserPair (revEnum :: [] Numbers)) >>= pure . NumbersCat . fst
 
 data Punctuation = P  -- | All Punctuation
                  | Pc -- | connector
@@ -256,7 +256,7 @@ data Punctuation = P  -- | All Punctuation
                    deriving (Show, Eq, Bounded, Enum)
 
 punctuation :: Parser IsCategory
-punctuation = choice (map parserPair (enumFromTo minBound maxBound :: [] Punctuation)) >>= pure . PunctuationCat . fst
+punctuation = choice (map parserPair (revEnum :: [] Punctuation)) >>= pure . PunctuationCat . fst
 
 data Separators = Z  -- | All Separators
                 | Zs -- | space
@@ -265,7 +265,7 @@ data Separators = Z  -- | All Separators
                   deriving (Show, Eq, Bounded, Enum)
 
 separators :: Parser IsCategory
-separators = choice (map parserPair (enumFromTo minBound maxBound :: [] Separators)) >>= pure . SeparatorsCat . fst
+separators = choice (map parserPair (revEnum :: [] Separators)) >>= pure . SeparatorsCat . fst
 
 data Symbols = S  -- | All Symbols
              | Sm -- | math
@@ -275,7 +275,7 @@ data Symbols = S  -- | All Symbols
                deriving (Show, Eq, Bounded, Enum)
 
 symbols :: Parser IsCategory
-symbols = choice (map parserPair (enumFromTo minBound maxBound :: [] Symbols)) >>= pure . SymbolsCat . fst
+symbols = choice (map parserPair (revEnum :: [] Symbols)) >>= pure . SymbolsCat . fst
 
 data Others = C  -- | All Others
             | Cc -- | control
@@ -285,17 +285,20 @@ data Others = C  -- | All Others
               deriving (Show, Eq, Bounded, Enum)
 
 others :: Parser IsCategory
-others = choice (map parserPair (enumFromTo minBound maxBound :: [] Others)) >>= pure . OthersCat . fst
-                       
+others = choice (map parserPair (revEnum :: [] Others)) >>= pure . OthersCat . fst
+
 isCategory :: Parser IsCategory
 isCategory = do
   choice [letters, marks, numbers, punctuation, separators, symbols, others]
+
+revEnum :: (Enum a, Bounded a) => [] a
+revEnum = reverse $ enumFromTo minBound maxBound -- reverse is essential for types that enumerate the shortest value constructors first              -- ⚡
 
 parserPair :: (Show a) => a -> Parser (a, Text)
 parserPair a = do
   res <- string . T.pack $ show a
   pure (a, res)
-                       
+
 data IsBlock = IsBlock
                deriving (Show, Eq)
 
@@ -307,7 +310,7 @@ multiCharEsc :: Parser MultiCharEsc
 multiCharEsc = do
   void $ char '\\'
   satisfy (inClass "sSiIcCdDwW") >>= pure . MultiCharEsc
-                             
+
 -- | The wildcard character is a metacharacter which matches almost any single character
 data WildcardEsc = WildcardEsc
                    deriving (Show, Eq)
