@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-28 11:54:36 robert>
+{-| Time-stamp: <2018-06-28 15:04:30 robert>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -336,7 +336,7 @@ matchUnicodeBlockName nomen = case L.lookup nomen unicodeBlockNameRanges of
                                 Nothing -> fail $ show nomen ++ ": not found in lookup."
 
 whichBlock :: Parser (UnicodeBlockName, Char)
-whichBlock = choice $ map parsePair unicodeBlockNameRanges
+whichBlock = choice $ map parsePair unicodeBlockNameRanges -- This is not efficient, but it is correct.
   
 -- NB. Use asciiCI for case insensitive matching.
 data UnicodeBlockName = AEGEAN_NUMBERS
