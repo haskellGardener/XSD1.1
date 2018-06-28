@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-28 11:06:09 robert>
+{-| Time-stamp: <2018-06-28 11:54:36 robert>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -288,8 +288,7 @@ others :: Parser IsCategory
 others = choice (map parserPair (revEnum :: [] Others)) >>= pure . OthersCat . fst
 
 isCategory :: Parser IsCategory
-isCategory = do
-  choice [letters, marks, numbers, punctuation, separators, symbols, others]
+isCategory = choice [letters, marks, numbers, punctuation, separators, symbols, others]
 
 data IsBlock = IsBlock UnicodeBlockName
                deriving (Show, Eq)
