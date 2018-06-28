@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-21 09:44:52 CDT>
+{-| Time-stamp: <2018-06-28 11:03:49 robert>
 
 Module      : Parsers
 Copyright   : (c) Robert Lee, 2017-2018
@@ -87,13 +87,16 @@ module Parsers
     , ls32
     , minMax
     , pORT
+    , parsePair
     , parse2
     , parseCollapse
     , parsedP
+    , parserPair
     , pctEncoded
     , preFillWith
     , replaceXmlWhite
     , reserved
+    , revEnum
     , scheme
     , subDelims
     , ucschar
@@ -199,14 +202,19 @@ collapse = T.dropWhileEnd (' ' ==) . T.dropWhile (' ' ==) . collapseG           
                   . T.groupBy (\a b -> a == ' ' && b == ' ')                                        -- 2.  Separate spaces from the rest.
                   . replaceXmlWhite                                                                 -- 1.  Replace xmlWhite Chars with ' '.
 
+revEnum :: (Enum a, Bounded a) => [] a
+revEnum = reverse $ enumFromTo minBound maxBound -- reverse is essential for types that enumerate the shortest value constructors first              -- ⚡
 
-data IAddrTx = IAddrTxIPv4       (T.Text, T.Text, T.Text, T.Text)
-             | IAddrTxIPv4Future (T.Text, T.Text)
-             | IAddrTxIPv6       ([T.Text], Maybe (Either (T.Text,T.Text) IAddrTx))
-             | IAddrTxRegName    T.Text
-               deriving (Show)
+parserPair :: (Show a) => a -> Parser (a, Text)
+parserPair a = do
+  res <- string . T.pack $ show a
+  pure (a, res)
 
-
+parsePair :: (a, Parser b) -> Parser (a, b)
+parsePair (a, p) = do res <- p
+                      pure (a, res)
+  
+       
 -- AnyURI parsers -----------------------------------------------------------------------------------------------------------------------------------
 
 {- foo://example.com:8042/over/there?name=ferret#nose
@@ -222,6 +230,12 @@ data IAddrTx = IAddrTxIPv4       (T.Text, T.Text, T.Text, T.Text)
        RFC 2234 Augmented BNF for Syntax Specifications: ABNF
        W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes (3.3.17 anyURI)
 -}
+
+data IAddrTx = IAddrTxIPv4       (T.Text, T.Text, T.Text, T.Text)
+             | IAddrTxIPv4Future (T.Text, T.Text)
+             | IAddrTxIPv6       ([T.Text], Maybe (Either (T.Text,T.Text) IAddrTx))
+             | IAddrTxRegName    T.Text
+               deriving (Show)
 
 pORT :: Parser T.Text
 pORT = many dIGIT >>= pure . T.pack
