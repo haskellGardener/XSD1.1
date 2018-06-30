@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-25 08:32:00 robert>
+{-| Time-stamp: <2018-06-30 09:47:21 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -1382,7 +1382,7 @@ nonNegativeIntegerParser = do
   choice [ char '-' >> many1 (char '0') >> pure (NonNegativeInteger 0)
          , (char '+' <|> peekChar') >> digits
          ]
-  where digits = many1 digit >>= pure . NonNegativeInteger . read
+  where digits = many1 digit >>= pure . NonNegativeInteger . read -- Parsed read safe.
 
 newtype PositiveInteger = PositiveInteger Integer
   deriving (Eq, Ord, Num, Show)
@@ -1400,7 +1400,7 @@ positiveIntegerParser :: Parser PositiveInteger
 positiveIntegerParser = do
   digits <- (char '+' <|> peekChar') >> many1 digit
   let candidateInteger :: Integer
-      candidateInteger = read digits
+      candidateInteger = read digits -- Parsed read safe.
   if candidateInteger > 0
   then pure $ PositiveInteger candidateInteger
   else fail "Non-positive value"
@@ -1424,7 +1424,7 @@ nonPositiveIntegerParser = do
          , do
              void $ char '-'
              digits <- many1 digit
-             pure . NonPositiveInteger . read $ "-" ++ digits
+             pure . NonPositiveInteger . read $ "-" ++ digits -- Parsed read safe.
          ]
 
 newtype NegativeInteger = NegativeInteger Integer
@@ -1444,7 +1444,7 @@ negativeIntegerParser = do
   void $ char '-'
   digits <- many1 digit
   let candidateInteger :: Integer
-      candidateInteger = read $ "-" ++ digits
+      candidateInteger = read $ "-" ++ digits -- Parsed read safe.
   if candidateInteger < 0
   then pure $ NegativeInteger candidateInteger
   else fail "Non-negative value"
@@ -1457,7 +1457,7 @@ integerParser :: Parser Integer
 integerParser = do
   sign <- char '-' <|> char '+' <|> pure '+'
   digits <- many1 digit
-  pure . read $ noPlus sign digits
+  pure . read $ noPlus sign digits -- Parsed read safe.
   where noPlus :: Char -> [] Char -> [] Char -- noPlus cures the integral read problem with a + at the beginning of digits.
         noPlus '+' digits = digits
         noPlus sign digits = sign:digits
@@ -1634,7 +1634,7 @@ decimalParser = do
   decpoint   <- choice [ char '.' >> pure ".", pure "" ]
   fracdigits <- many digit
   guard $ not (null digits && null fracdigits)
-  pure . Decimal . read $ sign
+  pure . Decimal . read $ sign                                            -- Parsed read safe.
                        ++ (null digits ? "0" $ digits)                    -- Provide a complementary zero to avoid a read error.                     -- ⚡
                        ++ (null fracdigits ? "" $ decpoint ++ fracdigits) -- On empty fracdigits don't present a decimal point lest read error.      -- ⚡
 
@@ -1686,8 +1686,8 @@ floatxsParser = choice [floatxs, inf, notANumber]
         inf = do
           sign <- signPar
           void "INF"
-          pure . Floatxs $ read (sign == "-" ? "-Infinity" $ "Infinity")
-        notANumber = "NaN" >> (pure . Floatxs $ read "NaN")
+          pure . Floatxs $ read (sign == "-" ? "-Infinity" $ "Infinity") -- Parsed read safe.
+        notANumber = "NaN" >> (pure . Floatxs $ read "NaN")              -- Parsed read safe.
 
 -- Doublexs is the same code as Floatxs except for minor Double vs Float type annotations.
 newtype Doublexs = Doublexs Double
@@ -1738,8 +1738,8 @@ doublexsParser = choice [doublexs, inf, notANumber]
         inf = do
           sign <- signPar
           void "INF"
-          pure . Doublexs $ read (sign == "-" ? "-Infinity" $ "Infinity")
-        notANumber = "NaN" >> (pure . Doublexs $ read "NaN")
+          pure . Doublexs $ read (sign == "-" ? "-Infinity" $ "Infinity") -- Parsed read safe.
+        notANumber = "NaN" >> (pure . Doublexs $ read "NaN")              -- Parsed read safe.
 
 -- Durationxs ---------------------------------------------------------------------------------------------------------------------------------------
 
@@ -1886,10 +1886,12 @@ durationxsParser = do
         hmsDuration = do duration <- hmsDuration'
                          pure $ Durationxs False (H.Period 0 0 0) (durationFac duration)
 
-        periodFac (y,m,d') = H.Period (y == "" ? 0 $ read y) (m == "" ? 0 $ read m) (d' == "" ? 0 $ read d')
-        durationFac (h,m,s,fracs') = H.Duration (H.Hours   (h == "" ? 0 $ read h))
-                                                (H.Minutes (m == "" ? 0 $ read m))
-                                                (H.Seconds (s == "" ? 0 $ read s))
+        periodFac (y,m,d') = H.Period (y  == "" ? 0 $ read y )                     -- Parsed read safe
+                                      (m  == "" ? 0 $ read m )                     -- Parsed read safe
+                                      (d' == "" ? 0 $ read d')                     -- Parsed read safe
+        durationFac (h,m,s,fracs') = H.Duration (H.Hours   (h == "" ? 0 $ read h)) -- Parsed read safe
+                                                (H.Minutes (m == "" ? 0 $ read m)) -- Parsed read safe
+                                                (H.Seconds (s == "" ? 0 $ read s)) -- Parsed read safe
                                                 (unsafeStringToNS fracs')
 
         ymdhmsduration' = do
@@ -1999,7 +2001,7 @@ instance Res DayTimeDuration Durationxs
 tzOffParser :: Parser H.TimezoneOffset -- Lexical Representation   (0[0-9]|1[0-3]):[0-5][0-9]|14:00
 tzOffParser = do
   (s,h,m) <- zulu <|> signedTz
-  pure H.TimezoneOffset { timezoneOffsetToMinutes = (s == '-' ? negate $ id) (read h * 60 + read m) }
+  pure H.TimezoneOffset { timezoneOffsetToMinutes = (s == '-' ? negate $ id) (read h * 60 + read m) } -- Parsed read safe.
   where zulu = char 'Z' >> pure ('+',"00","00")
 
         signedTz = do
@@ -2076,7 +2078,7 @@ gYearParser = do
   guard $ not (firstDigit == '0' && length yDigits > 4)
        && inRange (4,periodMaxN) (length yDigits) -- See 5.4 Partial Implementation of Infinite Datatypes.                                           -- ⚡
   mTzOff <- optional tzOffParser
-  pure GYear { gYear = (negativeP ? negate $ id) $ read yDigits -- NB the read is safe due to precise syntactic parsing.
+  pure GYear { gYear = (negativeP ? negate $ id) $ read yDigits -- Parsed read safe
              , gYearTzOff = mTzOff
              }
 
@@ -2107,7 +2109,7 @@ gMonthParser = do
   mDigits <- parse2 (char '0' , cinClass "1-9")
          <|> parse2 (char '1' , cinClass "0-2")
   mTzOff <- optional tzOffParser
-  pure GMonth { gMonth = read mDigits -- NB the read is safe due to precise syntactic parsing.
+  pure GMonth { gMonth = read mDigits -- Parsed read safe
               , gMonthTzOff = mTzOff
               }
 
@@ -2140,7 +2142,7 @@ gDayParser = do
         <|> parse2 (char     '3'  , cinClass "01" )
 
   mTzOff <- optional tzOffParser
-  pure GDay { gDay = read digits -- NB the read is safe due to precise syntactic parsing.
+  pure GDay { gDay = read digits -- Parsed read safe.
             , gDayTzOff = mTzOff
             }
 
@@ -2182,8 +2184,8 @@ gYearMonthParser = do
   mDigits <- parse2 (char '0' , cinClass "1-9")
          <|> parse2 (char '1' , cinClass "0-2")
   mTzOff <- optional tzOffParser
-  pure GYearMonth { gYMYear = (negativeP ? negate $ id) $ read yDigits
-                  , gYMonth = read mDigits
+  pure GYearMonth { gYMYear = (negativeP ? negate $ id) $ read yDigits -- Parsed read safe.
+                  , gYMonth = read mDigits                             -- Parsed read safe.
                   , gYearMonthTzOff = mTzOff
                   }
 
@@ -2218,8 +2220,8 @@ gMonthDayParser = do
          <|> parse2 (cinClass "12" , digit         )
          <|> parse2 (char     '3'  , cinClass "01" )
   mTzOff <- optional tzOffParser
-  let month = read mDigits
-      day = read dDigits
+  let month = read mDigits -- Parsed read safe.
+      day   = read dDigits -- Parsed read safe.
   guard $ gMonthDayP month day
   pure GMonthDay { gMDMonth = month
                  , gMDay = day
@@ -2284,9 +2286,9 @@ datexsParser = do
          <|> parse2 (cinClass "12" , digit         )
          <|> parse2 (char     '3'  , cinClass "01" )
   mTzOff <- optional tzOffParser
-  let month = read mDigits
-      day = read dDigits
-      year = read yDigits
+  let month = read mDigits -- Parsed read safe.
+      day   = read dDigits -- Parsed read safe.
+      year  = read yDigits -- Parsed read safe.
   guard $ yearMonthDayP year month day
   pure Datexs { dateYear = (negativeP ? negate $ id) year
               , dateMonth = month
@@ -2342,9 +2344,9 @@ timexsParser = do
                            void ":"
                            seconds <- parse2 (cinClass "0-5", digit)
                            mFrac <- optional fracF
-                           let h = H.Hours   $ read hour
-                               m = H.Minutes $ read minute
-                               s = H.Seconds $ read seconds
+                           let h = H.Hours   $ read hour    -- Parsed read safe.
+                               m = H.Minutes $ read minute  -- Parsed read safe.
+                               s = H.Seconds $ read seconds -- Parsed read safe.
                                f = fromMaybe 0 (unsafeStringToNS <$> mFrac)
                            pure (h,m,s,f)
                       ]
