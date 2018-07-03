@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-28 11:03:49 robert>
+{-| Time-stamp: <2018-07-02 12:42:27 CDT>
 
 Module      : Parsers
 Copyright   : (c) Robert Lee, 2017-2018
@@ -98,6 +98,8 @@ module Parsers
     , reserved
     , revEnum
     , scheme
+    , skipC
+    , skipS
     , subDelims
     , ucschar
     , unreserved
@@ -213,8 +215,13 @@ parserPair a = do
 parsePair :: (a, Parser b) -> Parser (a, b)
 parsePair (a, p) = do res <- p
                       pure (a, res)
-  
-       
+
+skipC :: Char -> Parser ()                           
+skipC = void . char
+
+skipS :: Text -> Parser ()
+skipS = void . string
+        
 -- AnyURI parsers -----------------------------------------------------------------------------------------------------------------------------------
 
 {- foo://example.com:8042/over/there?name=ferret#nose

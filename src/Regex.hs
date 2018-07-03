@@ -1,5 +1,6 @@
-{-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-06-28 15:04:30 robert>
+{-# Language ExistentialQuantification, MultiParamTypeClasses
+  , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
+{-| Time-stamp: <2018-07-02 19:26:28 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -90,19 +91,41 @@ import Data.Attoparsec.Text
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 
+-- Objectives
+-- 1. Create AST from XSD regex     : Take XML Schema 1.1 regex string and produce Aeson Parser AST.
+-- 2. Create XSD regex from AST     : Take Aeson Parser AST and produce XML Schema 1.1 regex string.
+-- 3. Validate string               : Take (XML string, Aeson Parser AST) and produce {True, False}.
+-- 4. Create non-XSD regex from AST : Take Aeson Parser AST and produce non-XML Schema 1.1 regex string.
+
 -- | G.1 Regular expressions and branches
 --   A regular expression is composed from zero or more ·branches·, separated by '|' characters.
 data RE = RE [Branch]
           deriving (Show, Eq)
 
+re :: Parser RE
+re = do opt <- option Nothing $ (branch >>= pure . Just)
+        case opt of
+          Nothing -> pure $ RE []
+          Just b1 -> do branches <- many' (char '|' >> branch)
+                        pure $ RE (b1:branches)
+
 -- | A branch consists of zero or more ·pieces·, concatenated together.
 data Branch = Branch [Piece]
               deriving (Show, Eq)
+
+branch :: Parser Branch
+branch = do pieces <- many' piece
+            pure $ Branch pieces
 
 -- | G.2 Pieces, atoms, quantifiers
 --   A piece is an ·atom·, possibly followed by a ·quantifier·.
 data Piece = Piece Atom (Maybe Quantifier)
              deriving (Show, Eq)
+
+piece :: Parser Piece
+piece = do a <- atom
+           opt <- option Nothing (quantifier >>= pure . Just)
+           pure $ Piece a opt
 
 -- | An atom is either a ·normal character·, a ·character class·, or a parenthesized ·regular expression·.
 data Atom = AtomNormal    NormalChar
@@ -110,50 +133,181 @@ data Atom = AtomNormal    NormalChar
           | AtomRE        RE
             deriving (Show, Eq)
 
+atom :: Parser Atom
+atom = choice [ atomRE     >>= pure . AtomRE
+              , charClass  >>= pure . AtomCharClass
+              , normalChar >>= pure . AtomNormal
+              ]
+  where atomRE = do
+          skipC '('
+          r <- re
+          skipC ')'
+          pure r
+
 -- | A quantifier is one of '?', '*', or '+', or a string of the form {n,m} or {n,} ,
 --   which have the meanings defined in the table above.
-data Quantifier = QuantifierMaybeOne  Quantity
-                | QuantifierMaybeMany Quantity
-                | QuantifierMany      Quantity
+data Quantifier = QuantifierMaybeOne
+                | QuantifierMaybeMany
+                | QuantifierMany
+                | QuintifierQuantity Quantity
                   deriving (Show, Eq)
+
+quantifier :: Parser Quantifier
+quantifier = choice [ char '?' >> pure QuantifierMaybeOne
+                    , char '*' >> pure QuantifierMaybeMany
+                    , char '+' >> pure QuantifierMany
+                    , quintifierQuantity
+                    ]
+  where quintifierQuantity = do skipC '{'
+                                q <- quantity
+                                skipC '}'
+                                pure $ QuintifierQuantity q
 
 data Quantity = QuantRange  QuantExact QuantExact
               | QuantMin    QuantExact
               | QuantExactQ QuantExact
                 deriving (Show, Eq)
 
+quantity :: Parser Quantity
+quantity = choice [ quantRange
+                  , quantMin
+                  , quantExact >>= pure . QuantExactQ
+                  ]
+  where quantRange = do l@(QuantExact ln) <- quantExact
+                        skipC ','
+                        r@(QuantExact rn) <- quantExact
+                        guard $ ln <= rn
+                        pure $ QuantRange l r
+        quantMin = do l <- quantExact
+                      skipC ','
+                      pure $ QuantMin l
+
 data QuantExact = QuantExact Int
                   deriving (Show, Eq)
 
+quantExact :: Parser QuantExact
+quantExact = do n <- decimal
+                guard $ n >= 0
+                pure $ QuantExact n
+
 -- | G.3 Characters and metacharacters
+-- NormalChar ::= [^.\?*+{}()|#x5B#x5D]	/* N.B.: #x5B = '[', #x5D = ']' */
 data NormalChar = NormalChar Char
                   deriving (Show, Eq)
 
+normalChar :: Parser NormalChar
+normalChar = (satisfy $ notInClass ".\\?*+{}()|[]") >>= pure . NormalChar
+
 -- | G.4 Character Classes
-data CharClass = SingleCharEscC SingleCharEsc
-               | CharClassEsc
-               | CharClassExprC CharGroup
-               | WildcardEscC   WildcardEsc
+data CharClass = CharClassSingle SingleCharEsc
+               | CharClassEscC   CharClassEsc
+               | CharClassExprC  CharClassExpr
+               | CharClassWild   WildcardEsc
                  deriving (Show, Eq)
+
+charClass :: Parser CharClass
+charClass = choice [ charClassExpr >>= pure . CharClassExprC
+                   , charClassEsc  >>= pure . CharClassEscC
+                   , singleCharEsc >>= pure . CharClassSingle
+                   , wildCardEsc   >>= pure . CharClassWild
+                   ]
 
 -- | G.4.1 Character class expressions
 -- | A character class expression (charClassExpr) is a ·character group· surrounded by '[' and ']' characters.
 data CharClassExpr = CharClassExpr CharGroup
                      deriving (Show, Eq)
 
-data CharGroup = CharGroup (Either PosCharGroup NegCharGroup) (Maybe CharClassExpr)
+charClassExpr :: Parser CharClassExpr
+charClassExpr = do skipC '['
+                   cg <- charGroup
+                   skipC ']'
+                   pure $ CharClassExpr cg
+
+data CharGroup = CharGroup (Either PosCharGroup NegCharGroup) (Maybe CharClassExpr) -- The CharClassExpr is a subtraction group.
                  deriving (Show, Eq)
 
+charGroup :: Parser CharGroup
+charGroup = do cg <- choice [ negCharGroup >>= pure . Right
+                            , posCharGroup >>= pure . Left
+                            ]
+               guard $ case cg of
+                         Left                (PosCharGroup xs)  -> all legal xs
+                         Right (NegCharGroup (PosCharGroup xs)) -> all legal xs -- See rules.
+                     
+               mCE <- option Nothing $ do skipC '-'
+                                          cce <- charClassExpr
+                                          pure $ Just cce
+               pure $ CharGroup cg mCE
+  where legal (CharGroupPartRange ( CharRange (SingleChar(Right(SingleCharNoEsc '-'))) _))  = False
+        legal (CharGroupPartRange ( CharRange _ (SingleChar( Right ( SingleCharNoEsc '-')))))  = False
+        legal _ = True
+
+
+                  
 data PosCharGroup = PosCharGroup [CharGroupPart]
                     deriving (Show, Eq)
+
+posCharGroup :: Parser PosCharGroup
+posCharGroup = many1 charGroupPart >>= pure . PosCharGroup
 
 data NegCharGroup = NegCharGroup PosCharGroup
                     deriving (Show, Eq)
 
+negCharGroup :: Parser NegCharGroup
+negCharGroup = do skipC '^'
+                  posCharGroup >>= pure . NegCharGroup
+
+{- |
+If a charGroupPart starts with a singleChar and this is immediately
+followed by a hyphen, then the following rules apply.
+
+  1. If the hyphen is immediately followed by '[', then the hyphen is
+     not part of the charGroupPart: instead, it is recognized as a
+     character-class subtraction operator.
+
+  2. If the hyphen is immediately followed by ']', then the hyphen is
+     recognized as a singleChar and is part of the charGroupPart.
+
+  3. If the hyphen is immediately followed by '-[', then the hyphen is
+     recognized as a singleChar and is part of the charGroupPart.
+
+  4. Otherwise, the hyphen must be immediately followed by some
+     singleChar other than a hyphen. In this case the hyphen is not
+     part of the charGroupPart; instead it is recognized, together with
+     the immediately preceding and following instances of singleChar,
+     as a charRange.
+
+  5. If the hyphen is followed by any other character sequence, then
+     the string in which it occurs is not recognized as a regular
+     expression.
+
+It is an error if either of the two singleChars in a charRange is a
+SingleCharNoEsc comprising an unescaped hyphen.
+
+    Note: The rule just given resolves what would otherwise be the
+    ambiguous interpretation of some strings, e.g. '[a-k-z]'; it also
+    constrains regular expressions in ways not expressed in the
+    grammar. For example, the rule (not the grammar) excludes the
+    string '[--z]' from the regular expression language defined here.
+
+-}
+
 data CharGroupPart = CharGroupPartSingle   SingleChar
                    | CharGroupPartRange    CharRange
-                   | CharGroupPartClassEsc SingleCharEsc
+                   | CharGroupPartClassEsc CharClassEsc
                      deriving (Show, Eq)
+
+charGroupPart :: Parser CharGroupPart
+charGroupPart = choice [ charRange     >>= pure . CharGroupPartRange
+                       , charClassEsc  >>= pure . CharGroupPartClassEsc
+                       , groupSingleDash
+                       ]
+
+  where groupSingleDash = do p1 <- peekChar'
+                             s <- singleChar
+                             p2 <- peekChar'
+                             guard $ not (p1 == '-' && p2 == '[')
+                             pure $ CharGroupPartSingle s
 
 data SingleChar = SingleChar (Either SingleCharEsc SingleCharNoEsc)
                   deriving (Show, Eq)
@@ -161,13 +315,33 @@ data SingleChar = SingleChar (Either SingleCharEsc SingleCharNoEsc)
 data CharRange = CharRange SingleChar SingleChar
                  deriving (Show, Eq)
 
+charRange :: Parser CharRange
+charRange = do l <- singleChar
+               skipC '-'
+               r <- singleChar
+               pure $ CharRange l r
+
+singleChar :: Parser SingleChar
+singleChar = choice [ singleCharEsc   >>= pure . Left
+                    , singleCharNoEsc >>= pure . Right
+                    ] >>= pure . SingleChar
+
 -- | G.4.2 Character Class Escapes
 data SingleCharNoEsc = SingleCharNoEsc Char
                        deriving (Show, Eq)
 
+singleCharNoEsc :: Parser SingleCharNoEsc
+singleCharNoEsc = do c <- satisfy $ notInClass "[]"
+                     pure $ SingleCharNoEsc c
+
 -- | G.4.2.1 Single-character escapes
 data SingleCharEsc = SingleCharEsc Char
                      deriving (Show, Eq)
+
+singleCharEsc :: Parser SingleCharEsc
+singleCharEsc = do skipC '\\'
+                   c <- satisfy $ inClass "nrt\\|.?*+(){}-[]^"
+                   pure $ SingleCharEsc c
 
 {- | G.4.2 Character Class Escapes
      A character class escape is a short sequence of characters that identifies a predefined
@@ -179,6 +353,12 @@ data CharClassEsc = CharClassEscMultiCharEsc MultiCharEsc
                   | CharClassEscComplEsc     ComplEsc
                     deriving (Show, Eq)
 
+charClassEsc :: Parser CharClassEsc
+charClassEsc = choice [ multiCharEsc >>= pure . CharClassEscMultiCharEsc
+                      , catEsc       >>= pure . CharClassEscCatEsc
+                      , complEsc     >>= pure . CharClassEscComplEsc
+                      ]
+
 {- | G.4.2.2 Category escapes
      [Unicode Database] specifies a number of possible values for the "General Category" property
      and provides mappings from code points to specific character properties.
@@ -188,14 +368,29 @@ data CharClassEsc = CharClassEscMultiCharEsc MultiCharEsc
      character-property code, then [\P{X}] = [^\p{X}].
 -}
 
-data CatEsc = CatEsc CharProp
+data CatEsc = CatEsc CharProp                             -- CatEsc ∩ CompEsc = ∅, CatEsc - CompEsc = CatEsc
               deriving (Show, Eq)
 
-data ComplEsc = ComplEsc CharProp
+catEsc :: Parser CatEsc
+catEsc = do skipS "\\p{"
+            cEsc <- charPropParse
+            skipC '}'
+            pure $ CatEsc cEsc
+
+data ComplEsc = ComplEsc CharProp                         -- CompEsc ∩ CatEsc = ∅, CompEsc - CatEsc = CompEsc
                 deriving (Show, Eq)
+
+complEsc :: Parser ComplEsc
+complEsc = do skipS "\\P{"
+              cEsc <- charPropParse >>= pure . ComplEsc
+              skipC '}'
+              pure cEsc
 
 data CharProp = CharProp (Either IsCategory IsBlock)
                 deriving (Show, Eq)
+
+charPropParse :: Parser CharProp
+charPropParse = (isBlock >>= pure . CharProp . Right) <|> (isCategory >>= pure . CharProp . Left)
 
 {- | Categories
      [88] IsCategory  ::= Letters | Marks | Numbers | Punctuation | Separators | Symbols | Others
@@ -302,15 +497,15 @@ data MultiCharEsc = MultiCharEsc Char
 
 multiCharEsc :: Parser MultiCharEsc
 multiCharEsc = do
-  void $ char '\\'
+  skipC '\\'
   satisfy (inClass "sSiIcCdDwW") >>= pure . MultiCharEsc
 
 -- | The wildcard character is a metacharacter which matches almost any single character
 data WildcardEsc = WildcardEsc
                    deriving (Show, Eq)
 
-wildCardEsc :: Parser Char
-wildCardEsc  = char '.'
+wildCardEsc :: Parser WildcardEsc
+wildCardEsc  = skipC '.' >> pure WildcardEsc
 
 unicodeBlockMatch :: Parser (UnicodeBlockName, Text)
 unicodeBlockMatch = choice $ map unicodeBlockPair lengthOrderedUnicodeBlockNames
@@ -329,7 +524,7 @@ lengthOrderedUnicodeBlockNames = L.sortBy (\nomenA nomenB -> L.length (show nome
 
 unicodeBlockNameRanges :: [] (UnicodeBlockName, Parser Char)
 unicodeBlockNameRanges = fmap (\(nomen, UBN s f) -> (nomen, satisfy $ inClass [C.chr s, '-', C.chr f])) ubnns
-                         
+
 matchUnicodeBlockName :: UnicodeBlockName -> Parser Char
 matchUnicodeBlockName nomen = case L.lookup nomen unicodeBlockNameRanges of
                                 Just parser -> parser
@@ -337,7 +532,7 @@ matchUnicodeBlockName nomen = case L.lookup nomen unicodeBlockNameRanges of
 
 whichBlock :: Parser (UnicodeBlockName, Char)
 whichBlock = choice $ map parsePair unicodeBlockNameRanges -- This is not efficient, but it is correct.
-  
+
 -- NB. Use asciiCI for case insensitive matching.
 data UnicodeBlockName = AEGEAN_NUMBERS
                       | ALCHEMICAL_SYMBOLS
