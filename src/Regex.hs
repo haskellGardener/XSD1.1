@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-02 19:26:28 CDT>
+{-| Time-stamp: <2018-07-03 05:56:35 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -56,6 +56,8 @@ infixr 0  $, $!, ‘seq‘
   an imperative concerning imprudent code change ⋅⋅⋅ ⚡
                   a forbidden/nonsense condition ⋅⋅⋅ ⛞
                           a timed race condition ⋅⋅⋅ 🏁
+
+                      correct, but not efficient ⋅⋅⋅ η
 ⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅
 -}
 
@@ -97,11 +99,16 @@ import Data.Attoparsec.Text
 -- 3. Validate string               : Take (XML string, Aeson Parser AST) and produce {True, False}.
 -- 4. Create non-XSD regex from AST : Take Aeson Parser AST and produce non-XML Schema 1.1 regex string.
 
--- | G.1 Regular expressions and branches
+-- See W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes
+-- § G Regular Expressions
+
+-- | § G.1 Regular expressions and branches
 --   A regular expression is composed from zero or more ·branches·, separated by '|' characters.
 data RE = RE [Branch]
           deriving (Show, Eq)
 
+-- | Required by the standard: Anchor before use (e.g. parseOnly (anchorParser re) "xyz").
+--   However, do not place an endOfInput (anchor) inside re as it will never work correctly!                                                         -- ⚡
 re :: Parser RE
 re = do opt <- option Nothing $ (branch >>= pure . Just)
         case opt of
@@ -117,7 +124,7 @@ branch :: Parser Branch
 branch = do pieces <- many' piece
             pure $ Branch pieces
 
--- | G.2 Pieces, atoms, quantifiers
+-- | § G.2 Pieces, atoms, quantifiers
 --   A piece is an ·atom·, possibly followed by a ·quantifier·.
 data Piece = Piece Atom (Maybe Quantifier)
              deriving (Show, Eq)
@@ -190,7 +197,7 @@ quantExact = do n <- decimal
                 guard $ n >= 0
                 pure $ QuantExact n
 
--- | G.3 Characters and metacharacters
+-- | § G.3 Characters and metacharacters
 -- NormalChar ::= [^.\?*+{}()|#x5B#x5D]	/* N.B.: #x5B = '[', #x5D = ']' */
 data NormalChar = NormalChar Char
                   deriving (Show, Eq)
@@ -198,7 +205,7 @@ data NormalChar = NormalChar Char
 normalChar :: Parser NormalChar
 normalChar = (satisfy $ notInClass ".\\?*+{}()|[]") >>= pure . NormalChar
 
--- | G.4 Character Classes
+-- | § G.4 Character Classes
 data CharClass = CharClassSingle SingleCharEsc
                | CharClassEscC   CharClassEsc
                | CharClassExprC  CharClassExpr
@@ -212,7 +219,7 @@ charClass = choice [ charClassExpr >>= pure . CharClassExprC
                    , wildCardEsc   >>= pure . CharClassWild
                    ]
 
--- | G.4.1 Character class expressions
+-- | § G.4.1 Character class expressions
 -- | A character class expression (charClassExpr) is a ·character group· surrounded by '[' and ']' characters.
 data CharClassExpr = CharClassExpr CharGroup
                      deriving (Show, Eq)
@@ -223,6 +230,7 @@ charClassExpr = do skipC '['
                    skipC ']'
                    pure $ CharClassExpr cg
 
+-- See https://www.regular-expressions.info/charclasssubtract.html
 data CharGroup = CharGroup (Either PosCharGroup NegCharGroup) (Maybe CharClassExpr) -- The CharClassExpr is a subtraction group.
                  deriving (Show, Eq)
 
@@ -233,7 +241,7 @@ charGroup = do cg <- choice [ negCharGroup >>= pure . Right
                guard $ case cg of
                          Left                (PosCharGroup xs)  -> all legal xs
                          Right (NegCharGroup (PosCharGroup xs)) -> all legal xs -- See rules.
-                     
+
                mCE <- option Nothing $ do skipC '-'
                                           cce <- charClassExpr
                                           pure $ Just cce
@@ -243,7 +251,7 @@ charGroup = do cg <- choice [ negCharGroup >>= pure . Right
         legal _ = True
 
 
-                  
+
 data PosCharGroup = PosCharGroup [CharGroupPart]
                     deriving (Show, Eq)
 
@@ -326,7 +334,6 @@ singleChar = choice [ singleCharEsc   >>= pure . Left
                     , singleCharNoEsc >>= pure . Right
                     ] >>= pure . SingleChar
 
--- | G.4.2 Character Class Escapes
 data SingleCharNoEsc = SingleCharNoEsc Char
                        deriving (Show, Eq)
 
@@ -334,16 +341,7 @@ singleCharNoEsc :: Parser SingleCharNoEsc
 singleCharNoEsc = do c <- satisfy $ notInClass "[]"
                      pure $ SingleCharNoEsc c
 
--- | G.4.2.1 Single-character escapes
-data SingleCharEsc = SingleCharEsc Char
-                     deriving (Show, Eq)
-
-singleCharEsc :: Parser SingleCharEsc
-singleCharEsc = do skipC '\\'
-                   c <- satisfy $ inClass "nrt\\|.?*+(){}-[]^"
-                   pure $ SingleCharEsc c
-
-{- | G.4.2 Character Class Escapes
+{- | § G.4.2 Character Class Escapes
      A character class escape is a short sequence of characters that identifies a predefined
      character class.  The valid character class escapes are the ·multi-character escapes·,
      and the ·category escapes· (including the ·block escapes·).
@@ -359,7 +357,16 @@ charClassEsc = choice [ multiCharEsc >>= pure . CharClassEscMultiCharEsc
                       , complEsc     >>= pure . CharClassEscComplEsc
                       ]
 
-{- | G.4.2.2 Category escapes
+-- | § G.4.2.1 Single-character escapes
+data SingleCharEsc = SingleCharEsc Char
+                     deriving (Show, Eq)
+
+singleCharEsc :: Parser SingleCharEsc
+singleCharEsc = do skipC '\\'
+                   c <- satisfy $ inClass "nrt\\|.?*+(){}-[]^"
+                   pure $ SingleCharEsc c
+
+{- | § G.4.2.2 Category escapes
      [Unicode Database] specifies a number of possible values for the "General Category" property
      and provides mappings from code points to specific character properties.
      The set containing all characters that have property X can be identified with a category
@@ -485,27 +492,28 @@ others = choice (map parserPair (revEnum :: [] Others)) >>= pure . OthersCat . f
 isCategory :: Parser IsCategory
 isCategory = choice [letters, marks, numbers, punctuation, separators, symbols, others]
 
+{- | § G.4.2.3 Block escapes
+     For any Unicode block, the normalized block name of that block is
+     the string of characters formed by stripping out white space and
+     underbar characters from the block name as given in [Unicode
+     Database], while retaining hyphens and preserving case
+     distinctions.
+
+     A block escape expression denotes the set of characters in a
+     given Unicode block. For any Unicode block B, with ·normalized
+     block name· X, the set containing all characters defined in block
+     B can be identified with the block escape \p{IsX} (using
+     lower-case 'p'). The complement of this set is denoted by the
+     block escape \P{IsX} (using upper-case 'P'). For all X, if X is a
+     normalized block name recognized by the processor, then [\P{IsX}]
+     = [^\p{IsX}].
+-}
+
 data IsBlock = IsBlock UnicodeBlockName
                deriving (Show, Eq)
 
 isBlock :: Parser IsBlock
 isBlock = unicodeBlockMatch >>= pure . IsBlock . fst
-
--- | A multi-character escape provides a simple way to identify any of a commonly used set of characters.
-data MultiCharEsc = MultiCharEsc Char
-                    deriving (Show, Eq)
-
-multiCharEsc :: Parser MultiCharEsc
-multiCharEsc = do
-  skipC '\\'
-  satisfy (inClass "sSiIcCdDwW") >>= pure . MultiCharEsc
-
--- | The wildcard character is a metacharacter which matches almost any single character
-data WildcardEsc = WildcardEsc
-                   deriving (Show, Eq)
-
-wildCardEsc :: Parser WildcardEsc
-wildCardEsc  = skipC '.' >> pure WildcardEsc
 
 unicodeBlockMatch :: Parser (UnicodeBlockName, Text)
 unicodeBlockMatch = choice $ map unicodeBlockPair lengthOrderedUnicodeBlockNames
@@ -531,7 +539,7 @@ matchUnicodeBlockName nomen = case L.lookup nomen unicodeBlockNameRanges of
                                 Nothing -> fail $ show nomen ++ ": not found in lookup."
 
 whichBlock :: Parser (UnicodeBlockName, Char)
-whichBlock = choice $ map parsePair unicodeBlockNameRanges -- This is not efficient, but it is correct.
+whichBlock = choice $ map parsePair unicodeBlockNameRanges -- This is not efficient, but it is correct.                                             -- η
 
 -- NB. Use asciiCI for case insensitive matching.
 data UnicodeBlockName = AEGEAN_NUMBERS
@@ -959,6 +967,27 @@ ubnns =  [ ( BASIC_LATIN                                    , UBN 0x0000   0x007
          , ( SUPPLEMENTARY_PRIVATE_USE_AREA_A               , UBN 0xF0000  0xFFFFF  )
          , ( SUPPLEMENTARY_PRIVATE_USE_AREA_B               , UBN 0x100000 0x10FFFF )
          ]
+
+-- | § G.4.2.5 Multi-character escapes
+--   A multi-character escape provides a simple way to identify any of a commonly used set of characters.
+data MultiCharEsc = MultiCharEsc Char
+                    deriving (Show, Eq)
+
+multiCharEsc :: Parser MultiCharEsc
+multiCharEsc = do
+  skipC '\\'
+  satisfy (inClass "sSiIcCdDwW") >>= pure . MultiCharEsc
+
+-- | The wildcard character is a metacharacter which matches almost any single character
+data WildcardEsc = WildcardEsc
+                   deriving (Show, Eq)
+
+wildCardEsc :: Parser WildcardEsc
+wildCardEsc  = skipC '.' >> pure WildcardEsc
+
+-- End of § G
+-- -----------------------------------------------------------------------------------------------------------------------------------------------------
+
 {-
 
 # Blocks-6.0.0.txt
