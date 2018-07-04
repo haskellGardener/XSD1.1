@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-03 21:30:09 CDT>
+{-| Time-stamp: <2018-07-04 12:33:08 CDT>
 
 Module      : RegexOut
 Copyright   : (c) Robert Lee, 2017-2018
@@ -68,9 +68,12 @@ where
 -- Local Imports
 
 import Lading
-import Regex 
+import Regex
+import Parsers (anchorParser)
 
 -- Explicit Imports
+
+import Data.Attoparsec.Text (parseOnly)
 
 -- Qualified Imports
 
@@ -86,40 +89,47 @@ import ClassyPrelude
 -- Objectives
 -- 2. Create XSD regex from AST     : Take Aeson Parser AST and produce XML Schema 1.1 regex string.
 
+outIn :: T.Text -> Maybe (Bool,Text,Text)
+outIn text = case parseOnly (anchorParser re) text of
+               Left _ -> Nothing
+               Right regex -> Just $ let st = scribe regex
+                                         sameP = st == text
+                                     in (sameP, st, text)
+
 class Transformatio a where  -- Transformatio ➙ transform
   scribe :: a -> Text        -- scribe        ➙ write text
 
 instance Transformatio RE
   where scribe (RE branches) = T.intercalate "|" $ map scribe branches
-                
+
 instance Transformatio Branch
   where scribe (Branch pieces) = T.concat $ map scribe pieces
-                
+
 instance Transformatio Piece
   where scribe (Piece atm mquant) = T.append (scribe atm) $ maybe T.empty scribe mquant
-                
+
 instance Transformatio Atom
   where scribe (AtomNormal    atm) = scribe atm
         scribe (AtomCharClass atm) = scribe atm
         scribe (AtomRE        atm) = T.concat ["(", scribe atm, ")"]
-                
+
 instance Transformatio Quantifier
   where scribe QuantifierMaybeOne         = T.singleton '?'
         scribe QuantifierMaybeMany        = T.singleton '*'
         scribe QuantifierMany             = T.singleton '+'
         scribe (QuintifierQuantity quant) = T.concat ["{", scribe quant, "}"]
-                
+
 instance Transformatio Quantity
   where scribe (QuantRange  qel qer) = T.concat [scribe qel, ",", scribe qer]
         scribe (QuantMin    qe) = T.append (scribe qe) ","
         scribe (QuantExactQ qe) = scribe qe
-                
+
 instance Transformatio QuantExact
   where scribe (QuantExact i) = tShow i
 
 instance Transformatio NormalChar
   where scribe (NormalChar c) = T.singleton c
-                
+
 instance Transformatio CharClass
   where scribe (CharClassSingle cc) = scribe cc
         scribe (CharClassEscC   cc) = scribe cc
@@ -203,10 +213,10 @@ instance Transformatio Others
   where scribe = tShow
 
 instance Transformatio UnicodeBlockName
-  where scribe = tShow
+  where scribe ubnomen = unicodeBlockToText ubnomen
 
 instance Transformatio IsBlock
-  where scribe (IsBlock u) = scribe u
+  where scribe (IsBlock u) = T.append "Is" $ scribe u
 
 instance Transformatio MultiCharEsc
   where scribe (MultiCharEsc c) = T.cons '\\' $ T.singleton c

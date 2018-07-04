@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-03 19:52:55 CDT>
+{-| Time-stamp: <2018-07-04 12:32:24 CDT>
 
 Module      : Regex
 Copyright   : (c) Robert Lee, 2017-2018
@@ -519,11 +519,9 @@ unicodeBlockMatch = choice $ map unicodeBlockPair lengthOrderedUnicodeBlockNames
 
 unicodeBlockPair :: UnicodeBlockName -> Parser (UnicodeBlockName, Text)
 unicodeBlockPair ubnomen = do
-  resText <- L.foldl1 foldF baseSegs
+  resText <- asciiCI targetText
   pure (ubnomen, resText)
-  where baseText = T.pack $ show ubnomen
-        baseSegs = map (asciiCI) $ T.splitOn "_" baseText
-        foldF pl pr = do pl >> satisfy (inClass "- _") >> pr
+  where targetText = T.append "Is" $ unicodeBlockToText ubnomen
 
 lengthOrderedUnicodeBlockNames :: [] UnicodeBlockName
 lengthOrderedUnicodeBlockNames = L.sortBy (\nomenA nomenB -> L.length (show nomenB) `compare` L.length (show nomenA))
@@ -540,6 +538,9 @@ matchUnicodeBlockName nomen = case L.lookup nomen unicodeBlockNameRanges of
 whichBlock :: Parser (UnicodeBlockName, Char)
 whichBlock = choice $ map parsePair unicodeBlockNameRanges -- This is not efficient, but it is correct.                                             -- η
 
+unicodeBlockToText :: UnicodeBlockName -> Text
+unicodeBlockToText ubnomen = T.concat . map T.toTitle . T.splitOn "_" $ tShow ubnomen
+             
 -- NB. Use asciiCI for case insensitive matching.
 data UnicodeBlockName = AEGEAN_NUMBERS
                       | ALCHEMICAL_SYMBOLS
