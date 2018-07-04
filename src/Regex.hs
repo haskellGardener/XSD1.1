@@ -1,8 +1,8 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-03 05:56:35 CDT>
+{-| Time-stamp: <2018-07-03 19:52:55 CDT>
 
-Module      : Builtin
+Module      : Regex
 Copyright   : (c) Robert Lee, 2017-2018
 License     : ISC
 
@@ -86,7 +86,7 @@ import qualified Data.Text              as T
 
 -- Undisciplined Imports
 
-import ClassyPrelude hiding (IO)
+import ClassyPrelude hiding (IO, traceShow)
 import Data.Attoparsec.Text
 -- import Text.XML hiding (Name)
 
@@ -246,11 +246,10 @@ charGroup = do cg <- choice [ negCharGroup >>= pure . Right
                                           cce <- charClassExpr
                                           pure $ Just cce
                pure $ CharGroup cg mCE
-  where legal (CharGroupPartRange ( CharRange (SingleChar(Right(SingleCharNoEsc '-'))) _))  = False
-        legal (CharGroupPartRange ( CharRange _ (SingleChar( Right ( SingleCharNoEsc '-')))))  = False
-        legal _ = True
-
-
+  where
+    legal (CharGroupPartRange ( CharRange   (SingleChar(Right(SingleCharNoEsc '-'))) _))  = False
+    legal (CharGroupPartRange ( CharRange _ (SingleChar(Right(SingleCharNoEsc '-')))  ))  = False
+    legal _ = True
 
 data PosCharGroup = PosCharGroup [CharGroupPart]
                     deriving (Show, Eq)
@@ -306,8 +305,8 @@ data CharGroupPart = CharGroupPartSingle   SingleChar
                      deriving (Show, Eq)
 
 charGroupPart :: Parser CharGroupPart
-charGroupPart = choice [ charRange     >>= pure . CharGroupPartRange
-                       , charClassEsc  >>= pure . CharGroupPartClassEsc
+charGroupPart = choice [ charRange    >>= pure . CharGroupPartRange
+                       , charClassEsc >>= pure . CharGroupPartClassEsc
                        , groupSingleDash
                        ]
 
@@ -363,7 +362,7 @@ data SingleCharEsc = SingleCharEsc Char
 
 singleCharEsc :: Parser SingleCharEsc
 singleCharEsc = do skipC '\\'
-                   c <- satisfy $ inClass "nrt\\|.?*+(){}-[]^"
+                   c <- satisfy $ inClass "-nrt\\|.?*+(){}[]^"
                    pure $ SingleCharEsc c
 
 {- | § G.4.2.2 Category escapes
