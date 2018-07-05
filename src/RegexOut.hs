@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-04 12:33:08 CDT>
+{-| Time-stamp: <2018-07-04 14:39:34 CDT>
 
 Module      : RegexOut
 Copyright   : (c) Robert Lee, 2017-2018
@@ -67,7 +67,7 @@ where
 
 -- Local Imports
 
-import Lading
+-- import Lading
 import Regex
 import Parsers (anchorParser)
 
@@ -76,8 +76,6 @@ import Parsers (anchorParser)
 import Data.Attoparsec.Text (parseOnly)
 
 -- Qualified Imports
-
-import qualified Data.Text as T
 
 -- Undisciplined Imports
 
@@ -89,138 +87,10 @@ import ClassyPrelude
 -- Objectives
 -- 2. Create XSD regex from AST     : Take Aeson Parser AST and produce XML Schema 1.1 regex string.
 
-outIn :: T.Text -> Maybe (Bool,Text,Text)
+outIn :: Text -> Maybe (Bool,Text,Text,Text)
 outIn text = case parseOnly (anchorParser re) text of
                Left _ -> Nothing
-               Right regex -> Just $ let st = scribe regex
+               Right regex -> Just $ let st = scribeR regex
+                                         ct = canonR regex
                                          sameP = st == text
-                                     in (sameP, st, text)
-
-class Transformatio a where  -- Transformatio ➙ transform
-  scribe :: a -> Text        -- scribe        ➙ write text
-
-instance Transformatio RE
-  where scribe (RE branches) = T.intercalate "|" $ map scribe branches
-
-instance Transformatio Branch
-  where scribe (Branch pieces) = T.concat $ map scribe pieces
-
-instance Transformatio Piece
-  where scribe (Piece atm mquant) = T.append (scribe atm) $ maybe T.empty scribe mquant
-
-instance Transformatio Atom
-  where scribe (AtomNormal    atm) = scribe atm
-        scribe (AtomCharClass atm) = scribe atm
-        scribe (AtomRE        atm) = T.concat ["(", scribe atm, ")"]
-
-instance Transformatio Quantifier
-  where scribe QuantifierMaybeOne         = T.singleton '?'
-        scribe QuantifierMaybeMany        = T.singleton '*'
-        scribe QuantifierMany             = T.singleton '+'
-        scribe (QuintifierQuantity quant) = T.concat ["{", scribe quant, "}"]
-
-instance Transformatio Quantity
-  where scribe (QuantRange  qel qer) = T.concat [scribe qel, ",", scribe qer]
-        scribe (QuantMin    qe) = T.append (scribe qe) ","
-        scribe (QuantExactQ qe) = scribe qe
-
-instance Transformatio QuantExact
-  where scribe (QuantExact i) = tShow i
-
-instance Transformatio NormalChar
-  where scribe (NormalChar c) = T.singleton c
-
-instance Transformatio CharClass
-  where scribe (CharClassSingle cc) = scribe cc
-        scribe (CharClassEscC   cc) = scribe cc
-        scribe (CharClassExprC  cc) = scribe cc
-        scribe (CharClassWild   cc) = scribe cc
-
-instance Transformatio CharClassExpr
-  where scribe (CharClassExpr cg) = T.concat ["[", scribe cg, "]"]
-
-instance Transformatio CharGroup
-  where scribe (CharGroup (Left cg)  mce) = T.append (scribe cg) $ maybe T.empty (T.cons '-' . scribe) mce
-        scribe (CharGroup (Right cg) mce) = T.append (scribe cg) $ maybe T.empty (T.cons '-' . scribe) mce
-
-instance Transformatio NegCharGroup
-  where scribe (NegCharGroup pcg) = T.cons '^' $ scribe pcg
-
-instance Transformatio PosCharGroup
-  where scribe (PosCharGroup cgp) = T.concat $ map scribe cgp
-
-instance Transformatio CharGroupPart
-  where scribe (CharGroupPartSingle   cgp) = scribe cgp
-        scribe (CharGroupPartRange    cgp) = scribe cgp
-        scribe (CharGroupPartClassEsc cgp) = scribe cgp
-
-instance Transformatio CharClassEsc
-  where scribe (CharClassEscMultiCharEsc cesc) = scribe cesc
-        scribe (CharClassEscCatEsc       cesc) = scribe cesc
-        scribe (CharClassEscComplEsc     cesc) = scribe cesc
-
-instance Transformatio CharRange
-  where scribe (CharRange l r) = T.concat [scribe l, "-", scribe r]
-
-instance Transformatio SingleChar
-  where scribe (SingleChar (Left se)) = scribe se
-        scribe (SingleChar (Right sne)) = scribe sne
-
-instance Transformatio SingleCharNoEsc
-  where scribe (SingleCharNoEsc c) = T.singleton c
-
-instance Transformatio SingleCharEsc
-  where scribe (SingleCharEsc c) = T.cons '\\' $ T.singleton c
-
-instance Transformatio CatEsc
-  where scribe (CatEsc cp) = T.concat ["\\p{", scribe cp, "}"]
-
-instance Transformatio ComplEsc
-  where scribe (ComplEsc cp) = T.concat ["\\P{", scribe cp, "}"]
-
-instance Transformatio CharProp
-  where scribe (CharProp (Left i)) = scribe i
-        scribe (CharProp (Right b)) = scribe b
-
-instance Transformatio IsCategory
-  where scribe (LettersCat     cat) = scribe  cat
-        scribe (MarksCat       cat) = scribe  cat
-        scribe (NumbersCat     cat) = scribe  cat
-        scribe (PunctuationCat cat) = scribe  cat
-        scribe (SeparatorsCat  cat) = scribe  cat
-        scribe (SymbolsCat     cat) = scribe  cat
-        scribe (OthersCat      cat) = scribe  cat
-
-instance Transformatio Letters
-  where scribe = tShow
-
-instance Transformatio Marks
-  where scribe = tShow
-
-instance Transformatio Numbers
-  where scribe = tShow
-
-instance Transformatio Punctuation
-  where scribe = tShow
-
-instance Transformatio Separators
-  where scribe = tShow
-
-instance Transformatio Symbols
-  where scribe = tShow
-
-instance Transformatio Others
-  where scribe = tShow
-
-instance Transformatio UnicodeBlockName
-  where scribe ubnomen = unicodeBlockToText ubnomen
-
-instance Transformatio IsBlock
-  where scribe (IsBlock u) = T.append "Is" $ scribe u
-
-instance Transformatio MultiCharEsc
-  where scribe (MultiCharEsc c) = T.cons '\\' $ T.singleton c
-
-instance Transformatio WildcardEsc
-  where scribe WildcardEsc = "."
-
+                                     in (sameP, st, ct, text)
