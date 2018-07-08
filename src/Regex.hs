@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, TupleSections
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-08 09:39:29 CDT>
+{-| Time-stamp: <2018-07-08 16:39:11 CDT>
 
 Module      : Regex
 Copyright   : (c) Robert Lee, 2017-2018
@@ -72,17 +72,17 @@ import Parsers
 
 -- Explicit Imports
 
-import Data.Either (isLeft)
+-- import Data.Either (isLeft)
 
 -- Qualified Imports
 
-import qualified Data.Char as C
-import qualified Data.List as L
-import qualified Data.Text as T
-import qualified Numeric   as N
-import qualified Data.CharSet as U
-import qualified Data.Map.Strict as M
+import qualified Data.Char                     as C
+import qualified Data.CharSet                  as U
 import qualified Data.CharSet.Unicode.Category as U
+import qualified Data.List                     as L
+import qualified Data.Map.Strict               as M
+import qualified Data.Text                     as T
+import qualified Numeric                       as N
 
 -- Undisciplined Imports
 
@@ -98,6 +98,9 @@ import Data.Attoparsec.Text
 -- 3. Validate string               : Take (XML string, Aeson Parser AST) and produce {True, False}.
 -- 4. Create non-XSD regex from AST : Take Aeson Parser AST and produce non-XML Schema 1.1 regex string.
 
+-- -----------------------------------------------------------------------------------------------------------------------------------------------------
+-- TransRegex stanzas
+
 class TransRegex a where             -- TransRegex ➙ transform
   scribeBR :: Bool -> a -> Text
 
@@ -107,52 +110,88 @@ class TransRegex a where             -- TransRegex ➙ transform
   scribeR :: a -> Text               -- scribeR    ➙ write text
   scribeR a = scribeBR False a
 
-  selegoR :: a -> Parser (a,Text)
-  selegoR _ = error "NRPT" -- pure (RE [], T.empty)
+  selegoR :: a -> Parser (a,Text)    -- selegoR    ➙ create parser from TransRexgex a (selego selector)
+  -- selegoR _ = error "NRPT" -- pure (RE [], T.empty)
+
+pairChar :: (TransRegex t) => t -> Char -> Parser (t, Text)
+pairChar pp c = pure (pp,T.singleton c)
+
+pairSnd :: (TransRegex t, TransRegex r) => t -> (r,Text) -> Parser (t, Text)
+pairSnd pp (_,text) = pure (pp,text)
+
+pairSnds :: (TransRegex t, TransRegex r) => t -> [] (r,Text) -> Parser (t, Text)
+pairSnds pp [] = pure (pp,T.empty)
+pairSnds pp xs = pure . (pp,) . T.concat $ map snd xs
 
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 -- Instance stanzas
 
 instance TransRegex RE
   where scribeBR b (RE branches) = T.intercalate "|" $ map (scribeBR b) branches
+        
+        selegoR pp@(RE branches) = choice (map selegoR branches) >>= pairSnd pp
 
 instance TransRegex Branch
   where scribeBR b (Branch pieces) = T.concat $ map (scribeBR b) pieces
+        selegoR pp@(Branch pieces) = mapM selegoR pieces >>= pairSnds pp
 
 instance TransRegex Piece
   where scribeBR b (Piece atm mquant) = T.append (scribeBR b atm) $ maybe T.empty (scribeBR b) mquant
 
+        selegoR pp@(Piece atm  Nothing)                      =            selegoR atm  >>= pairSnd  pp
+        selegoR pp@(Piece atm (Just QuantifierMaybeOne))     = zeroMax 1 (selegoR atm) >>= pairSnds pp
+        selegoR pp@(Piece atm (Just QuantifierMaybeMany))    = many'     (selegoR atm) >>= pairSnds pp
+        selegoR pp@(Piece atm (Just QuantifierMany))         = many1     (selegoR atm) >>= pairSnds pp
+        selegoR pp@(Piece atm (Just (QuantifierQuantity q))) = helper q  (selegoR atm) >>= pairSnds pp
+          where helper (QuantRange qel qer) = minMax (fromQE qel) (fromQE qer)
+                helper (QuantMin qe)        = minMax (fromQE qe) 10000  -- upper limit breaks spec.
+                helper (QuantExactQ qe)     = count (fromQE qe)
+                                            
+                fromQE :: QuantExact -> Int
+                fromQE (QuantExact i) = i
+          
 instance TransRegex Atom
   where scribeBR b (AtomNormal    atm) = scribeBR b atm
         scribeBR b (AtomCharClass atm) = scribeBR b atm
         scribeBR b (AtomRE        atm) = T.concat ["(", scribeBR b atm, ")"]
 
+        selegoR pp@(AtomNormal    nc) = selegoR nc >>= pairSnd pp
+        selegoR pp@(AtomCharClass cc) = selegoR cc >>= pairSnd pp
+        selegoR pp@(AtomRE        er) = selegoR er >>= pairSnd pp
+
 instance TransRegex Quantifier
   where scribeBR _b QuantifierMaybeOne        = T.singleton '?'
         scribeBR _b QuantifierMaybeMany       = T.singleton '*'
         scribeBR _b QuantifierMany            = T.singleton '+'
-        scribeBR b (QuintifierQuantity quant) = T.concat ["{", (scribeBR b quant), "}"]
+        scribeBR b (QuantifierQuantity quant) = T.concat ["{", (scribeBR b quant), "}"]
+
+        selegoR _ = error "Not supported irregular instance."
 
 instance TransRegex Quantity
   where scribeBR b (QuantRange  qel qer) = T.concat [scribeBR b qel, ",", scribeBR b qer]
         scribeBR b (QuantMin    qe) = T.append (scribeBR b qe) ","
         scribeBR b (QuantExactQ qe) = scribeBR b qe
 
+        selegoR _ = error "Not supported irregular instance."
+
 instance TransRegex QuantExact
   where scribeBR _b (QuantExact i) = tShow i
 
+        selegoR _ = error "Not supported irregular instance."
+                    
 instance TransRegex NormalChar
   where scribeBR False (NormalChar c) = T.singleton c
-        scribeBR True  (NormalChar c) = case M.lookup (Left $ C.ord c) eNumEntityMap of
-                                          Nothing -> if | C.ord c <= 0x1FFF -> T.singleton c
-                                                        | otherwise ->
-                                                            let stringA = (N.showHex $ C.ord c) ""
-                                                                stringB = if | L.length stringA < 6 -> replicate (6 - L.length stringA) '0' ++ stringA
-                                                                             | otherwise -> stringA
-                                                            in T.concat ["&#x", T.toUpper $ T.pack stringB, ";"]
-                                          Just t -> T.concat ["&", t, ";"]
+        scribeBR True  (NormalChar c) =
+          case M.lookup (Left $ C.ord c) eNumEntityMap of
+            Nothing -> if | C.ord c <= 0x1FFF -> T.singleton c
+                          | otherwise ->
+                              let stringA = (N.showHex $ C.ord c) ""
+                                  stringB = if | L.length stringA < 6 -> replicate (6 - L.length stringA) '0' ++ stringA
+                                               | otherwise            -> stringA
+                              in T.concat ["&#x", T.toUpper $ T.pack stringB, ";"]
+            Just t -> T.concat ["&", t, ";"]
 
-        selegoR nc@(NormalChar c) = char c >> pure (nc, T.singleton c)
+        selegoR nc@(NormalChar c) = char c >>= pairChar nc
 
 instance TransRegex CharClass
   where scribeBR b (CharClassSingle cc) = scribeBR b cc
@@ -160,113 +199,97 @@ instance TransRegex CharClass
         scribeBR b (CharClassExprC  cc) = scribeBR b cc
         scribeBR b (CharClassWild   cc) = scribeBR b cc
 
-        selegoR pp@(CharClassSingle cc) = selegoR cc >>= pure . (pp,) . snd
-        selegoR pp@(CharClassEscC   cc) = selegoR cc >>= pure . (pp,) . snd
-        selegoR pp@(CharClassExprC  cc) = selegoR cc >>= pure . (pp,) . snd
-        selegoR pp@(CharClassWild   cc) = selegoR cc >>= pure . (pp,) . snd
+        selegoR pp@(CharClassSingle cc) = selegoR cc >>= pairSnd pp
+        selegoR pp@(CharClassEscC   cc) = selegoR cc >>= pairSnd pp
+        selegoR pp@(CharClassExprC  cc) = selegoR cc >>= pairSnd pp
+        selegoR pp@(CharClassWild   cc) = selegoR cc >>= pairSnd pp
 
 instance TransRegex CharClassExpr
   where scribeBR b (CharClassExpr cg) = T.concat ["[", scribeBR b cg, "]"]
 
-        selegoR pp@(CharClassExpr cg) = selegoR cg >>= pure . (pp,) . snd
+        selegoR pp@(CharClassExpr cg) = selegoR cg >>= pairSnd pp
 
 instance TransRegex CharGroup
-  where scribeBR b (CharGroup (Left  pcg) mce) = T.append (scribeBR b pcg)
-                                               $ maybe T.empty (T.cons '-' . scribeBR b) mce
-        scribeBR b (CharGroup (Right ncg) mce) = T.append (scribeBR b ncg)
-                                               $ maybe T.empty (T.cons '-' . scribeBR b) mce
+  where scribeBR b (CharGroup (Left  pcg) mce) = T.append (scribeBR b pcg) $ maybe T.empty (T.cons '-' . scribeBR b) mce
+        scribeBR b (CharGroup (Right ncg) mce) = T.append (scribeBR b ncg) $ maybe T.empty (T.cons '-' . scribeBR b) mce
 
-        selegoR pp@(CharGroup (Left  pcg) Nothing) = selegoR pcg >>= pure . (pp,) . snd
-        selegoR pp@(CharGroup (Right ncg) Nothing) = selegoR ncg >>= pure . (pp,) . snd
+        selegoR pp@(CharGroup (Left  pcg) Nothing)    =                     selegoR pcg >>= pairSnd pp
+        selegoR pp@(CharGroup (Right ncg) Nothing)    =                     selegoR ncg >>= pairSnd pp
+        selegoR pp@(CharGroup (Left  pcg) (Just cce)) = notMatchChar cce >> selegoR pcg >>= pairSnd pp
+        selegoR pp@(CharGroup (Right ncg) (Just cce)) = notMatchChar cce >> selegoR ncg >>= pairSnd pp
 
-        selegoR pp@(CharGroup (Left  pcg) (Just cce)) = selegoRCharGroupSubtract pcg cce >>= pure . (pp,) . snd
-        selegoR pp@(CharGroup (Right ncg) (Just cce)) = selegoRCharGroupSubtract ncg cce >>= pure . (pp,) . snd
+notMatchChar :: TransRegex tr => tr -> Parser ()
+notMatchChar pos = notMatchCharParse $ selegoR pos
 
--- NB Left is positive. Right is negative (e.g. [^]). (cg && not cce)
-selegoRCharGroupSubtract :: (TransRegex p, TransRegex a) =>
-                            a -> p -> Parser (a, Text)
-selegoRCharGroupSubtract cg cce = do
-  p <- peekChar' >>= pure . T.singleton
-  cgR <- selegoR cg
-  guard . isLeft $ parseOnly (selegoR cce) p -- subtract parse
-  pure cgR
-                                                
 instance TransRegex NegCharGroup
   where scribeBR b (NegCharGroup pcg) = T.cons '^' $ scribeBR b pcg
 
-        selegoR pp@(NegCharGroup pcg) = do p <- peekChar' >>= pure . T.singleton
-                                           guard . isLeft $ parseOnly (selegoR pcg) p
-                                           anyChar >>= pure . (pp,) . T.singleton
+        selegoR pp@(NegCharGroup pcg) = notMatchChar pcg >> anyChar >>= pairChar pp
 
 instance TransRegex PosCharGroup
   where scribeBR b (PosCharGroup cgp) = T.concat $ map (scribeBR b) cgp
 
-        selegoR pp@(PosCharGroup cgp) = choice (map selegoR cgp) >>= pure . (pp,) . snd
+        selegoR pp@(PosCharGroup cgp) = choice (map selegoR cgp) >>= pairSnd pp
 
 instance TransRegex CharGroupPart
   where scribeBR b (CharGroupPartSingle   cgp) = scribeBR b cgp
         scribeBR b (CharGroupPartRange    cgp) = scribeBR b cgp
         scribeBR b (CharGroupPartClassEsc cgp) = scribeBR b cgp
 
-        selegoR pp@(CharGroupPartSingle   cgp) = selegoR cgp >>= pure . (pp,) . snd
-        selegoR pp@(CharGroupPartRange    cgp) = selegoR cgp >>= pure . (pp,) . snd
-        selegoR pp@(CharGroupPartClassEsc cgp) = selegoR cgp >>= pure . (pp,) . snd
+        selegoR pp@(CharGroupPartSingle   cgp) = selegoR cgp >>= pairSnd pp
+        selegoR pp@(CharGroupPartRange    cgp) = selegoR cgp >>= pairSnd pp
+        selegoR pp@(CharGroupPartClassEsc cgp) = selegoR cgp >>= pairSnd pp
 
 instance TransRegex CharClassEsc
   where scribeBR b (CharClassEscMultiCharEsc cesc) = scribeBR b cesc
         scribeBR b (CharClassEscCatEsc       cesc) = scribeBR b cesc
         scribeBR b (CharClassEscComplEsc     cesc) = scribeBR b cesc
 
-        selegoR pp@(CharClassEscMultiCharEsc cesc) = selegoR cesc >>= pure . (pp,) . snd
-        selegoR pp@(CharClassEscCatEsc       cesc) = selegoR cesc >>= pure . (pp,) . snd
-        selegoR pp@(CharClassEscComplEsc     cesc) = selegoR cesc >>= pure . (pp,) . snd
+        selegoR pp@(CharClassEscMultiCharEsc cesc) = selegoR cesc >>= pairSnd pp
+        selegoR pp@(CharClassEscCatEsc       cesc) = selegoR cesc >>= pairSnd pp
+        selegoR pp@(CharClassEscComplEsc     cesc) = selegoR cesc >>= pairSnd pp
 
 instance TransRegex CharRange
   where scribeBR b (CharRange l r) = T.concat [scribeBR b l, "-", scribeBR b r]
-        selegoR pp@(CharRange l r) = do c <- satisfy (\c -> c >= retrieveSingleChar l && c <= retrieveSingleChar r )
-                                        pure (pp, T.singleton c)
-
-retrieveSingleChar :: SingleChar -> Char
-retrieveSingleChar (SingleChar (Left  (SingleCharEsc c))) = c
-retrieveSingleChar (SingleChar (Right (SingleCharNoEsc c))) = c
+        selegoR pp@(CharRange l r) = satisfy (\c -> c >= retrieveSingleChar l && c <= retrieveSingleChar r ) >>= pairChar pp
+          where retrieveSingleChar :: SingleChar -> Char
+                retrieveSingleChar (SingleChar (Left  (SingleCharEsc   c))) = c
+                retrieveSingleChar (SingleChar (Right (SingleCharNoEsc c))) = c
 
 instance TransRegex SingleChar
   where scribeBR b (SingleChar (Left  se )) = scribeBR b se
         scribeBR b (SingleChar (Right sne)) = scribeBR b sne
 
-        selegoR pp@(SingleChar (Left  se@(SingleCharEsc c)))    = selegoR se  >> pure (pp,T.singleton c)
-        selegoR pp@(SingleChar (Right sne@(SingleCharNoEsc c))) = selegoR sne >> pure (pp,T.singleton c)
+        selegoR pp@(SingleChar (Left  se )) = selegoR se  >>= pairSnd pp
+        selegoR pp@(SingleChar (Right sne)) = selegoR sne >>= pairSnd pp
 
 instance TransRegex SingleCharNoEsc
   where scribeBR False (SingleCharNoEsc c) = T.singleton c
         scribeBR True  (SingleCharNoEsc c) = canonR $ NormalChar c
 
-        selegoR scne@(SingleCharNoEsc c) = char c >> pure (scne, T.singleton c)
+        selegoR scne@(SingleCharNoEsc c) = char c >>= pairChar scne
 
 instance TransRegex SingleCharEsc
   where scribeBR _b (SingleCharEsc c) = T.cons '\\' $ T.singleton c
 
-        selegoR sce@(SingleCharEsc c) = char c >> pure (sce, T.singleton c)
+        selegoR sce@(SingleCharEsc c) = char c >>= pairChar sce
 
 instance TransRegex CatEsc
   where scribeBR b (CatEsc cp) = T.concat ["\\p{", scribeBR b cp, "}"]
 
-        selegoR pp@(CatEsc cp) = selegoR cp >>= pure . (pp,) . snd
+        selegoR pp@(CatEsc cp) = selegoR cp >>= pairSnd pp
 
 instance TransRegex ComplEsc
   where scribeBR b (ComplEsc cp) = T.concat ["\\P{", scribeBR b cp, "}"]
 
-        selegoR pp@(ComplEsc cp) = do p <- peekChar' >>= pure . T.singleton
-                                      guard . isLeft $ parseOnly (selegoR cp) p
-                                      anyChar >>= pure . (pp,) . T.singleton
+        selegoR pp@(ComplEsc cp) = notMatchChar cp >> anyChar >>= pairChar pp
 
 instance TransRegex CharProp
   where scribeBR b (CharProp (Left  i)) = scribeBR b i
         scribeBR b (CharProp (Right i)) = scribeBR b i
 
-        selegoR pp@(CharProp (Left  ic)) = selegoR ic >>= pure . (pp,) . snd
-        selegoR pp@(CharProp (Right ib)) = selegoR ib >>= pure . (pp,) . snd
-
+        selegoR pp@(CharProp (Left  ic)) = selegoR ic >>= pairSnd pp
+        selegoR pp@(CharProp (Right ib)) = selegoR ib >>= pairSnd pp
 
 instance TransRegex IsCategory
   where scribeBR b (LettersCat     cat) = scribeBR b cat
@@ -277,109 +300,105 @@ instance TransRegex IsCategory
         scribeBR b (SymbolsCat     cat) = scribeBR b cat
         scribeBR b (OthersCat      cat) = scribeBR b cat
 
-        selegoR pp@(LettersCat     cat) = selegoR cat >>= pure . (pp,) . snd
-        selegoR pp@(MarksCat       cat) = selegoR cat >>= pure . (pp,) . snd
-        selegoR pp@(NumbersCat     cat) = selegoR cat >>= pure . (pp,) . snd
-        selegoR pp@(PunctuationCat cat) = selegoR cat >>= pure . (pp,) . snd
-        selegoR pp@(SeparatorsCat  cat) = selegoR cat >>= pure . (pp,) . snd
-        selegoR pp@(SymbolsCat     cat) = selegoR cat >>= pure . (pp,) . snd
-        selegoR pp@(OthersCat      cat) = selegoR cat >>= pure . (pp,) . snd
+        selegoR pp@(LettersCat     cat) = selegoR cat >>= pairSnd pp
+        selegoR pp@(MarksCat       cat) = selegoR cat >>= pairSnd pp
+        selegoR pp@(NumbersCat     cat) = selegoR cat >>= pairSnd pp
+        selegoR pp@(PunctuationCat cat) = selegoR cat >>= pairSnd pp
+        selegoR pp@(SeparatorsCat  cat) = selegoR cat >>= pairSnd pp
+        selegoR pp@(SymbolsCat     cat) = selegoR cat >>= pairSnd pp
+        selegoR pp@(OthersCat      cat) = selegoR cat >>= pairSnd pp
+
+-- data Trans = forall s. TransRegex s => TR s
+
+-- trList :: [] (Trans, Text)
+-- trList = [(TR L, ""), (TR (NumbersCat Nd), ""), (TR UNRECOGNIZED_BLOCK, "")]
 
 instance TransRegex Letters
   where scribeBR _b = tShow
-        selegoR L  = satisfy (\c -> U.member c U.letter          ) >>= pure . (L ,) . T.singleton -- | All Letters
-        selegoR Lu = satisfy (\c -> U.member c U.uppercaseLetter ) >>= pure . (Lu,) . T.singleton -- | uppercase
-        selegoR Ll = satisfy (\c -> U.member c U.lowercaseLetter ) >>= pure . (Ll,) . T.singleton -- | lowercase
-        selegoR Lt = satisfy (\c -> U.member c U.titlecaseLetter ) >>= pure . (Lt,) . T.singleton -- | titlecase
-        selegoR Lm = satisfy (\c -> U.member c U.modifierLetter  ) >>= pure . (Lm,) . T.singleton -- | modifier
-        selegoR Lo = satisfy (\c -> U.member c U.otherLetter     ) >>= pure . (Lo,) . T.singleton -- | other
+        selegoR L  = satisfy (\c -> U.member c U.letter          ) >>= pairChar L  -- | All Letters
+        selegoR Lu = satisfy (\c -> U.member c U.uppercaseLetter ) >>= pairChar Lu -- | uppercase
+        selegoR Ll = satisfy (\c -> U.member c U.lowercaseLetter ) >>= pairChar Ll -- | lowercase
+        selegoR Lt = satisfy (\c -> U.member c U.titlecaseLetter ) >>= pairChar Lt -- | titlecase
+        selegoR Lm = satisfy (\c -> U.member c U.modifierLetter  ) >>= pairChar Lm -- | modifier
+        selegoR Lo = satisfy (\c -> U.member c U.otherLetter     ) >>= pairChar Lo -- | other
 
 instance TransRegex Marks
   where scribeBR _b = tShow
 
-        selegoR M  = satisfy (\c -> U.member c U.mark                 ) >>= pure . (M ,) . T.singleton -- | All Marks
-        selegoR Mn = satisfy (\c -> U.member c U.nonSpacingMark       ) >>= pure . (Mn,) . T.singleton -- | nonspacing
-        selegoR Mc = satisfy (\c -> U.member c U.spacingCombiningMark ) >>= pure . (Mc,) . T.singleton -- | spacing combining
-        selegoR Me = satisfy (\c -> U.member c U.enclosingMark        ) >>= pure . (Me,) . T.singleton -- | enclosing
+        selegoR M  = satisfy (\c -> U.member c U.mark                 ) >>= pairChar M  -- | All Marks
+        selegoR Mn = satisfy (\c -> U.member c U.nonSpacingMark       ) >>= pairChar Mn -- | nonspacing
+        selegoR Mc = satisfy (\c -> U.member c U.spacingCombiningMark ) >>= pairChar Mc -- | spacing combining
+        selegoR Me = satisfy (\c -> U.member c U.enclosingMark        ) >>= pairChar Me -- | enclosing
 
 instance TransRegex Numbers
   where scribeBR _b = tShow
 
-        selegoR N  = satisfy (\c -> U.member c U.number        ) >>= pure . (N ,) . T.singleton -- | All Numbers
-        selegoR Nd = satisfy (\c -> U.member c U.decimalNumber ) >>= pure . (Nd,) . T.singleton -- | decimal digit
-        selegoR Nl = satisfy (\c -> U.member c U.letterNumber  ) >>= pure . (Nl,) . T.singleton -- | letter
-        selegoR No = satisfy (\c -> U.member c U.otherNumber   ) >>= pure . (No,) . T.singleton -- | other
+        selegoR N  = satisfy (\c -> U.member c U.number        ) >>= pairChar N  -- | All Numbers
+        selegoR Nd = satisfy (\c -> U.member c U.decimalNumber ) >>= pairChar Nd -- | decimal digit
+        selegoR Nl = satisfy (\c -> U.member c U.letterNumber  ) >>= pairChar Nl -- | letter
+        selegoR No = satisfy (\c -> U.member c U.otherNumber   ) >>= pairChar No -- | other
 
 instance TransRegex Punctuation
   where scribeBR _b = tShow
 
-        selegoR P  = satisfy (\c -> U.member c U.punctuation          ) >>= pure . (P ,) . T.singleton -- | All Punctuation
-        selegoR Pc = satisfy (\c -> U.member c U.connectorPunctuation ) >>= pure . (Pc,) . T.singleton -- | connector
-        selegoR Pd = satisfy (\c -> U.member c U.dashPunctuation      ) >>= pure . (Pd,) . T.singleton -- | dash
-        selegoR Ps = satisfy (\c -> U.member c U.openPunctuation      ) >>= pure . (Ps,) . T.singleton -- | open
-        selegoR Pe = satisfy (\c -> U.member c U.closePunctuation     ) >>= pure . (Pe,) . T.singleton -- | close
-        selegoR Pi = satisfy (\c -> U.member c U.initialQuote         ) >>= pure . (Pi,) . T.singleton -- | initial quote
-        selegoR Pf = satisfy (\c -> U.member c U.finalQuote           ) >>= pure . (Pf,) . T.singleton -- | final quote
-        selegoR Po = satisfy (\c -> U.member c U.otherPunctuation     ) >>= pure . (Po,) . T.singleton -- | other
+        selegoR P  = satisfy (\c -> U.member c U.punctuation          ) >>= pairChar P  -- | All Punctuation
+        selegoR Pc = satisfy (\c -> U.member c U.connectorPunctuation ) >>= pairChar Pc -- | connector
+        selegoR Pd = satisfy (\c -> U.member c U.dashPunctuation      ) >>= pairChar Pd -- | dash
+        selegoR Ps = satisfy (\c -> U.member c U.openPunctuation      ) >>= pairChar Ps -- | open
+        selegoR Pe = satisfy (\c -> U.member c U.closePunctuation     ) >>= pairChar Pe -- | close
+        selegoR Pi = satisfy (\c -> U.member c U.initialQuote         ) >>= pairChar Pi -- | initial quote
+        selegoR Pf = satisfy (\c -> U.member c U.finalQuote           ) >>= pairChar Pf -- | final quote
+        selegoR Po = satisfy (\c -> U.member c U.otherPunctuation     ) >>= pairChar Po -- | other
 
 instance TransRegex Separators
   where scribeBR _b = tShow
-                      
-        selegoR Z  = satisfy (\c -> U.member c U.separator          ) >>= pure . (Z ,) . T.singleton -- | All Separators
-        selegoR Zs = satisfy (\c -> U.member c U.space              ) >>= pure . (Zs,) . T.singleton -- | space
-        selegoR Zl = satisfy (\c -> U.member c U.lineSeparator      ) >>= pure . (Zl,) . T.singleton -- | line
-        selegoR Zp = satisfy (\c -> U.member c U.paragraphSeparator ) >>= pure . (Zp,) . T.singleton -- | paragraph
+
+        selegoR Z  = satisfy (\c -> U.member c U.separator          ) >>= pairChar Z  -- | All Separators
+        selegoR Zs = satisfy (\c -> U.member c U.space              ) >>= pairChar Zs -- | space
+        selegoR Zl = satisfy (\c -> U.member c U.lineSeparator      ) >>= pairChar Zl -- | line
+        selegoR Zp = satisfy (\c -> U.member c U.paragraphSeparator ) >>= pairChar Zp -- | paragraph
 
 instance TransRegex Symbols
   where scribeBR _b = tShow
 
-        selegoR S  = satisfy (\c -> U.member c U.symbol         ) >>= pure . (S ,) . T.singleton -- | All Symbols
-        selegoR Sm = satisfy (\c -> U.member c U.mathSymbol     ) >>= pure . (Sm,) . T.singleton -- | math
-        selegoR Sc = satisfy (\c -> U.member c U.currencySymbol ) >>= pure . (Sc,) . T.singleton -- | currency
-        selegoR Sk = satisfy (\c -> U.member c U.modifierSymbol ) >>= pure . (Sk,) . T.singleton -- | modifier
-        selegoR So = satisfy (\c -> U.member c U.otherSymbol    ) >>= pure . (So,) . T.singleton -- | other
+        selegoR S  = satisfy (\c -> U.member c U.symbol         ) >>= pairChar S  -- | All Symbols
+        selegoR Sm = satisfy (\c -> U.member c U.mathSymbol     ) >>= pairChar Sm -- | math
+        selegoR Sc = satisfy (\c -> U.member c U.currencySymbol ) >>= pairChar Sc -- | currency
+        selegoR Sk = satisfy (\c -> U.member c U.modifierSymbol ) >>= pairChar Sk -- | modifier
+        selegoR So = satisfy (\c -> U.member c U.otherSymbol    ) >>= pairChar So -- | other
 
 instance TransRegex Others
   where scribeBR _b = tShow
-        selegoR C  = satisfy (\c -> U.member c U.other       ) >>= pure . (C ,) . T.singleton -- | All Others
-        selegoR Cc = satisfy (\c -> U.member c U.control     ) >>= pure . (Cc,) . T.singleton -- | control
-        selegoR Cf = satisfy (\c -> U.member c U.format      ) >>= pure . (Cf,) . T.singleton -- | format
-        selegoR Co = satisfy (\c -> U.member c U.privateUse  ) >>= pure . (Co,) . T.singleton -- | private use
-        selegoR Cn = satisfy (\c -> U.member c U.notAssigned ) >>= pure . (Cn,) . T.singleton -- | not assigned
-              
+        selegoR C  = satisfy (\c -> U.member c U.other       ) >>= pairChar C  -- | All Others
+        selegoR Cc = satisfy (\c -> U.member c U.control     ) >>= pairChar Cc -- | control
+        selegoR Cf = satisfy (\c -> U.member c U.format      ) >>= pairChar Cf -- | format
+        selegoR Co = satisfy (\c -> U.member c U.privateUse  ) >>= pairChar Co -- | private use
+        selegoR Cn = satisfy (\c -> U.member c U.notAssigned ) >>= pairChar Cn -- | not assigned
+
 instance TransRegex IsBlock
   where scribeBR False (IsBlock _ t) = t
         scribeBR True  (IsBlock u _) = T.append "Is" $ scribeBR True u
 
-        selegoR pp@(IsBlock blockname _) = selegoR blockname >>= pure . (pp,) . snd
+        selegoR pp@(IsBlock blockname _) = selegoR blockname >>= pairSnd pp
 
 instance TransRegex MultiCharEsc
   where scribeBR _b (MultiCharEsc c) = T.cons '\\' $ T.singleton c
 
-        selegoR pp@(MultiCharEsc 's') = satisfy (inClass    " \t\n\r") >>= pure . (pp,) . T.singleton
-        selegoR pp@(MultiCharEsc 'S') = satisfy (notInClass " \t\n\r") >>= pure . (pp,) . T.singleton
-        selegoR pp@(MultiCharEsc 'i') = nameStartCharParser >>= pure . (pp,) . T.singleton
-        selegoR pp@(MultiCharEsc 'I') = do p <- peekChar' >>= pure . T.singleton
-                                           guard . isLeft $ parseOnly nameStartCharParser p
-                                           anyChar >>= pure . (pp,) . T.singleton
-        selegoR pp@(MultiCharEsc 'c') = nameCharParser >>= pure . (pp,) . T.singleton
-        selegoR pp@(MultiCharEsc 'C') = do p <- peekChar' >>= pure . T.singleton
-                                           guard . isLeft $ parseOnly nameCharParser p
-                                           anyChar >>= pure . (pp,) . T.singleton
-
-        selegoR pp@(MultiCharEsc 'd') = satisfy (\c ->       U.member c U.decimalNumber) >>= pure . (pp,) . T.singleton
-        selegoR pp@(MultiCharEsc 'D') = satisfy (\c -> not $ U.member c U.decimalNumber) >>= pure . (pp,) . T.singleton
-        selegoR pp@(MultiCharEsc 'w') = satisfy (\c -> not (U.member c U.punctuation)
-                                                    && not (U.member c U.separator)
-                                                    && not (U.member c U.other)) >>= pure . (pp,) . T.singleton
-        selegoR pp@(MultiCharEsc 'W') = satisfy (\c -> (U.member c U.punctuation)
-                                                    || (U.member c U.separator)
-                                                    || (U.member c U.other)) >>= pure . (pp,) . T.singleton
+        selegoR pp@(MultiCharEsc 's') = satisfy (inClass    " \t\n\r")                                                 >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'S') = satisfy (notInClass " \t\n\r")                                                 >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'i') =                   nameStartCharParser                                          >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'I') = notMatchCharParse nameStartCharParser >> anyChar                               >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'c') =                   nameCharParser                                               >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'C') = notMatchCharParse nameCharParser      >> anyChar                               >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'd') = satisfy (\c ->       U.member c U.decimalNumber)                               >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'D') = satisfy (\c -> not $ U.member c U.decimalNumber)                               >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'w') = satisfy (\c -> not $ L.any (U.member c) [U.punctuation, U.separator, U.other]) >>= pairChar pp
+        selegoR pp@(MultiCharEsc 'W') = satisfy (\c ->       L.any (U.member c) [U.punctuation, U.separator, U.other]) >>= pairChar pp
         selegoR (MultiCharEsc c) = fail $ "Faulty MultiCharEsc '" ++ [c,'\'']                                                                        -- ⛞
 
 instance TransRegex WildcardEsc
   where scribeBR _b WildcardEsc = "."
-        selegoR WildcardEsc = anyChar >>= pure . (WildcardEsc,) . T.singleton
+        selegoR WildcardEsc = satisfy (notInClass "\n\r") >>= pairChar WildcardEsc
 
 instance TransRegex UnicodeBlockName
   where scribeBR _b UNRECOGNIZED_BLOCK                             = "UnrecognizedBlock"
@@ -592,217 +611,9 @@ instance TransRegex UnicodeBlockName
         scribeBR _b VARIATION_SELECTORS_SUPPLEMENT                 = "VariationSelectorsSupplement"
         scribeBR _b SUPPLEMENTARY_PRIVATE_USE_AREA_A               = "SupplementaryPrivateUseArea-A"
         scribeBR _b SUPPLEMENTARY_PRIVATE_USE_AREA_B               = "SupplementaryPrivateUseArea-B"
-                                                                     
-        selegoR pp@UNRECOGNIZED_BLOCK                             = anyChar >>= pure . (pp,) . T.singleton 
-        selegoR pp@BASIC_LATIN                                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LATIN_1_SUPPLEMENT                             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LATIN_EXTENDED_A                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LATIN_EXTENDED_B                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@IPA_EXTENSIONS                                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SPACING_MODIFIER_LETTERS                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@COMBINING_DIACRITICAL_MARKS                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GREEK_AND_COPTIC                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CYRILLIC                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CYRILLIC_SUPPLEMENT                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ARMENIAN                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HEBREW                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ARABIC                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SYRIAC                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ARABIC_SUPPLEMENT                              = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@THAANA                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@NKO                                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SAMARITAN                                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MANDAIC                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@DEVANAGARI                                     = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BENGALI                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GURMUKHI                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GUJARATI                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ORIYA                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TAMIL                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TELUGU                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KANNADA                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MALAYALAM                                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SINHALA                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@THAI                                           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LAO                                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TIBETAN                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MYANMAR                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GEORGIAN                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HANGUL_JAMO                                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ETHIOPIC                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ETHIOPIC_SUPPLEMENT                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CHEROKEE                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@OGHAM                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@RUNIC                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TAGALOG                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HANUNOO                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BUHID                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TAGBANWA                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KHMER                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MONGOLIAN                                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LIMBU                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TAI_LE                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@NEW_TAI_LUE                                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KHMER_SYMBOLS                                  = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BUGINESE                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TAI_THAM                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BALINESE                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SUNDANESE                                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BATAK                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LEPCHA                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@OL_CHIKI                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@VEDIC_EXTENSIONS                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@PHONETIC_EXTENSIONS                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@PHONETIC_EXTENSIONS_SUPPLEMENT                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@COMBINING_DIACRITICAL_MARKS_SUPPLEMENT         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LATIN_EXTENDED_ADDITIONAL                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GREEK_EXTENDED                                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GENERAL_PUNCTUATION                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SUPERSCRIPTS_AND_SUBSCRIPTS                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CURRENCY_SYMBOLS                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@COMBINING_DIACRITICAL_MARKS_FOR_SYMBOLS        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LETTERLIKE_SYMBOLS                             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@NUMBER_FORMS                                   = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ARROWS                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MATHEMATICAL_OPERATORS                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MISCELLANEOUS_TECHNICAL                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CONTROL_PICTURES                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@OPTICAL_CHARACTER_RECOGNITION                  = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ENCLOSED_ALPHANUMERICS                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BOX_DRAWING                                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BLOCK_ELEMENTS                                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GEOMETRIC_SHAPES                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MISCELLANEOUS_SYMBOLS                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@DINGBATS                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SUPPLEMENTAL_ARROWS_A                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BRAILLE_PATTERNS                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SUPPLEMENTAL_ARROWS_B                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SUPPLEMENTAL_MATHEMATICAL_OPERATORS            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MISCELLANEOUS_SYMBOLS_AND_ARROWS               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GLAGOLITIC                                     = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LATIN_EXTENDED_C                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@COPTIC                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GEORGIAN_SUPPLEMENT                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TIFINAGH                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ETHIOPIC_EXTENDED                              = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CYRILLIC_EXTENDED_A                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SUPPLEMENTAL_PUNCTUATION                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_RADICALS_SUPPLEMENT                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KANGXI_RADICALS                                = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@IDEOGRAPHIC_DESCRIPTION_CHARACTERS             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_SYMBOLS_AND_PUNCTUATION                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HIRAGANA                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KATAKANA                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BOPOMOFO                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HANGUL_COMPATIBILITY_JAMO                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KANBUN                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BOPOMOFO_EXTENDED                              = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_STROKES                                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KATAKANA_PHONETIC_EXTENSIONS                   = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ENCLOSED_CJK_LETTERS_AND_MONTHS                = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_COMPATIBILITY                              = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@YIJING_HEXAGRAM_SYMBOLS                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_UNIFIED_IDEOGRAPHS                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@YI_SYLLABLES                                   = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@YI_RADICALS                                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LISU                                           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@VAI                                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CYRILLIC_EXTENDED_B                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BAMUM                                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MODIFIER_TONE_LETTERS                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LATIN_EXTENDED_D                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SYLOTI_NAGRI                                   = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@COMMON_INDIC_NUMBER_FORMS                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@PHAGS_PA                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SAURASHTRA                                     = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@DEVANAGARI_EXTENDED                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KAYAH_LI                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@REJANG                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HANGUL_JAMO_EXTENDED_A                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@JAVANESE                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CHAM                                           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MYANMAR_EXTENDED_A                             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TAI_VIET                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ETHIOPIC_EXTENDED_A                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MEETEI_MAYEK                                   = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HANGUL_SYLLABLES                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HANGUL_JAMO_EXTENDED_B                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HIGH_SURROGATES                                = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HIGH_PRIVATE_USE_SURROGATES                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LOW_SURROGATES                                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@PRIVATE_USE_AREA                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_COMPATIBILITY_IDEOGRAPHS                   = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ALPHABETIC_PRESENTATION_FORMS                  = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ARABIC_PRESENTATION_FORMS_A                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@VARIATION_SELECTORS                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@VERTICAL_FORMS                                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@COMBINING_HALF_MARKS                           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_COMPATIBILITY_FORMS                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SMALL_FORM_VARIANTS                            = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ARABIC_PRESENTATION_FORMS_B                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@HALFWIDTH_AND_FULLWIDTH_FORMS                  = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SPECIALS                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LINEAR_B_SYLLABARY                             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LINEAR_B_IDEOGRAMS                             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@AEGEAN_NUMBERS                                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ANCIENT_GREEK_NUMBERS                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ANCIENT_SYMBOLS                                = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@PHAISTOS_DISC                                  = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LYCIAN                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CARIAN                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@OLD_ITALIC                                     = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@GOTHIC                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@UGARITIC                                       = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@OLD_PERSIAN                                    = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@DESERET                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SHAVIAN                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@OSMANYA                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CYPRIOT_SYLLABARY                              = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@IMPERIAL_ARAMAIC                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@PHOENICIAN                                     = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@LYDIAN                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KHAROSHTHI                                     = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@OLD_SOUTH_ARABIAN                              = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@AVESTAN                                        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@INSCRIPTIONAL_PARTHIAN                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@INSCRIPTIONAL_PAHLAVI                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@OLD_TURKIC                                     = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@RUMI_NUMERAL_SYMBOLS                           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BRAHMI                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KAITHI                                         = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CUNEIFORM                                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CUNEIFORM_NUMBERS_AND_PUNCTUATION              = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@EGYPTIAN_HIEROGLYPHS                           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BAMUM_SUPPLEMENT                               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@KANA_SUPPLEMENT                                = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@BYZANTINE_MUSICAL_SYMBOLS                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MUSICAL_SYMBOLS                                = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ANCIENT_GREEK_MUSICAL_NOTATION                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TAI_XUAN_JING_SYMBOLS                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@COUNTING_ROD_NUMERALS                          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MATHEMATICAL_ALPHANUMERIC_SYMBOLS              = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MAHJONG_TILES                                  = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@DOMINO_TILES                                   = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@PLAYING_CARDS                                  = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ENCLOSED_ALPHANUMERIC_SUPPLEMENT               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ENCLOSED_IDEOGRAPHIC_SUPPLEMENT                = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS          = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@EMOTICONS                                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TRANSPORT_AND_MAP_SYMBOLS                      = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@ALCHEMICAL_SYMBOLS                             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D             = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT        = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@TAGS                                           = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@VARIATION_SELECTORS_SUPPLEMENT                 = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SUPPLEMENTARY_PRIVATE_USE_AREA_A               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
-        selegoR pp@SUPPLEMENTARY_PRIVATE_USE_AREA_B               = matchUnicodeBlockName pp >>= pure . (pp,) . T.singleton 
+
+        selegoR pp = matchUnicodeBlockName pp >>= pairChar pp
+
 -- ---------------------------------------------------------------------------------------------------------------------------------------------------
 -- Normalize text
 
@@ -837,7 +648,7 @@ deNormalize :: Text -> (Int, Int) -> Text
 deNormalize t (l,p) = T.take l $ T.drop p t
 
 -- ---------------------------------------------------------------------------------------------------------------------------------------------------
--- Regex grammar stanzas
+-- Regex type and grammar stanzas
 
 -- See W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes
 -- § G Regular Expressions
@@ -896,7 +707,7 @@ atom = choice [ atomRE     >>= pure . AtomRE
 data Quantifier = QuantifierMaybeOne
                 | QuantifierMaybeMany
                 | QuantifierMany
-                | QuintifierQuantity Quantity
+                | QuantifierQuantity Quantity
                   deriving (Show, Eq)
 
 quantifier :: Parser Quantifier
@@ -908,7 +719,7 @@ quantifier = choice [ char '?' >> pure QuantifierMaybeOne
   where quintifierQuantity = do skipC '{'
                                 q <- quantity
                                 skipC '}'
-                                pure $ QuintifierQuantity q
+                                pure $ QuantifierQuantity q
 
 data Quantity = QuantRange  QuantExact QuantExact
               | QuantMin    QuantExact

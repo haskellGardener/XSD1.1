@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-04 14:39:34 CDT>
+{-| Time-stamp: <2018-07-08 17:14:40 CDT>
 
 Module      : RegexOut
 Copyright   : (c) Robert Lee, 2017-2018
@@ -77,6 +77,8 @@ import Data.Attoparsec.Text (parseOnly)
 
 -- Qualified Imports
 
+import qualified Data.Text as T
+
 -- Undisciplined Imports
 
 import ClassyPrelude
@@ -94,3 +96,21 @@ outIn text = case parseOnly (anchorParser re) text of
                                          ct = canonR regex
                                          sameP = st == text
                                      in (sameP, st, ct, text)
+
+runRE :: Text -> Text -> Either Text (RE,Text)
+runRE reText candidateText = case parseOnly (anchorParser re) reText of
+                               Left t -> Left $ T.pack t
+                               Right r -> case parseOnly (anchorParser $ selegoR r) normalized of
+                                            Left t1 -> Left $ T.pack t1
+                                            Right res -> Right res
+  where normalized = case parseOnly normalize candidateText of
+                       Left _ -> ""
+                       Right (t,_) -> t
+
+runRE' :: RE -> Text -> Either Text (RE,Text)
+runRE' re_pp candidateText = case parseOnly (anchorParser $ selegoR re_pp) normalized of
+                               Left t1 -> Left $ T.pack t1
+                               Right res -> Right res
+  where normalized = case parseOnly normalize candidateText of
+                       Left _ -> ""
+                       Right (t,_) -> t

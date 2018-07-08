@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-07-07 19:30:53 CDT>
+{-| Time-stamp: <2018-07-08 10:24:35 CDT>
 
 Module      : Parsers
 Copyright   : (c) Robert Lee, 2017-2018
@@ -88,6 +88,7 @@ module Parsers
     , minMax
     , nameCharParser
     , nameStartCharParser
+    , notMatchCharParse
     , pORT
     , parsePair
     , parse2
@@ -117,7 +118,7 @@ import Lading
 
 -- Explicit Imports
 
-import Data.Either (isRight)
+import Data.Either (isRight,isLeft)
 import Data.Ix     (inRange)
 import Numeric     (readHex)
 
@@ -223,6 +224,9 @@ skipC = void . char
 
 skipS :: Text -> Parser ()
 skipS = void . string
+
+notMatchCharParse :: Parser any -> Parser ()                   
+notMatchCharParse parser = guard . isLeft . parseOnly parser . T.singleton =<< peekChar'
 
 nameStartCharParser :: Parser Char
 nameStartCharParser =
