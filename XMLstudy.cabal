@@ -42,6 +42,7 @@ library
                     , base16-bytestring
                     , base64-bytestring
                     , bytestring
+                    , charset
                     , classy-prelude
                     , containers
                     , hourglass

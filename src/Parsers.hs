@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-07-02 12:42:27 CDT>
+{-| Time-stamp: <2018-07-07 19:30:53 CDT>
 
 Module      : Parsers
 Copyright   : (c) Robert Lee, 2017-2018
@@ -86,6 +86,8 @@ module Parsers
     , iuserinfo
     , ls32
     , minMax
+    , nameCharParser
+    , nameStartCharParser
     , pORT
     , parsePair
     , parse2
@@ -221,7 +223,38 @@ skipC = void . char
 
 skipS :: Text -> Parser ()
 skipS = void . string
-        
+
+nameStartCharParser :: Parser Char
+nameStartCharParser =
+  choice [ char ':'
+         , char '_'
+         , satisfy $ inRange ('A','Z')
+         , satisfy $ inRange ('a','z')
+         , satisfy $ inRange ( C.chr 0xC0    , C.chr 0xD6    )
+         , satisfy $ inRange ( C.chr 0xD8    , C.chr 0xF6    )
+         , satisfy $ inRange ( C.chr 0xF8    , C.chr 0x2FF   )
+         , satisfy $ inRange ( C.chr 0x370   , C.chr 0x37D   )
+         , satisfy $ inRange ( C.chr 0x37F   , C.chr 0x1FFF  )
+         , satisfy $ inRange ( C.chr 0x200C  , C.chr 0x200D  )
+         , satisfy $ inRange ( C.chr 0x2070  , C.chr 0x218F  )
+         , satisfy $ inRange ( C.chr 0x2C00  , C.chr 0x2FEF  )
+         , satisfy $ inRange ( C.chr 0x3001  , C.chr 0xD7FF  )
+         , satisfy $ inRange ( C.chr 0xF900  , C.chr 0xFDCF  )
+         , satisfy $ inRange ( C.chr 0xFDF0  , C.chr 0xFFFD  )
+         , satisfy $ inRange ( C.chr 0x10000 , C.chr 0xEFFFF )
+         ]
+
+nameCharParser :: Parser Char
+nameCharParser =
+  choice [ nameStartCharParser
+         , char '-' -- ascii hyphen
+         , char '.' -- ascii period
+         , digit    -- [0-9]
+         , char '·' -- #xB7 'Middle Dot'
+         , satisfy (inRange (C.chr 0x0300, C.chr 0x036F)) -- Combining Diacritical Marks
+         , satisfy (inRange (C.chr 0x203F, C.chr 0x2040)) -- Part of the General Punctuation block
+         ]
+     
 -- AnyURI parsers -----------------------------------------------------------------------------------------------------------------------------------
 
 {- foo://example.com:8042/over/there?name=ferret#nose
