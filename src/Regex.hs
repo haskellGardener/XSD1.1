@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, TupleSections
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-07 21:43:05 CDT>
+{-| Time-stamp: <2018-07-08 09:39:29 CDT>
 
 Module      : Regex
 Copyright   : (c) Robert Lee, 2017-2018
@@ -160,15 +160,37 @@ instance TransRegex CharClass
         scribeBR b (CharClassExprC  cc) = scribeBR b cc
         scribeBR b (CharClassWild   cc) = scribeBR b cc
 
+        selegoR pp@(CharClassSingle cc) = selegoR cc >>= pure . (pp,) . snd
+        selegoR pp@(CharClassEscC   cc) = selegoR cc >>= pure . (pp,) . snd
+        selegoR pp@(CharClassExprC  cc) = selegoR cc >>= pure . (pp,) . snd
+        selegoR pp@(CharClassWild   cc) = selegoR cc >>= pure . (pp,) . snd
+
 instance TransRegex CharClassExpr
   where scribeBR b (CharClassExpr cg) = T.concat ["[", scribeBR b cg, "]"]
 
-instance TransRegex CharGroup
-  where scribeBR b (CharGroup (Left  cg) mce) = T.append (scribeBR b cg)
-                                              $ maybe T.empty (T.cons '-' . scribeBR b) mce
-        scribeBR b (CharGroup (Right cg) mce) = T.append (scribeBR b cg)
-                                              $ maybe T.empty (T.cons '-' . scribeBR b) mce
+        selegoR pp@(CharClassExpr cg) = selegoR cg >>= pure . (pp,) . snd
 
+instance TransRegex CharGroup
+  where scribeBR b (CharGroup (Left  pcg) mce) = T.append (scribeBR b pcg)
+                                               $ maybe T.empty (T.cons '-' . scribeBR b) mce
+        scribeBR b (CharGroup (Right ncg) mce) = T.append (scribeBR b ncg)
+                                               $ maybe T.empty (T.cons '-' . scribeBR b) mce
+
+        selegoR pp@(CharGroup (Left  pcg) Nothing) = selegoR pcg >>= pure . (pp,) . snd
+        selegoR pp@(CharGroup (Right ncg) Nothing) = selegoR ncg >>= pure . (pp,) . snd
+
+        selegoR pp@(CharGroup (Left  pcg) (Just cce)) = selegoRCharGroupSubtract pcg cce >>= pure . (pp,) . snd
+        selegoR pp@(CharGroup (Right ncg) (Just cce)) = selegoRCharGroupSubtract ncg cce >>= pure . (pp,) . snd
+
+-- NB Left is positive. Right is negative (e.g. [^]). (cg && not cce)
+selegoRCharGroupSubtract :: (TransRegex p, TransRegex a) =>
+                            a -> p -> Parser (a, Text)
+selegoRCharGroupSubtract cg cce = do
+  p <- peekChar' >>= pure . T.singleton
+  cgR <- selegoR cg
+  guard . isLeft $ parseOnly (selegoR cce) p -- subtract parse
+  pure cgR
+                                                
 instance TransRegex NegCharGroup
   where scribeBR b (NegCharGroup pcg) = T.cons '^' $ scribeBR b pcg
 
