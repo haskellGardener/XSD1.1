@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2018-07-07 19:31:03 CDT>
+{-| Time-stamp: <2018-07-08 22:25:50 CDT>
 
 Module      : Builtin
 Copyright   : (c) Robert Lee, 2017-2018
@@ -2372,8 +2372,8 @@ The dateTimeLexicalRep production is equivalent to this regular expression once 
     -(0[1-9]|1[0-2])                                                             -- Datexs identical
     -(0[1-9]|[12][0-9]|3[01])                                                    -- Datexs identical
     T                                                                            -- Mandatory T
-    (([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?|(24:00:00(\.0+)?))      -- Timexs identical
-    (Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00))?                                -- Datexs/Timexs identical
+    (([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?|(24:00:00(\\.0+)?))    -- Timexs identical
+    (Z|(\\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00))?                                -- Datexs/Timexs identical
 
 -}
 
