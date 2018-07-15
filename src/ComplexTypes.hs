@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2018-07-14 20:50:51 CDT>
+{-| Time-stamp: <2018-07-15 15:43:46 CDT>
 
 Module      : ComplexTypes
 Copyright   : (c) Robert Lee, 2017-2018
@@ -59,7 +59,6 @@ module ComplexTypes where
 -- import Data.Ix    ( inRange, range                 )
 -- import Data.List  ( head, length, maximum, minimum )
 -- import Data.Maybe ( fromJust                       )
--- import Data.Word  ( Word16, Word8                  )
 
 import qualified Data.Map as M
 
