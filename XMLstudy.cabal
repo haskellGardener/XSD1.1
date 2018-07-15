@@ -1,5 +1,5 @@
 name:                XMLstudy
-version:             0.1.0.1
+version:             0.2.0.1
 -- synopsis:
 -- description:
 
@@ -33,6 +33,7 @@ library
                     , RecordWildCards
   hs-source-dirs:     src
   exposed-modules:    Builtin
+                    , ComplexTypes
                     , Lading
                     , Parsers
                     , Regex
@@ -48,6 +49,7 @@ library
                     , hourglass
                     , text
                     , xml-conduit
+                    , xml-hamlet
                     , scientific
 
 executable XMLstudy-exe
