@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2018-07-15 15:43:46 CDT>
+{-| Time-stamp: <2018-07-17 06:45:52 CDT>
 
 Module      : ComplexTypes
 Copyright   : (c) Robert Lee, 2017-2018
