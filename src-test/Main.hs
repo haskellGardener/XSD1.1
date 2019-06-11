@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification #-}
-{-| Time-stamp: <2019-06-04 12:30:12 robert>
+{-| Time-stamp: <2019-06-11 12:41:01 CDT>
 
 Module      : Main
 Copyright   : (c) Robert Lee, 2017-2018
@@ -107,7 +107,7 @@ import Data.Int   ( Int16, Int8                    )
 import Data.Ix    ( inRange, range                 )
 import Data.List  ( head, length, maximum, minimum )
 import Data.Maybe ( fromJust                       )
-import Data.Word  ( Word16, Word8                  )
+import Data.Word  ( Word64, Word32, Word16, Word8  )
 
 -- Qualified Imports
 
@@ -157,7 +157,7 @@ ramp :: Int -> Int
 ramp n = n * multiplier
 
 multiplier :: Int
-multiplier = 1 -- This should be determined by an environment variable or command line option.
+multiplier = 100 -- This should be determined by an environment variable or command line option.
 
 tests :: [TestTree]
 tests =
@@ -214,16 +214,16 @@ multiTests = join
   , multi 1000    10 defT  "Base64Binary"      gen_64_legal                gen_64_illegal                (fac :: Text -> Maybe Base64Binary      )
   , multi 100    100 defT  "Boolean"           gen_boolean_legal           gen_boolean_illegal           (fac :: Text -> Maybe Boolean           )
   , multi 1000    10 defT  "DayTimeDuration"   gen_DayTimeDuration_legal   gen_DayTimeDuration_illegal   (fac :: Text -> Maybe DayTimeDuration   )
+  , multi 1000    10 defT  "Durationxs"        gen_Durationxs_legal        gen_Durationxs_illegal        (fac :: Text -> Maybe Durationxs        )
+  , multi 1000    10 defT  "YearMonthDuration" gen_YearMonthDuration_legal gen_YearMonthDuration_illegal (fac :: Text -> Maybe YearMonthDuration )
   , multi 1000    10 noSuf "Decimal"           gen_Decimal_legal           gen_Decimal_illegal           (fac :: Text -> Maybe Decimal           )
   , multi 10000   10 noSuf "Doublexs"          gen_Floatxs_legal           gen_Floatxs_illegal           (fac :: Text -> Maybe Doublexs          )
-  , multi 1000    10 defT  "Durationxs"        gen_Durationxs_legal        gen_Durationxs_illegal        (fac :: Text -> Maybe Durationxs        )
   , multi 100     10 defT  "ENTITY"            gen_NCName_legal            gen_NCName_illegal            (fac :: Text -> Maybe ENTITY            )
   , multi 10000   10 noSuf "Floatxs"           gen_Floatxs_legal           gen_Floatxs_illegal           (fac :: Text -> Maybe Floatxs           )
   , multi 1000    10 defT  "HexBinary"         gen_hex_legal               gen_hex_illegal               (fac :: Text -> Maybe HexBinary         )
   , multi 100     10 defT  "ID"                gen_NCName_legal            gen_NCName_illegal            (fac :: Text -> Maybe ID                )
   , multi 100     10 defT  "IDREF"             gen_NCName_legal            gen_NCName_illegal            (fac :: Text -> Maybe IDREF             )
   , multi 100     10 noSuf "Language"          gen_language_legal          gen_language_illegal          (fac :: Text -> Maybe Language          )
-  , multi 1000    10 defT  "NCName"            gen_NCName_legal            gen_NCName_illegal            (fac :: Text -> Maybe NCName            )
   , multi 1000    10 defT  "NCName"            gen_NCName_legal            gen_NCName_illegal            (fac :: Text -> Maybe NCName            )
   , multi 1000    10 defT  "NMTOKEN"           gen_NMTOKEN_legal           gen_NMTOKEN_illegal           (fac :: Text -> Maybe NMTOKEN           )
   , multi 1000    10 noSuf "NOTATION"          gen_QName_legal             gen_QName_illegal             (fac :: Text -> Maybe NOTATION          )
@@ -232,7 +232,6 @@ multiTests = join
   , multi 1000    10 noSuf "QName"             gen_QName_legal             gen_QName_illegal             (fac :: Text -> Maybe QName             )
   , multi 1000    10 defT  "Stringxs"          gen_stringxs_legal          gen_stringxs_illegal          (fac :: Text -> Maybe Stringxs          )
   , multi 1000    10 defT  "Token"             gen_token_legal             gen_stringxs_illegal          (fac :: Text -> Maybe Token             )
-  , multi 1000    10 defT  "YearMonthDuration" gen_YearMonthDuration_legal gen_YearMonthDuration_illegal (fac :: Text -> Maybe YearMonthDuration )
   ]
 
 multi :: (Transformatio a, Eq a) => Int -> Int -> TestOpts a -> String -> QC.Gen Text -> QC.Gen Text -> (Text -> Maybe a) -> [] TestTree
@@ -303,9 +302,6 @@ doShow _do = take 1 $ tshow _do
 gen_DuraOrder :: QC.Gen DuraOrder
 gen_DuraOrder = QC.elements $ enumFrom Y_do
 
-gen_Int_1000 :: QC.Gen Int
-gen_Int_1000 = QC.choose (0,999999)
-
 gen_DuraOrder_legal :: QC.Gen [DuraOrder]
 gen_DuraOrder_legal = do                                                                                                                             -- ➿
   a <- gen_DuraOrder
@@ -316,8 +312,8 @@ gen_DuraOrder_legal = do                                                        
   then gen_DuraOrder_legal                                                                                                                           -- ↺
   else pure $ range (start, end == T_do ? succ(T_do) $ end)                                                                                          -- 🔚
 
-gen_duration_where :: ([] DuraOrder -> Bool) -> QC.Gen Text
-gen_duration_where f = do
+gen_duration_where :: ([] DuraOrder -> Bool) -> (DuraOrder -> QC.Gen Int) -> QC.Gen Text
+gen_duration_where f genIntF = do
   l    <- QC.suchThat gen_DuraOrder_legal f
   ls   <- mapM mF l
   sign <- QC.elements ["-", ""]
@@ -325,18 +321,18 @@ gen_duration_where f = do
   where
     mF T_do = pure "T"
     mF S_do = do
-      ns <- QC.choose ((0,999999999) :: (Int64, Int64))
+      ns <- QC.choose ((0,999999999) :: (Word64, Word64))
       zs <- QC.elements [T.replicate x "0" | x <- [0..7]]
-      n  <- gen_Int_1000
+      n  <- genIntF S_do
       pure $ T.concat [tshow n, ".", T.take 9 (T.append zs (tshow ns)), doShow S_do]
     mF x_do = do
-      n <- gen_Int_1000
+      n <- genIntF x_do
       pure $ T.concat [tshow n, doShow x_do]
 
 gen_Durationxs_legal :: QC.Gen Text
-gen_Durationxs_legal = QC.oneof [ simples, dura ]
+gen_Durationxs_legal = QC.oneof [ simples, dura, dura, dura, dura ]
   where
-    simples = QC.elements [ "P2Y6M5DT12H35M30S"
+    simples = QC.elements [ "P2Y6M5DT12H35M30S" -- simples should be made into unit tests instead of QC.                                             -- ⚠
                           , "P1DT2H"
                           , "P20M"
                           , "PT20M"
@@ -345,12 +341,12 @@ gen_Durationxs_legal = QC.oneof [ simples, dura ]
                           , "-P60D"
                           , "PT1M30.5S"
                           ]
-    dura = gen_duration_where (const True)
+    dura = gen_duration_where (const True) (const $ QC.choose (0,9999))
 
 gen_Durationxs_illegal :: QC.Gen Text
-gen_Durationxs_illegal = QC.oneof [ simples, reversed ]
+gen_Durationxs_illegal = QC.oneof [ simples, reversed, reversed, reversed, reversed ]
   where
-    simples = QC.elements [ "P-20M"
+    simples = QC.elements [ "P-20M" -- simples should be made into unit tests instead of QC.                                                         -- ⚠
                           , "P20MT"
                           , "P1YM5D"
                           , "P15.5Y"
@@ -368,28 +364,28 @@ gen_Durationxs_illegal = QC.oneof [ simples, reversed ]
       where
         mF T_do = pure "T"
         mF S_do = do
-          ns <- QC.choose ((0,999999999) :: (Int64, Int64))
+          ns <- QC.choose ((0,999999999) :: (Word64, Word64))
           zs <- QC.elements [T.replicate x "0" | x <- [0..7]]
-          n <- gen_Int_1000
+          n <- QC.choose ((0,999) :: (Word32, Word32))
           pure $ T.concat [tshow n, ".", T.take 9 (T.append zs (tshow ns)), doShow S_do]
         mF x_do = do
-          n <- gen_Int_1000
+          n <- QC.choose ((0,999) :: (Word32, Word32))
           pure $ T.concat [tshow n, doShow x_do]
 
 gen_YearMonthDuration_legal :: QC.Gen Text
-gen_YearMonthDuration_legal = QC.oneof [ simples, dura ]
+gen_YearMonthDuration_legal = QC.oneof [ simples, dura, dura, dura, dura ]
   where
-    simples = QC.elements [ "P2Y6M"
+    simples = QC.elements [ "P2Y6M" -- simples should be made into unit tests instead of QC.                                                         -- ⚠
                           , "P20M"
                           , "P0Y20M0D"
                           , "P0Y"
                           ]
-    dura = gen_duration_where (all (<= M_do))
+    dura = gen_duration_where (all (<= M_do)) (const $ QC.choose (0,9999))
 
 gen_YearMonthDuration_illegal :: QC.Gen Text
-gen_YearMonthDuration_illegal = QC.oneof [ simples, dura ]
+gen_YearMonthDuration_illegal = QC.oneof [ simples, dura, dura, dura, dura ]
   where
-    simples = QC.elements [ "P-20M"
+    simples = QC.elements [ "P-20M" -- simples should be made into unit tests instead of QC.                                                         -- ⚠
                           , "P20MT"
                           , "P1YM5D"
                           , "P15.5Y"
@@ -404,12 +400,16 @@ gen_YearMonthDuration_illegal = QC.oneof [ simples, dura ]
                           , "-P60D"
                           , "PT1M30.5S"
                           ]
-    dura = gen_duration_where (\(start:_) -> start > M_do) -- This will break if day, hour, etc. contain 0. Fix it!                                  -- ⚠
+    dura = gen_duration_where (\(start:_) -> start > M_do) genF
+    genF T_do = error "Calling for a number here is rubbish."                                                                                        -- ⛞
+    genF x_do | x_do <= M_do = QC.choose (0,9999)
+              | otherwise    = QC.choose (1,9999)
+
 
 gen_DayTimeDuration_legal :: QC.Gen Text
-gen_DayTimeDuration_legal = QC.oneof [ simples, dura ]
+gen_DayTimeDuration_legal = QC.oneof [ simples, dura, dura, dura, dura ]
   where
-    simples = QC.elements [ "P0Y"
+    simples = QC.elements [ "P0Y" -- simples should be made into unit tests instead of QC.                                                           -- ⚠
                           , "P1DT2H"
                           , "PT20M"
                           , "-P60D"
@@ -417,12 +417,12 @@ gen_DayTimeDuration_legal = QC.oneof [ simples, dura ]
                           , "PT20M"
                           , "P1DT2H"
                           ]
-    dura = gen_duration_where (\(start:_) -> start >= D_do)
+    dura = gen_duration_where (\(start:_) -> start >= D_do) (const $ QC.choose (0,9999))
 
 gen_DayTimeDuration_illegal :: QC.Gen Text
-gen_DayTimeDuration_illegal = QC.oneof [ simples, dura ]
+gen_DayTimeDuration_illegal = QC.oneof [ simples, dura, dura, dura, dura ]
   where
-    simples = QC.elements [ "P2Y6M"
+    simples = QC.elements [ "P2Y6M" -- simples should be made into unit tests instead of QC.                                                         -- ⚠
                           , "P20M"
                           , "P0Y20M0D"
                           , "P-20M"
@@ -435,7 +435,10 @@ gen_DayTimeDuration_illegal = QC.oneof [ simples, dura ]
                           , "PT15.S"
                           , "P2Y6M5DT12H35M30S"
                           ]
-    dura = gen_duration_where (\(start:_) -> start < D_do) -- This will break if year/month are 0. Fix it!                                           -- ⚠
+    dura = gen_duration_where (\(start:_) -> start < D_do) genF
+    genF T_do = error "Calling for a number here is rubbish."                                                                                        -- ⛞
+    genF x_do | x_do <= M_do = QC.choose (1,9999)
+              | otherwise    = QC.choose (0,9999)
 
 gen_Floatxs_legal :: QC.Gen Text
 gen_Floatxs_legal = QC.oneof [ gen_Decimal_legal, simples, decimalPlus]
