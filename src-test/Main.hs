@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification #-}
-{-| Time-stamp: <2019-06-11 12:41:01 CDT>
+{-| Time-stamp: <2019-06-11 12:51:09 CDT>
 
 Module      : Main
 Copyright   : (c) Robert Lee, 2017-2018
@@ -123,7 +123,6 @@ import qualified Test.QuickCheck           as Q
 import qualified Test.QuickCheck.Gen       as Q
 import qualified Test.QuickCheck.Modifiers as Q
 import qualified Test.SmallCheck           as S
--- import qualified Test.Tasty.Ingredients.FailFast as TF -- This is not working to stop a test group.
 import qualified Test.Tasty.Options        as TO
 import qualified Test.Tasty.QuickCheck     as QC
 import qualified Test.Tasty.SmallCheck     as TS
