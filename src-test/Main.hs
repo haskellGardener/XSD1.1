@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification #-}
-{-| Time-stamp: <2019-06-11 12:51:09 CDT>
+{-| Time-stamp: <2019-06-12 12:38:58 CDT>
 
 Module      : Main
 Copyright   : (c) Robert Lee, 2017-2018
@@ -234,7 +234,14 @@ multiTests = join
   ]
 
 multi :: (Transformatio a, Eq a) => Int -> Int -> TestOpts a -> String -> QC.Gen Text -> QC.Gen Text -> (Text -> Maybe a) -> [] TestTree
-multi tests m TestOpts {..} title gen_legal_pp gen_illegal_pp fac_pp =
+multi tests          -- Int
+      m              -- Int
+      TestOpts {..}  -- TestOpts a
+      title          -- String
+      gen_legal_pp   -- QC.Gen Text
+      gen_illegal_pp -- QC.Gen Text
+      fac_pp         -- (Text -> Maybe a)
+    =
     [ qctests tests       (title ++ " Idempotent canon WS"  ) (prop_legal   (gen_WS gen_legal_pp)   idempotentC )
     , qctests tests       (title ++ " Idempotent canon"     ) (prop_legal   gen_legal_pp            idempotentC )
     , qctests tests       (title ++ " Idempotent scribe WS" ) (prop_legal   (gen_WS gen_legal_pp)   idempotentS )
