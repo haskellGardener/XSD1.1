@@ -1,9 +1,9 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, TupleSections
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-08 16:39:11 CDT>
+{-| Time-stamp: <2019-06-12 16:22:11 CDT>
 
 Module      : Regex
-Copyright   : (c) Robert Lee, 2017-2018
+Copyright   : Robert Lee, © 2017-2019
 License     : ISC
 
 Maintainer  : robert.lee@chicago.vc

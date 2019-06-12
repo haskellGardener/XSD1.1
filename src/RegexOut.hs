@@ -1,9 +1,9 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2018-07-08 17:14:40 CDT>
+{-| Time-stamp: <2019-06-12 16:22:20 CDT>
 
 Module      : RegexOut
-Copyright   : (c) Robert Lee, 2017-2018
+Copyright   : Robert Lee, © 2017-2019
 License     : ISC
 
 Maintainer  : robert.lee@chicago.vc
