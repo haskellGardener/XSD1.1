@@ -87,7 +87,6 @@ test-suite XMLstudy-test
                    , hourglass
                    , smallcheck
                    , tasty >= 0.11
-                   -- , tasty-fail-fast
                    , tasty-hunit >= 0.9
                    , tasty-quickcheck
                    , tasty-smallcheck
