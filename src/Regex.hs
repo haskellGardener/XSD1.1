@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, TupleSections
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2019-06-12 16:22:11 CDT>
+{-| Time-stamp: <2019-08-19 15:12:18 CDT>
 
 Module      : Regex
 Copyright   : Robert Lee, © 2017-2019
@@ -93,10 +93,10 @@ import Data.Attoparsec.Text
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 
 -- Objectives
--- 1. Create AST from XSD regex     : Take XML Schema 1.1 regex string and produce Aeson Parser AST.
--- 2. Create XSD regex from AST     : Take Aeson Parser AST and produce XML Schema 1.1 regex string.
--- 3. Validate string               : Take (XML string, Aeson Parser AST) and produce {True, False}.
--- 4. Create non-XSD regex from AST : Take Aeson Parser AST and produce non-XML Schema 1.1 regex string.
+-- 1. Create AST from XSD regex     : Take XML Schema 1.1 regex string and produce Attoparsec Parser AST.
+-- 2. Create XSD regex from AST     : Take Attoparsec Parser AST and produce XML Schema 1.1 regex string.
+-- 3. Validate string               : Take (XML string, Attoparsec Parser AST) and produce {True, False}.
+-- 4. Create non-XSD regex from AST : Take Attoparsec Parser AST and produce non-XML Schema 1.1 regex string.
 
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 -- TransRegex stanzas
