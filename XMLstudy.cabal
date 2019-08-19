@@ -7,7 +7,7 @@ license:             ISC
 license-file:        LICENSE
 author:              Robert Lee
 maintainer:          robert.lee@chicago.vc
-copyright:           © 2017-2018 Robert Lee
+copyright:           Robert Lee, © 2017-2019
 homepage:            https://github.com/haskellGardener/XMLstudy
 bug-reports:         https://github.com/haskellGardener/XMLstudy/issues
 
@@ -87,7 +87,6 @@ test-suite XMLstudy-test
                    , hourglass
                    , smallcheck
                    , tasty >= 0.11
-                   -- , tasty-fail-fast
                    , tasty-hunit >= 0.9
                    , tasty-quickcheck
                    , tasty-smallcheck
