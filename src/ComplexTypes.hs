@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-10-25 13:04:45 CDT>
+{-| Time-stamp: <2019-10-25 13:15:04 CDT>
 
 Module      : ComplexTypes
 Copyright   : Robert Lee, © 2017-2019
@@ -117,9 +117,9 @@ data Variety = VarietyEmpty        -- Placeholder
              | VarietyElementOnly  -- Placeholder
              | VarietyMixed        -- Placeholder
 
-data Particle = Particle -- Placeholder, may become a typeclass.
-
-data OpenContentPropertyRecord      = OpenContentPropertyRecord       -- Placeholder
+data Particle   = Particle   -- Placeholder, may become a typeclass.
+data Interleave = Interleave -- Placeholder
+data Suffix     = Suffix     -- Placeholder
 data SimpleTypeDefinitionCompontent = SimpleTypeDefinitionCompontent  -- Placeholder
 
 
@@ -130,6 +130,10 @@ data ContentTypePropertyRecord = ContentTypePropertyRecord
   , simpleTypeDefinition :: Maybe SimpleTypeDefinitionCompontent
   }
 
+data OpenContentPropertyRecord = OpenContentPropertyRecord       -- Placeholder
+  { mode     :: Either Interleave Suffix
+  , wildcard :: WildcardCompontent
+  }
 
 {-
 See:
