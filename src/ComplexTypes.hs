@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-10-25 13:15:04 CDT>
+{-| Time-stamp: <2019-10-25 13:58:32 CDT>
 
 Module      : ComplexTypes
 Copyright   : Robert Lee, © 2017-2019
@@ -50,7 +50,7 @@ module ComplexTypes where
 
 -- Local Imports
 
--- import Builtin
+import Builtin
 
 -- Explicit Imports
 
@@ -61,7 +61,7 @@ module ComplexTypes where
 -- import Data.Maybe ( fromJust                       )
 -- import Data.Word  ( Word16, Word8                  )
 
-import qualified Data.Map as M
+-- import qualified Data.Map as M
 
 -- Qualified Imports
 
@@ -74,8 +74,8 @@ import qualified Data.Set as S
 
 -- Undisciplined Imports
 
-import Text.Hamlet.XML
-import Text.XML
+-- import Text.Hamlet.XML
+-- import Text.XML
 
 import ClassyPrelude
 
@@ -89,7 +89,7 @@ data AnnotationCompontent      = AnnotationCompontent      -- Placeholder, may b
 data AssertionComponent        = AssertionComponent        -- Placeholder, may become a typeclass.
 data AttributeUseCompontent    = AttributeUseCompontent    -- Placeholder, may become a typeclass.
 data ComplexTypeDeclaration    = ComplexTypeDeclaration    -- Placeholder, may become a typeclass.
-data ContentTypePropertyRecord = ContentTypePropertyRecord -- Placeholder, may become a typeclass.
+-- data ContentTypePropertyRecord = ContentTypePropertyRecord -- Placeholder, may become a typeclass.
 data ElementDeclaration        = ElementDeclaration        -- Placeholder, may become a typeclass.
 data Extension                 = Extension                 -- Placeholder, may become a typeclass.
 data Restriction               = Restriction               -- Placeholder, may become a typeclass.

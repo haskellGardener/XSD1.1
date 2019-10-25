@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2019-08-20 12:59:41 CDT>
+{-| Time-stamp: <2019-10-25 14:49:46 CDT>
 
 Module      : Builtin
 Copyright   : Robert Lee, © 2017-2019
@@ -336,7 +336,7 @@ class Transformatio a where  -- Transformatio ➙ transform
 
 class Aggregatio a b where   -- Aggregatio    ➙ Aggregate
   contrahe :: [b] -> Maybe a -- contrahe      ➙ assemble
-  dividite :: a -> [b]       -- dividite      ➙ divide
+  divide :: a -> [b]         -- divide        ➙ divide
 
 -- Facets ------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -491,9 +491,9 @@ newtype Pattern = Pattern Text -- Placeholder
 
 -- 4.3.5 enumeration -- This is a value-based facet.
 
-class FacetEnum a base where
-  enumC :: Maybe ([Annotation], [base], (base -> Bool), a) -- Do not evaluate 'a'. It is used for identifying the instance Type.
-  enumC = Nothing
+-- class FacetEnum a base where
+--   enumC :: Maybe ([Annotation], [base], (base -> Bool), a) -- Do not evaluate 'a'. It is used for identifying the instance Type.
+--   enumC = Nothing -- Placeholder
 
 type Assertion = () -- Placeholder
 
@@ -504,23 +504,23 @@ data ExplicitTimezone = TZOffRequired
 data Ords = OrdFalse
           | OrdPartial
           | OrdTotal
-            deriving (Show, Eq)
+            deriving (Eq, Ord, Show)
 
 data Cardinalities = CardFinite
                    | CardInfinite
-                     deriving (Show, Eq)
+                     deriving (Eq, Ord, Show)
 
 data WhiteSpace = WSPreserve
                 | WSCollapse
                 | WSReplace
-                  deriving (Show, Eq, Ord)
+                  deriving (Eq, Ord, Show)
 
 class AnySimpleType a => FacetC a where
-  facetOrdC         :: a -> Ords                                                   -- Value-based facet. See F.1 Fundamental Facets.
-  facetBoundedC     :: a -> Bool                                                   -- Value-based facet. See F.1 Fundamental Facets.
-  facetCardinalityC :: a -> Cardinalities                                          -- Value-based facet. See F.1 Fundamental Facets.
-  facetNumericC     :: a -> Bool                                                   -- Value-based facet. See F.1 Fundamental Facets.
-  facetWhiteSpace   :: a -> (Bool, WhiteSpace, [Annotation])                       -- Pre-lexical facet. Bool represents Fixed.
+  facetOrdC         :: a -> Ords                             -- Value-based facet. See F.1 Fundamental Facets.
+  facetBoundedC     :: a -> Bool                             -- Value-based facet. See F.1 Fundamental Facets.
+  facetCardinalityC :: a -> Cardinalities                    -- Value-based facet. See F.1 Fundamental Facets.
+  facetNumericC     :: a -> Bool                             -- Value-based facet. See F.1 Fundamental Facets.
+  facetWhiteSpace   :: a -> (Bool, WhiteSpace, [Annotation]) -- Pre-lexical facet. Bool represents Fixed.
 
                                         -- Fixed        Value          Validator
   minLength         :: Maybe ([Annotation], Bool, NonNegativeInteger, (a -> Bool)) -- Value-based facet. Bool represents Fixed.
@@ -928,7 +928,7 @@ data AnyAtomicTypes = AA_Base64Binary       Base64Binary
                     | AA_UnsignedLong       UnsignedLong
                     | AA_UnsignedShort      UnsignedShort
                     | AA_YearMonthDuration  YearMonthDuration
-                    deriving (Show, Eq)
+                    deriving (Eq, Ord, Show)
 
 data AnySimpleTypes = AS_Base64Binary       Base64Binary
                     | AS_Boolean            Boolean
@@ -974,7 +974,7 @@ data AnySimpleTypes = AS_Base64Binary       Base64Binary
                     | AS_UnsignedLong       UnsignedLong
                     | AS_UnsignedShort      UnsignedShort
                     | AS_YearMonthDuration  YearMonthDuration
-                    deriving (Show, Eq)
+                    deriving (Eq, Ord, Show)
 
 -- Plain XML stuff -------------------------------------------------------------------------------------------------------------------------------------
 -- Names and Tokens (See https://www.w3.org/TR/REC-xml/#NT-Name)
@@ -992,14 +992,14 @@ i_p189P :: (Integral i) => i -> Bool -- This works even when Int is 32 bits.
 i_p189P = i64_p189P . fromIntegral
 
 newtype Name = Name Text
-               deriving (Eq, Show)
+               deriving (Eq, Ord, Show)
 
 instance Transformatio Name
   where scribe (Name text) = text
         fac = parseCollapse nameParser
 
 newtype Names = Names [Name]
-                deriving (Eq, Show)
+                deriving (Eq, Ord, Show)
 
 instance Transformatio Names
   where scribe (Names names) = T.intercalate " " $ map scribe names
@@ -1008,7 +1008,7 @@ instance Transformatio Names
 instance Aggregatio Names Name
   where contrahe [] = Nothing
         contrahe x = Just $ Names x
-        dividite (Names xs) = xs
+        divide (Names xs) = xs
 
 newtype NMTOKEN = NMTOKEN Text
                   deriving (Eq, Ord, Read, Show)
@@ -1027,7 +1027,7 @@ instance Transformatio NMTOKENS
 instance Aggregatio NMTOKENS NMTOKEN
   where contrahe [] = Nothing
         contrahe nmtokenList = Just $ NMTOKENS nmtokenList
-        dividite (NMTOKENS nmtokenList) = nmtokenList
+        divide (NMTOKENS nmtokenList) = nmtokenList
 
 nameStartCharPattern :: Text
 nameStartCharPattern = "\":\" | [A-Z] | \"_\" | [a-z] | [#xC0-#xD6] | [#xD8-#xF6]\
@@ -1105,7 +1105,7 @@ nmtokensParser = do
 -- NCN Non Colonized Names  (See https://www.w3.org/TR/xmlschema11-2/, https://www.w3.org/TR/xml-names11/#ns-qualnames)
 
 newtype NCName = NCName Text
-                 deriving (Eq, Show)
+                 deriving (Eq, Ord, Show)
 
 instance Transformatio NCName
   where scribe (NCName text) = text
@@ -1145,7 +1145,7 @@ type LocalPart = NCName
 
 data QName = PrefixedName Prefix LocalPart
            | UnprefixedName LocalPart
-             deriving (Eq, Show)
+             deriving (Eq, Ord, Show)
 
 instance Transformatio QName where
   fac = parseCollapse qNameParser
@@ -1164,7 +1164,7 @@ qNameParser =
   <|> (nCNameParser >>= pure . UnprefixedName) -- This will work if the calling parser is anchored on the end.
 
 newtype NOTATION = NOTATION QName
-                     deriving (Eq, Show)
+                     deriving (Eq, Ord, Show)
 
 instance Transformatio NOTATION where
   fac = fmap NOTATION . parseCollapse qNameParser
@@ -1190,7 +1190,7 @@ booleanParser =
   (string "false" <|> string "0" >> pure (Boolean False))
 
 newtype Stringxs = Stringxs Text
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
 
 instance Transformatio Stringxs
   where scribe (Stringxs text) = text
@@ -1211,7 +1211,7 @@ stringXMLparser =
 -- [2a] RestrictedChar ::= [#x1-#x8] | [#xB-#xC] | [#xE-#x1F] | [#x7F-#x84] | [#x86-#x9F]
 
 newtype NormalizedString = NormalizedString Text
-        deriving (Eq, Show)
+        deriving (Eq, Ord, Show)
 
 instance Transformatio NormalizedString
   where scribe (NormalizedString text) = text
@@ -1220,7 +1220,7 @@ instance Transformatio NormalizedString
                           Right () -> Just . NormalizedString $ replaceXmlWhite candidate
 
 newtype Token = Token Text
-                deriving (Eq, Show)
+                deriving (Eq, Ord, Show)
 
 instance Transformatio Token
   where scribe (Token text) = text
@@ -1229,7 +1229,7 @@ instance Transformatio Token
                           Right () -> Just . Token . collapse $ candidate
 
 newtype ID = ID Text
-             deriving (Eq, Show)
+             deriving (Eq, Ord, Show)
 
 instance Transformatio ID
   where scribe (ID text) = text
@@ -1239,7 +1239,7 @@ nCNameToID :: NCName -> ID
 nCNameToID (NCName text) = ID text
 
 newtype IDREF = IDREF Text
-        deriving (Eq, Show)
+        deriving (Eq, Ord, Show)
 
 instance Transformatio IDREF
   where scribe (IDREF text) = text
@@ -1249,7 +1249,7 @@ nCNameToIDREF :: NCName -> IDREF
 nCNameToIDREF (NCName text) = IDREF text
 
 newtype IDREFS = IDREFS [IDREF]
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance Transformatio IDREFS
   where scribe (IDREFS idrefs) = T.intercalate " " $ map scribe idrefs
@@ -1258,7 +1258,7 @@ instance Transformatio IDREFS
 instance Aggregatio IDREFS IDREF
   where contrahe [] = Nothing
         contrahe idref = Just $ IDREFS idref
-        dividite (IDREFS idrefs) = idrefs
+        divide (IDREFS idrefs) = idrefs
 
 iDREFSParser :: Parser IDREFS
 iDREFSParser = do
@@ -1267,7 +1267,7 @@ iDREFSParser = do
   pure . IDREFS $ idref:idrefs
 
 newtype ENTITY = ENTITY Text
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 instance Transformatio ENTITY
   where scribe (ENTITY text) = text
@@ -1277,7 +1277,7 @@ nCNameToENTITY :: NCName -> ENTITY
 nCNameToENTITY (NCName text) = ENTITY text
 
 newtype ENTITIES = ENTITIES [ENTITY]
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance Transformatio ENTITIES
   where scribe (ENTITIES entities) = T.intercalate " " $ map scribe entities
@@ -1286,7 +1286,7 @@ instance Transformatio ENTITIES
 instance Aggregatio ENTITIES ENTITY
   where contrahe [] = Nothing
         contrahe x = Just $ ENTITIES x
-        dividite (ENTITIES xs) = xs
+        divide (ENTITIES xs) = xs
 
 entitiesParser :: Parser ENTITIES
 entitiesParser = do
@@ -1295,7 +1295,7 @@ entitiesParser = do
   pure . ENTITIES $ entity:entities
 
 newtype HexBinary = HexBinary B.ByteString
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
 
 instance Res HexBinary B.ByteString
   where redde (HexBinary bytestring) = bytestring
@@ -1316,7 +1316,7 @@ hexBinaryParser = do
     hexOctet = count 2 (satisfy $ inClass "A-Fa-f0-9") >>= pure . B8.pack
 
 newtype Base64Binary = Base64Binary B.ByteString
-    deriving (Eq, Show)
+    deriving (Eq, Show, Ord)
 
 instance Res Base64Binary B.ByteString
   where redde (Base64Binary bytestring) = bytestring
@@ -1335,7 +1335,7 @@ instance Transformatio Base64Binary
 -- The lexical space of Base64Binary should be more closely inspected.                                                                               -- ⚠
 
 newtype Language = Language Token
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
 
 instance Transformatio Language
   where scribe (Language token) = scribe token
@@ -1639,7 +1639,7 @@ decimalParser = do
                        ++ (null fracdigits ? "" $ decpoint ++ fracdigits) -- On empty fracdigits don't present a decimal point lest read error.      -- ⚡
 
 newtype Floatxs = Floatxs Float
-     deriving (Eq, Show)
+     deriving (Eq, Ord, Show)
 
 instance Transformatio Floatxs
   where fac = parseCollapse floatxsParser
@@ -1691,7 +1691,7 @@ floatxsParser = choice [floatxs, inf, notANumber]
 
 -- Doublexs is the same code as Floatxs except for minor Double vs Float type annotations.
 newtype Doublexs = Doublexs Double
-     deriving (Eq, Show)
+     deriving (Eq, Ord, Show)
 
 instance Transformatio Doublexs
   where fac = parseCollapse doublexsParser
@@ -1759,7 +1759,7 @@ periodMaxN | (maxBound :: Int) > ((2 :: Int) ^ (31 :: Int)) = 18
 -- defaultDurationxs = Durationxs False (H.Period 0 0 0) (H.Duration 0 0 0 0)
 
 data Durationxs = Durationxs Bool H.Period H.Duration
-  deriving (Show)
+  deriving (Ord, Show) -- NB Eq instance manually defined below.
 
 instance Res Durationxs (Bool, H.Period, H.Duration)
   where redde (Durationxs n p d) = (n, p, d)
@@ -1950,7 +1950,7 @@ durationxsParser = do
         unsafeStringToNS = fromJust . mStringToNS
 
 newtype YearMonthDuration = YearMonthDuration Durationxs
-  deriving (Show, Eq)
+  deriving (Eq, Ord, Show)
 
 instance Transformatio YearMonthDuration
   where fac candidate = do ymd <- parseCollapse durationxsParser $ candidate
@@ -1975,7 +1975,7 @@ instance Res YearMonthDuration (Bool, H.Period)
         recipe _ = Nothing
 
 newtype DayTimeDuration = DayTimeDuration Durationxs
-  deriving (Show, Eq)
+  deriving (Eq, Ord, Show)
 
 instance Transformatio DayTimeDuration
   where fac candidate = do dtdur <- parseCollapse durationxsParser $ candidate
@@ -2045,7 +2045,7 @@ gTzOffP (Just H.TimezoneOffset {..}) = inRange (-840, 840) timezoneOffsetToMinut
 data GYear = GYear { gYear :: Int
                    , gYearTzOff :: Maybe H.TimezoneOffset
                    }
-             deriving (Show, Eq)
+             deriving (Eq, Ord, Show)
 
 instance Transformatio GYear
   where fac candidate = parseCollapse gYearParser $ candidate
@@ -2088,7 +2088,7 @@ gYearParser = do
 data GMonth = GMonth { gMonth      :: Int
                      , gMonthTzOff :: Maybe H.TimezoneOffset
                      }
-              deriving (Show, Eq)
+              deriving (Show, Ord, Eq)
 
 instance Transformatio GMonth
   where fac candidate = parseCollapse gMonthParser $ candidate
@@ -2119,7 +2119,7 @@ gMonthParser = do
 data GDay = GDay { gDay :: Int
                  , gDayTzOff :: Maybe H.TimezoneOffset
                  }
-            deriving (Show, Eq)
+            deriving (Eq, Ord, Show)
 
 instance Transformatio GDay
   where fac candidate = parseCollapse gDayParser $ candidate
@@ -2153,7 +2153,7 @@ data GYearMonth = GYearMonth { gYMYear         :: Int -- The year can be negativ
                              , gYMonth         :: Int -- The month is never negative
                              , gYearMonthTzOff :: Maybe H.TimezoneOffset
                              }
-                  deriving (Show, Eq)
+                  deriving (Eq, Ord, Show)
 
 instance Transformatio GYearMonth
   where fac candidate = parseCollapse gYearMonthParser $ candidate
@@ -2193,7 +2193,7 @@ data GMonthDay = GMonthDay { gMDMonth       :: Int
                            , gMDay          :: Int
                            , gMonthDayTzOff :: Maybe H.TimezoneOffset
                            }
-                  deriving (Show, Eq)
+                  deriving (Eq, Ord, Show)
 
 instance Transformatio GMonthDay
   where fac candidate = parseCollapse gMonthDayParser $ candidate
@@ -2251,7 +2251,7 @@ data Datexs = Datexs { dateYear  :: Int -- The year can be negative
                      , dateDay   :: Int
                      , dateTzOff :: Maybe H.TimezoneOffset
                      }
-              deriving (Show, Eq)
+              deriving (Eq, Ord, Show)
 
 instance Transformatio Datexs
   where fac candidate = parseCollapse datexsParser $ candidate
@@ -2306,7 +2306,7 @@ yearMonthDayP year month day = H.daysInMonth year (toEnum $ month - 1) >= day
 data Timexs = Timexs { timeOfDay :: H.TimeOfDay
                      , timeTzOff :: Maybe H.TimezoneOffset
                      }
-              deriving (Show, Eq)
+              deriving (Eq, Ord, Show)
 
 instance Transformatio Timexs
   where fac candidate = parseCollapse timexsParser $ candidate
@@ -2383,7 +2383,7 @@ data DateTimexs = DateTimexs { dateTimeYear  :: Int -- The year can be negative
                              , dateTimeOfDay :: H.TimeOfDay
                              , dateTimeTzOff :: Maybe H.TimezoneOffset
                              }
-                  deriving (Show, Eq)
+                  deriving (Eq, Ord, Show)
 
 dateTimexsParser :: Parser DateTimexs
 dateTimexsParser = do
@@ -2460,7 +2460,7 @@ data DateTimeStampxs = DateTimeStampxs Int -- The year can be negative
                                        Int
                                        H.TimeOfDay
                                        H.TimezoneOffset -- DateTimeStamp has timezone as mandatory unlike DateTime.
-                       deriving (Show, Eq)
+                       deriving (Eq, Ord, Show)
 
 
 -- data DateTimeStampxs = DateTimeStampxs { dateTimeStampYear  :: Int -- The year can be negative
