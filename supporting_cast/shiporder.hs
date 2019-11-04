@@ -52,17 +52,17 @@ data Miscellaneous
 
 -}
 
-Document
-  { documentPrologue = Prologue
-      { prologueBefore = []
-      , prologueDoctype = Nothing
-      , prologueAfter = []
+Document -- :: Document
+  { documentPrologue = Prologue -- :: Prologue
+      { prologueBefore  = []      -- :: [] Miscellaneous
+      , prologueDoctype = Nothing -- :: Maybe Doctype
+      , prologueAfter   = []      -- :: [] Miscellaneous
       }
   , documentRoot = Element                                                                     -- <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
       { elementName = Name
           { nameLocalName = "schema"                                -- :: Text
           , nameNamespace = Just "http://www.w3.org/2001/XMLSchema" -- :: Maybe Text
-          , namePrefix = Just "xs"                                  -- :: Maybe Text
+          , namePrefix    = Just "xs"                               -- :: Maybe Text
           }
       , elementAttributes = fromList [] -- :: Map Name Text
       , elementNodes =
@@ -72,14 +72,14 @@ Document
                   { elementName = Name
                       { nameLocalName = "element"                               -- :: Text
                       , nameNamespace = Just "http://www.w3.org/2001/XMLSchema" -- :: Maybe Text
-                      , namePrefix = Just "xs"                                  -- :: Maybe Text
+                      , namePrefix    = Just "xs"                               -- :: Maybe Text
                       }
                   , elementAttributes = fromList -- :: Map Name Text
                       [
                           ( Name
                               { nameLocalName = "name"  -- :: Text
                               , nameNamespace = Nothing -- :: Maybe Text
-                              , namePrefix = Nothing    -- :: Maybe Text
+                              , namePrefix    = Nothing -- :: Maybe Text
                               }
                           , "shiporder" -- :: Text
                           )
