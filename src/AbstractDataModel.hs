@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-11-04 14:39:24 CST>
+{-| Time-stamp: <2019-11-04 15:41:37 CST>
 
 Module      : AbstractDataModel
 Copyright   : Robert Lee, © 2017-2019
@@ -101,11 +101,31 @@ data XSDSchema = SchemaComponents
 
 processing :: IO ()
 processing = do
-  docx <- readFile def "/home/robert/Projects/XSD1.1/supporting_cast/shiporder.xsd"
+  docx <- readFile parseSettings "/home/robert/Projects/XSD1.1/supporting_cast/shiporder.xsd"
   pPrint docx
   putStr "\n"
+  where parseSettings = def { psRetainNamespaces = True } -- This is important!                                                                      -- ⚡
 
 
+{-
+
+instance Default ParseSettings where
+    def = ParseSettings
+        { psDecodeEntities = decodeXmlEntities
+        , psRetainNamespaces = False
+        , psDecodeIllegalCharacters = const Nothing
+        }
+
+
+instance Default RenderSettings where
+    def = RenderSettings
+        { rsPretty = False
+        , rsNamespaces = []
+        , rsAttrOrder = const Map.toList
+        , rsUseCDATA = const False
+        , rsXMLDeclaration = True
+        }
+-}
 {-
 
 2.2 XSD Abstract Data Model

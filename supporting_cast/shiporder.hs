@@ -58,25 +58,34 @@ Document -- :: Document
       , prologueDoctype = Nothing -- :: Maybe Doctype
       , prologueAfter   = []      -- :: [] Miscellaneous
       }
-  , documentRoot = Element                                                                     -- <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-      { elementName = Name
+  , documentRoot = Element -- :: Element                                                       -- <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      { elementName = Name -- :: Name
           { nameLocalName = "schema"                                -- :: Text
           , nameNamespace = Just "http://www.w3.org/2001/XMLSchema" -- :: Maybe Text
           , namePrefix    = Just "xs"                               -- :: Maybe Text
           }
-      , elementAttributes = fromList [] -- :: Map Name Text
-      , elementNodes =
+      , elementAttributes = fromList -- :: Map Name Text
+          [ 
+           ( Name -- :: Name                                                                   -- xmlns:xs="http://www.w3.org/2001/XMLSchema"
+             { nameLocalName = "xmlns:xs" -- :: Text      
+             , nameNamespace = Nothing    -- :: Maybe Text
+             , namePrefix    = Nothing    -- :: Maybe Text
+             } 
+           , "http://www.w3.org/2001/XMLSchema" -- :: Text
+           ) 
+          ]
+      , elementNodes = -- :: [Node]
           [ NodeContent "" -- :: Text
           , NodeElement    -- :: Element
-              ( Element                                                                                                  -- <xs:element name="shiporder">
-                  { elementName = Name
+              ( Element -- :: Element                                                                                    -- <xs:element name="shiporder">
+                  { elementName = Name -- :: Name
                       { nameLocalName = "element"                               -- :: Text
                       , nameNamespace = Just "http://www.w3.org/2001/XMLSchema" -- :: Maybe Text
                       , namePrefix    = Just "xs"                               -- :: Maybe Text
                       }
                   , elementAttributes = fromList -- :: Map Name Text
                       [
-                          ( Name
+                          ( Name -- :: Name
                               { nameLocalName = "name"  -- :: Text
                               , nameNamespace = Nothing -- :: Maybe Text
                               , namePrefix    = Nothing -- :: Maybe Text
@@ -84,14 +93,14 @@ Document -- :: Document
                           , "shiporder" -- :: Text
                           )
                       ]
-                  , elementNodes = -- elementNodes :: [Node]
-                      [ NodeContent "" -- NodeContent :: Text
-                      , NodeElement    -- NodeElement :: Element
-                          ( Element                                                                                      -- <xs:complexType>
-                              { elementName = Name
-                                  { nameLocalName = "complexType"
-                                  , nameNamespace = Just "http://www.w3.org/2001/XMLSchema"
-                                  , namePrefix = Just "xs"
+                  , elementNodes = -- :: [Node]
+                      [ NodeContent "" -- :: Text
+                      , NodeElement    -- :: Element
+                          ( Element    -- :: Element                                                                     -- <xs:complexType>
+                              { elementName = Name -- :: Name
+                                  { nameLocalName = "complexType"                           -- :: Text      
+                                  , nameNamespace = Just "http://www.w3.org/2001/XMLSchema" -- :: Maybe Text
+                                  , namePrefix    = Just "xs"                               -- :: Maybe Text
                                   }
                               , elementAttributes = fromList []
                               , elementNodes =
@@ -174,7 +183,7 @@ Document -- :: Document
                                                                               , elementAttributes = fromList []
                                                                               , elementNodes =
                                                                                   [ NodeContent ""
-                                                                                  , NodeElement   -- <xs:element name="name"    type="xs:string"/>
+                                                                                  , NodeElement   -- <xs:element name="name" type="xs:string"/>
                                                                                       ( Element
                                                                                           { elementName = Name
                                                                                               { nameLocalName = "element"
@@ -232,7 +241,7 @@ Document -- :: Document
                                                                                           }
                                                                                       )
                                                                                   , NodeContent ""
-                                                                                  , NodeElement   -- <xs:element name="city"    type="xs:string"/>
+                                                                                  , NodeElement   -- <xs:element name="city" type="xs:string"/>
                                                                                       ( Element
                                                                                           { elementName = Name
                                                                                               { nameLocalName = "element"
@@ -536,5 +545,5 @@ Document -- :: Document
           , NodeContent ""
           ]
       }
-  , documentEpilogue = []
+  , documentEpilogue = [] -- :: [Miscellaneous]
   }
