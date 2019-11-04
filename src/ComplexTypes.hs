@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-10-25 13:58:32 CDT>
+{-| Time-stamp: <2019-10-25 16:13:56 CDT>
 
 Module      : ComplexTypes
 Copyright   : Robert Lee, © 2017-2019
@@ -61,14 +61,14 @@ import Builtin
 -- import Data.Maybe ( fromJust                       )
 -- import Data.Word  ( Word16, Word8                  )
 
--- import qualified Data.Map as M
 
 -- Qualified Imports
 
+-- import qualified Data.Ix                   as Ix
 -- import qualified Data.List                 as DL
+-- import qualified Data.Map                  as M
 -- import qualified Data.Text                 as T
 -- import qualified Data.Text.Encoding        as TE
--- import qualified Data.Ix                   as Ix
 
 import qualified Data.Set as S
 
@@ -89,7 +89,6 @@ data AnnotationCompontent      = AnnotationCompontent      -- Placeholder, may b
 data AssertionComponent        = AssertionComponent        -- Placeholder, may become a typeclass.
 data AttributeUseCompontent    = AttributeUseCompontent    -- Placeholder, may become a typeclass.
 data ComplexTypeDeclaration    = ComplexTypeDeclaration    -- Placeholder, may become a typeclass.
--- data ContentTypePropertyRecord = ContentTypePropertyRecord -- Placeholder, may become a typeclass.
 data ElementDeclaration        = ElementDeclaration        -- Placeholder, may become a typeclass.
 data Extension                 = Extension                 -- Placeholder, may become a typeclass.
 data Restriction               = Restriction               -- Placeholder, may become a typeclass.
@@ -136,6 +135,40 @@ data OpenContentPropertyRecord = OpenContentPropertyRecord       -- Placeholder
   }
 
 {-
+
+2.2 XSD Abstract Data Model
+  2.2.1 Type Definition Components
+      2.2.1.1 Type Definition Hierarchy
+      2.2.1.2 Simple Type Definition
+      2.2.1.3 Complex Type Definition
+  2.2.2 Declaration Components
+      2.2.2.1 Element Declaration
+      2.2.2.2 Element Substitution Group
+      2.2.2.3 Attribute Declaration
+      2.2.2.4 Notation Declaration
+  2.2.3 Model Group Components
+      2.2.3.1 Model Group
+      2.2.3.2 Particle
+      2.2.3.3 Attribute Use
+      2.2.3.4 Wildcard
+  2.2.4 Constraint Components
+      2.2.4.1 Identity-constraint Definition
+      2.2.4.2 Type Alternative
+      2.2.4.3 Assertion
+      2.2.4.4 Overlapping Functionality of Constraint Components
+  2.2.5 Group Definition Components
+      2.2.5.1 Model Group Definition
+      2.2.5.2 Attribute Group Definition
+  2.2.6 Annotation Components
+
+
+
+
+
+
+
+
+
 See:
 https://www.w3.org/TR/xmlschema11-1/#Complex_Type_Definitions
 

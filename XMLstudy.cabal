@@ -33,6 +33,7 @@ library
                     , RecordWildCards
   hs-source-dirs:     src
   exposed-modules:    Builtin
+                    , AbstractDataModel
                     , ComplexTypes
                     , Lading
                     , Parsers
@@ -47,6 +48,7 @@ library
                     , classy-prelude
                     , containers
                     , hourglass
+                    , pretty-simple
                     , text
                     , xml-conduit
                     , xml-hamlet
