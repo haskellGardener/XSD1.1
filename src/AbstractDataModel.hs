@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-11-05 14:47:56 CST>
+{-| Time-stamp: <2019-11-05 16:36:55 CST>
 
 Module      : AbstractDataModel
 Copyright   : Robert Lee, © 2017-2019
@@ -45,6 +45,23 @@ infixr 0  $, $!, ‘seq‘
                           a timed race condition ⋅⋅⋅ 🏁
 ⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅
 -}
+
+
+{- 
+
+Some random project goals.
+
+xsd to Haskell accurate internal (not exposed) reification.
+Haskell accurate reification (not exposed) to exposed user types.
+Generate exposed user types based on the accurate reification.
+Provide the ability to attempt (Maybe) conversion of exposed user types to accurate reification.
+Generate correct XML (initially Data.XML) based on Haskell accurate reification (not exposed).
+Validation of xml based on xsd via Haskell accurate internal (not exposed) reification.
+
+-}
+
+
+
 
 module AbstractDataModel where
 
