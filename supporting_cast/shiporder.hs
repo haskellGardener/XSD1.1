@@ -22,9 +22,13 @@ data Doctype = Doctype { doctypeName :: Text
 
 data Node = NodeElement     Element
           | NodeInstruction Instruction
-          | NodeContent     Text
+          | NodeContent     Content
           | NodeComment     Text
             deriving (Data, Eq, Ord, Show, Typeable)
+
+data Content = ContentText Text
+             | ContentEntity Text -- ^ For pass-through parsing
+               deriving (Data, Eq, Ord, Show, Typeable)
 
 data Element = Element { elementName       :: Name
                        , elementAttributes :: Map.Map Name Text
@@ -102,8 +106,8 @@ Document -- :: Document
                                   , nameNamespace = Just "http://www.w3.org/2001/XMLSchema" -- :: Maybe Text
                                   , namePrefix    = Just "xs"                               -- :: Maybe Text
                                   }
-                              , elementAttributes = fromList []
-                              , elementNodes =
+                              , elementAttributes = fromList [] -- :: Map Name Text
+                              , elementNodes = -- :: [Node]
                                   [ NodeContent ""
                                   , NodeElement
                                       ( Element                                                                          -- <xs:sequence>

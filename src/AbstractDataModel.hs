@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-11-04 15:41:37 CST>
+{-| Time-stamp: <2019-11-05 14:47:56 CST>
 
 Module      : AbstractDataModel
 Copyright   : Robert Lee, © 2017-2019
@@ -54,17 +54,19 @@ module AbstractDataModel where
 
 -- Explicit Imports
 
+import Data.XML.Types --  (elementChildren, nodeChildren, Document (..))
 
 -- Qualified Imports
 
-import qualified Data.Set as S
+import qualified Data.Text as T
 
 -- Undisciplined Imports
 
-import Text.Pretty.Simple
+import Text.Pretty.Simple (pPrint) -- , pPrintNoColor)
 
-import Text.XML
-import ClassyPrelude hiding (readFile)
+import Text.XML.Unresolved (def, psRetainNamespaces, readFile)
+
+import Prelude hiding (readFile)
 
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -98,14 +100,42 @@ data XSDSchema = SchemaComponents
 
 -}
 
-
-processing :: IO ()
-processing = do
-  docx <- readFile parseSettings "/home/robert/Projects/XSD1.1/supporting_cast/shiporder.xsd"
-  pPrint docx
-  putStr "\n"
+getXSD :: FilePath -> IO Document
+getXSD path = readFile parseSettings path
   where parseSettings = def { psRetainNamespaces = True } -- This is important!                                                                      -- ⚡
 
+cleanPrint :: Document -> IO ()
+cleanPrint docx = do
+  pPrint $ docx { documentRoot = (documentRoot docx) { elementNodes = newElementNodes } } -- pPrintNoColor
+  putStr "\n"
+  where newElementNodes = walkNodes . elementNodes $ documentRoot docx
+
+walkNodes :: [] Node -> [] Node
+walkNodes [] = []
+walkNodes x = map (walkNode . cropEmptyContent) x
+
+walkNode :: Node -> Node
+walkNode (NodeElement element) = NodeElement element { elementNodes = walkNodes (elementNodes element) }
+walkNode x = x
+
+cropEmptyContent :: Node -> Node
+cropEmptyContent (NodeContent (ContentText x)) = NodeContent . ContentText $ T.strip x
+cropEmptyContent x = x
+
+shiporder :: IO ()
+shiporder = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/shiporder.xsd" >>= cleanPrint
+
+rxmp :: IO ()
+rxmp = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/rxmp.xsd" >>= cleanPrint
+
+purchaseOrder :: IO ()
+purchaseOrder = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/purchaseOrder.xsd" >>= cleanPrint
+
+irsbaseFactaNotification :: IO ()
+irsbaseFactaNotification = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/BASE-FATCA-NOTIFICATION-2.4.xsd" >>= cleanPrint
+
+irs_sdt :: IO ()
+irs_sdt = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/IRS-SDT.xsd" >>= cleanPrint
 
 {-
 
