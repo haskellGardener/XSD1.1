@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-11-05 16:36:55 CST>
+{-| Time-stamp: <2019-11-06 12:51:26 CST>
 
 Module      : AbstractDataModel
 Copyright   : Robert Lee, © 2017-2019
@@ -139,6 +139,11 @@ cropEmptyContent :: Node -> Node
 cropEmptyContent (NodeContent (ContentText x)) = NodeContent . ContentText $ T.strip x
 cropEmptyContent x = x
 
+-- Get various xsd/XML files and convert to Haskell.
+
+datatypes :: IO ()
+datatypes = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/datatypes.xsd" >>= cleanPrint
+                     
 shiporder :: IO ()
 shiporder = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/shiporder.xsd" >>= cleanPrint
 
@@ -153,6 +158,9 @@ irsbaseFactaNotification = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/
 
 irs_sdt :: IO ()
 irs_sdt = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/IRS-SDT.xsd" >>= cleanPrint
+
+irs_cbc :: IO ()
+irs_cbc = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/IRS-CBC.xsd" >>= cleanPrint
 
 {-
 
