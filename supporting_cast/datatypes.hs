@@ -1,4 +1,7 @@
-Document
+{-# LANGUAGE QuasiQuotes #-}
+import Text.RawString.QQ
+
+doc = Document
   { documentPrologue = Prologue
     { prologueBefore = []
     , prologueDoctype = Nothing
@@ -98,13 +101,16 @@ Document
                    )
                   ]
                 , elementNodes =
-                  [ NodeContent ( ContentText
-                                  "The schema corresponding to this document is normative,"
-                                \ "with respect to the syntactic constraints it expresses in the"
-                                \ "XML Schema language.  The documentation (within <documentation>"
-                                \ "elements) below, is not normative, but rather highlights important"
-                                \ "aspects of the W3C Recommendation of which this is a part"
-                                )
+                  [ NodeContent
+                    ( ContentText
+                      [r|
+      The schema corresponding to this document is normative,
+      with respect to the syntactic constraints it expresses in the
+      XML Schema language.  The documentation (within <documentation>
+      elements) below, is not normative, but rather highlights important
+      aspects of the W3C Recommendation of which this is a part
+                         |]
+                    )
                   ]
                 }
               )
@@ -132,10 +138,13 @@ Document
                   }
                 , elementAttributes = []
                 , elementNodes =
-                  [ NodeContent ( ContentText
-                                  "First the built-in primitive datatypes.  These definitions are for"
-                                \ "information only, the real built-in definitions are magic."
-                                )
+                  [ NodeContent
+                    ( ContentText
+                      [r|
+      First the built-in primitive datatypes.  These definitions are for
+      information only, the real built-in definitions are magic.
+                         |]
+                    )
                   ]
                 }
               )
@@ -151,34 +160,38 @@ Document
                 , elementNodes =
                   [ NodeContent
                     ( ContentText
-                      "For each built-in datatype in this schema (both primitive and"
-                      \ "derived) can be uniquely addressed via a URI constructed"
-                      \ "as follows:"
-                      \ "1) the base URI is the URI of the XML Schema namespace"
-                      \ "2) the fragment identifier is the name of the datatype"
-                      \ "For example, to address the int datatype, the URI is:"
+                      [r|
+      For each built-in datatype in this schema (both primitive and
+      derived) can be uniquely addressed via a URI constructed
+      as follows:
+        1) the base URI is the URI of the XML Schema namespace
+        2) the fragment identifier is the name of the datatype
 
-                      \ "http://www.w3.org/2001/XMLSchema#int"
+      For example, to address the int datatype, the URI is:
 
-                      \ "Additionally, each facet definition element can be uniquely"
-                      \ "addressed via a URI constructed as follows:"
-                      \ "1) the base URI is the URI of the XML Schema namespace"
-                      \ "2) the fragment identifier is the name of the facet"
+        http://www.w3.org/2001/XMLSchema#int
 
-                      \ "For example, to address the maxInclusive facet, the URI is:"
+      Additionally, each facet definition element can be uniquely
+      addressed via a URI constructed as follows:
+        1) the base URI is the URI of the XML Schema namespace
+        2) the fragment identifier is the name of the facet
 
-                      \ "http://www.w3.org/2001/XMLSchema#maxInclusive"
+      For example, to address the maxInclusive facet, the URI is:
 
-                      \ "Additionally, each facet usage in a built-in datatype definition"
-                      \ "can be uniquely addressed via a URI constructed as follows:"
-                      \ "1) the base URI is the URI of the XML Schema namespace"
-                      \ "2) the fragment identifier is the name of the datatype, followed"
-                      \ "by a period (\".\") followed by the name of the facet"
+        http://www.w3.org/2001/XMLSchema#maxInclusive
 
-                      \ "For example, to address the usage of the maxInclusive facet in"
-                      \ "the definition of int, the URI is:"
+      Additionally, each facet usage in a built-in datatype definition
+      can be uniquely addressed via a URI constructed as follows:
+        1) the base URI is the URI of the XML Schema namespace
+        2) the fragment identifier is the name of the datatype, followed
+           by a period (".") followed by the name of the facet
 
-                      \ "http://www.w3.org/2001/XMLSchema#int.maxInclusive"
+      For example, to address the usage of the maxInclusive facet in
+      the definition of int, the URI is:
+
+        http://www.w3.org/2001/XMLSchema#int.maxInclusive
+
+                         |]
                     )
                   ]
                 }
@@ -7589,11 +7602,15 @@ Document
                         }
                       , elementAttributes = []
                       , elementNodes =
-                        [ NodeContent ( ContentText "NOTATION cannot be used directly in a schema; rather a type"
-                                      \ "must be derived from it by specifying at least one enumeration"
-                                      \ "facet whose value is the name of a NOTATION declared in the"
-                                      \ "schema."
-                                      )
+                        [ NodeContent
+                          ( ContentText
+                            [r|
+      NOTATION cannot be used directly in a schema; rather a type
+      must be derived from it by specifying at least one enumeration
+      facet whose value is the name of a NOTATION declared in the
+      schema.
+                               |]
+                          )
                         ]
                       }
                     )

@@ -1,0 +1,58 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:prod="http://datypic.com/prod"
+           targetNamespace="http://datypic.com/prod">
+  <xs:annotation>
+    <xs:documentation source="../datatypes/datatypes-with-errata.html">
+      The schema corresponding to this document is normative,
+      with respect to the syntactic constraints it expresses in the
+      XML Schema language.  The documentation (within &lt;documentation>
+      elements) below, is not normative, but rather highlights important
+      aspects of the W3C Recommendation of which this is a part
+    </xs:documentation>
+  </xs:annotation>
+  <xs:annotation>
+    <xs:documentation>
+      First the built-in primitive datatypes.  These definitions are for
+      information only, the real built-in definitions are magic.
+    </xs:documentation>
+    <xs:documentation>
+      For each built-in datatype in this schema (both primitive and
+      derived) can be uniquely addressed via a URI constructed
+      as follows:
+        1) the base URI is the URI of the XML Schema namespace
+        2) the fragment identifier is the name of the datatype
+
+      For example, to address the int datatype, the URI is:
+
+        http://www.w3.org/2001/XMLSchema#int
+
+      Additionally, each facet definition element can be uniquely
+      addressed via a URI constructed as follows:
+        1) the base URI is the URI of the XML Schema namespace
+        2) the fragment identifier is the name of the facet
+
+      For example, to address the maxInclusive facet, the URI is:
+
+        http://www.w3.org/2001/XMLSchema#maxInclusive
+
+      Additionally, each facet usage in a built-in datatype definition
+      can be uniquely addressed via a URI constructed as follows:
+        1) the base URI is the URI of the XML Schema namespace
+        2) the fragment identifier is the name of the datatype, followed
+           by a period (".") followed by the name of the facet
+
+      For example, to address the usage of the maxInclusive facet in
+      the definition of int, the URI is:
+
+        http://www.w3.org/2001/XMLSchema#int.maxInclusive
+
+    </xs:documentation>
+  </xs:annotation>
+  <xs:element name="number" type="xs:integer"/>
+  <xs:element name="size" type="prod:SizeType"/>
+  <xs:simpleType name="SizeType">
+    <xs:restriction base="xs:integer">
+      <!--See http://www.datypic.com/books/defxmlschema/chapter03.html#EX35-->
+    </xs:restriction>
+  </xs:simpleType>
+</xs:schema>

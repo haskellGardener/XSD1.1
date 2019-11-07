@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-11-06 12:51:26 CST>
+{-| Time-stamp: <2019-11-06 19:13:17 CST>
 
 Module      : AbstractDataModel
 Copyright   : Robert Lee, © 2017-2019
@@ -140,6 +140,15 @@ cropEmptyContent (NodeContent (ContentText x)) = NodeContent . ContentText $ T.s
 cropEmptyContent x = x
 
 -- Get various xsd/XML files and convert to Haskell.
+
+example3_20XSD :: IO ()
+example3_20XSD = do
+  xsd <- getXSD "/home/robert/Projects/XSD1.1/supporting_cast/example3_20.xsd"
+  print $ show xsd
+--  getXSD "/home/robert/Projects/XSD1.1/supporting_cast/example3_20.xsd" >>= cleanPrint
+
+getXMLSchema_xsd :: IO ()
+getXMLSchema_xsd = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/XMLSchema.xsd" >>= cleanPrint
 
 datatypes :: IO ()
 datatypes = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/datatypes.xsd" >>= cleanPrint
