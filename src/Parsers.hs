@@ -1,8 +1,8 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2019-06-12 16:22:04 CDT>
+{-| Time-stamp: <2022-04-14 14:16:31 CDT>
 
 Module      : Parsers
-Copyright   : Robert Lee, © 2017-2019
+Copyright   : Robert Lee, © 2017-2022
 License     : ISC
 
 Maintainer  : robert.lee@chicago.vc
@@ -118,6 +118,7 @@ import Lading
 
 -- Explicit Imports
 
+import Control.Monad.Fail ( fail )
 import Data.Either (isRight,isLeft)
 import Data.Ix     (inRange)
 import Numeric     (readHex)
@@ -219,13 +220,13 @@ parsePair :: (a, Parser b) -> Parser (a, b)
 parsePair (a, p) = do res <- p
                       pure (a, res)
 
-skipC :: Char -> Parser ()                           
+skipC :: Char -> Parser ()
 skipC = void . char
 
 skipS :: Text -> Parser ()
 skipS = void . string
 
-notMatchCharParse :: Parser any -> Parser ()                   
+notMatchCharParse :: Parser any -> Parser ()
 notMatchCharParse parser = guard . isLeft . parseOnly parser . T.singleton =<< peekChar'
 
 nameStartCharParser :: Parser Char
@@ -258,7 +259,7 @@ nameCharParser =
          , satisfy (inRange (C.chr 0x0300, C.chr 0x036F)) -- Combining Diacritical Marks
          , satisfy (inRange (C.chr 0x203F, C.chr 0x2040)) -- Part of the General Punctuation block
          ]
-     
+
 -- AnyURI parsers -----------------------------------------------------------------------------------------------------------------------------------
 
 {- foo://example.com:8042/over/there?name=ferret#nose

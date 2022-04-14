@@ -1,8 +1,8 @@
 {-# Language ExistentialQuantification, QuasiQuotes, TemplateHaskell #-}
-{-| Time-stamp: <2019-11-06 19:13:17 CST>
+{-| Time-stamp: <2022-04-14 14:17:02 CDT>
 
 Module      : AbstractDataModel
-Copyright   : Robert Lee, © 2017-2019
+Copyright   : Robert Lee, © 2017-2022
 License     : ISC
 
 Maintainer  : robert.lee@chicago.vc
@@ -47,7 +47,7 @@ infixr 0  $, $!, ‘seq‘
 -}
 
 
-{- 
+{-
 
 Some random project goals.
 
@@ -152,7 +152,7 @@ getXMLSchema_xsd = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/XMLSchem
 
 datatypes :: IO ()
 datatypes = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/datatypes.xsd" >>= cleanPrint
-                     
+
 shiporder :: IO ()
 shiporder = getXSD "/home/robert/Projects/XSD1.1/supporting_cast/shiporder.xsd" >>= cleanPrint
 

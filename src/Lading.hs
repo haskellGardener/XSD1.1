@@ -1,8 +1,8 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2019-06-12 16:22:38 CDT>
+{-| Time-stamp: <2022-04-14 14:16:24 CDT>
 
 Module      : Lading
-Copyright   : Robert Lee, © 2017-2019
+Copyright   : Robert Lee, © 2017-2022
 License     : ISC
 
 Maintainer  : robert.lee@chicago.vc
@@ -46,7 +46,7 @@ infixr 0  $, $!, ‘seq‘
 -}
 
 module Lading
-    
+
 where
 
 -- Local Imports

@@ -1088,8 +1088,8 @@ xsd = [xml|
 
  -}
 
- 
- 
+
+
 {-
 xsdInstar :: [] Node
 xsdInstar = [ NodeElement

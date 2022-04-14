@@ -1,8 +1,8 @@
 {-# Language ExistentialQuantification #-}
-{-| Time-stamp: <2019-06-12 16:21:53 CDT>
+{-| Time-stamp: <2022-04-14 13:16:33 CDT>
 
 Module      : Main
-Copyright   : Robert Lee, © 2017-2019
+Copyright   : Robert Lee, © 2017-2022
 License     : ISC
 
 Maintainer  : robert.lee@chicago.vc

@@ -1,9 +1,9 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, TupleSections
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2019-08-19 15:12:18 CDT>
+{-| Time-stamp: <2022-04-14 13:17:16 CDT>
 
 Module      : Regex
-Copyright   : Robert Lee, © 2017-2019
+Copyright   : Robert Lee, © 2017-2022
 License     : ISC
 
 Maintainer  : robert.lee@chicago.vc
@@ -72,6 +72,8 @@ import Parsers
 
 -- Explicit Imports
 
+import Control.Monad.Fail (fail)
+
 -- import Data.Either (isLeft)
 
 -- Qualified Imports
@@ -128,7 +130,7 @@ pairSnds pp xs = pure . (pp,) . T.concat $ map snd xs
 
 instance TransRegex RE
   where scribeBR b (RE branches) = T.intercalate "|" $ map (scribeBR b) branches
-        
+
         selegoR pp@(RE branches) = choice (map selegoR branches) >>= pairSnd pp
 
 instance TransRegex Branch
@@ -146,10 +148,10 @@ instance TransRegex Piece
           where helper (QuantRange qel qer) = minMax (fromQE qel) (fromQE qer)
                 helper (QuantMin qe)        = minMax (fromQE qe) 10000  -- upper limit breaks spec.
                 helper (QuantExactQ qe)     = count (fromQE qe)
-                                            
+
                 fromQE :: QuantExact -> Int
                 fromQE (QuantExact i) = i
-          
+
 instance TransRegex Atom
   where scribeBR b (AtomNormal    atm) = scribeBR b atm
         scribeBR b (AtomCharClass atm) = scribeBR b atm
@@ -178,7 +180,7 @@ instance TransRegex QuantExact
   where scribeBR _b (QuantExact i) = tShow i
 
         selegoR _ = error "Not supported irregular instance."
-                    
+
 instance TransRegex NormalChar
   where scribeBR False (NormalChar c) = T.singleton c
         scribeBR True  (NormalChar c) =
