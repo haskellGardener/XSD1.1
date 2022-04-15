@@ -2286,8 +2286,9 @@ instance Transformatio GYearMonth
 instance Res GYearMonth (Int, Int, Maybe H.TimezoneOffset)
   where
     redde (GYearMonth year month mTzOff) = (year, month, mTzOff)
-    recipe (year, month, mTzOff) | gYearP year && gMonthP month && gTzOffP mTzOff = Just $ GYearMonth year month mTzOff
-                                 | otherwise = Nothing
+    recipe (year, month, mTzOff)
+      | gYearP year && gMonthP month && gTzOffP mTzOff = Just $ GYearMonth year month mTzOff
+      | otherwise = Nothing
 
 yMYearTx :: Int -> Text
 yMYearTx year | year < 0 = T.pack $ '-' : preFillWith '0' 4 (year * (-1))
