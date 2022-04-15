@@ -2,7 +2,7 @@
     -Wno-name-shadowing
     -fwarn-unused-imports
 #-}
-{-| Time-stamp: <2022-04-15 17:17:11 CDT>
+{-| Time-stamp: <2022-04-15 17:19:03 CDT>
 
 Module      : Unique
 Copyright   : Robert Lee, © 2022
@@ -77,8 +77,6 @@ import System.IO.Unsafe ( unsafePerformIO )
 -- Undisciplined Imports
 
 import Prelude
-
--- import Text.XML hiding (Name)
 
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
