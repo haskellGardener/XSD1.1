@@ -43,6 +43,7 @@ library
     , Parsers
     , Regex
     , RegexOut
+    , Unique
   other-modules: Paths_XMLstudy
   build-depends:
       base >= 4.15 && < 5
@@ -59,6 +60,7 @@ library
     , pretty-simple
     , random
     , scientific
+    , stm
     , text
     , xml-conduit
     , xml-hamlet

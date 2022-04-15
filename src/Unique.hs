@@ -1,18 +1,11 @@
-{-# Language
-    ExistentialQuantification
-  , FlexibleInstances
-  , GeneralizedNewtypeDeriving
-  , MultiParamTypeClasses
-  , NegativeLiterals
-#-}
 {-# OPTIONS_GHC
     -Wno-name-shadowing
     -fwarn-unused-imports
 #-}
-{-| Time-stamp: <2022-04-15 17:11:18 CDT>
+{-| Time-stamp: <2022-04-15 17:17:11 CDT>
 
-Module      : Lading
-Copyright   : Robert Lee, © 2017-2022
+Module      : Unique
+Copyright   : Robert Lee, © 2022
 License     : ISC
 
 Maintainer  : robert.lee@chicago.vc
@@ -21,7 +14,7 @@ Portability : non-portable (GHC extensions)
 
 Contumacy   : Best viewed with unbroken/unwrapped 154 column display.
 
-Description : Provide support for lexical and value correct types for use with XML Schema 1.1.
+Description : Provide support for unique system values paird with a create stamp.
 -}
 
 {-
@@ -55,7 +48,11 @@ infixr 0  $, $!, ‘seq‘
 ⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅⋅
 -}
 
-module Lading
+module Unique
+  ( Unique                     -- Do not export the Value constructor -- ⚡
+  , getUniqueCreated
+  , unique
+  )
 
 where
 
@@ -63,29 +60,53 @@ where
 
 -- Explicit Imports
 
--- Qualified Imports
+import Control.Concurrent.STM
+  ( TVar
+  , atomically
+  , newTVarIO
+  , readTVar
+  , writeTVar
+  )
+import Data.Hourglass   ( DateTime )
+import Data.Word        ( Word64 )
+import System.Hourglass ( dateCurrent )
+import System.IO.Unsafe ( unsafePerformIO )
 
-import Data.Hourglass (TimeOfDay(..))
+-- Qualified Imports
 
 -- Undisciplined Imports
 
-import ClassyPrelude hiding (IO)
+import Prelude
+
+-- import Text.XML hiding (Name)
 
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 
-tShow :: Show a => a -> Text
-tShow a = pack $ show a
+data Unique = Unique Word64 DateTime -- Do not export the Value constructor -- ⚡
 
-leastTime :: TimeOfDay
-leastTime = TimeOfDay 0 0 0 0
+instance Eq Unique where
+  (==) (Unique a _) (Unique b _) = a == b
 
-eitherToMaybe :: Either a b -> Maybe b
-eitherToMaybe (Left _) = Nothing
-eitherToMaybe (Right x) = Just x
+instance Ord Unique where
+  compare (Unique a _) (Unique b _) = a `compare` b
 
-(?) :: Bool -> a -> a -> a
-(?) True t _ = t
-(?) False _ f = f
+instance Show Unique where
+  show (Unique _ created) = show created
 
-infixl 1 ?
+-- | getUniqueCreated DateTime from Unique.
+getUniqueCreated :: Unique -> DateTime
+getUniqueCreated (Unique _ created) = created
+
+{-# NOINLINE __UniqueWord #-}
+__UniqueWord :: TVar Word64
+__UniqueWord = unsafePerformIO (newTVarIO 0)
+
+-- | unique creates a Unique.
+unique :: IO Unique
+unique = do
+  currentDate <- dateCurrent
+  atomically $ do
+    uniqueWord <- readTVar __UniqueWord >>= pure . succ
+    writeTVar __UniqueWord uniqueWord
+    pure $ Unique uniqueWord currentDate
