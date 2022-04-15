@@ -43,9 +43,10 @@ library
     , Parsers
     , Regex
     , RegexOut
+    , Unique
   other-modules: Paths_XMLstudy
   build-depends:
-      base >= 4.8 && < 5
+      base >= 4.15 && < 5
     , array
     , attoparsec
     , base16-bytestring
@@ -59,6 +60,7 @@ library
     , pretty-simple
     , random
     , scientific
+    , stm
     , text
     , xml-conduit
     , xml-hamlet
@@ -76,7 +78,7 @@ executable XMLstudy-exe
   hs-source-dirs: src-exe
   main-is:        Main.hs
   build-depends:
-     base >= 4.8 && < 5
+     base >= 4.15 && < 5
    , base64-bytestring
    , bytestring
    , classy-prelude
@@ -97,7 +99,7 @@ test-suite XMLstudy-test
   hs-source-dirs: src-test
   main-is:        Main.hs
   build-depends:
-     base >= 4.8 && < 5
+     base >= 4.15 && < 5
    , base16-bytestring
    , base64-bytestring
    , bytestring
