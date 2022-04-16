@@ -50,8 +50,11 @@ infixr 0  $, $!, ‘seq‘
 
 module Unique
   ( Unique                 -- Do not export the Value constructor ⚡
+  , deleteUniqueStampPair
   , getUniqueCreated
+  , getUniqueStampPair
   , unique
+  , upToDateUniqueStampPair
   )
 
 where
@@ -112,7 +115,7 @@ unique = do
     pure $ Unique uniqueInt currentDate
 
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
--- Support for latest
+-- Support for Unique with latest timestamp.
 
 insertLookup :: M.Key -> v -> M.IntMap v -> (Maybe v, M.IntMap v)
 insertLookup k v m = M.insertLookupWithKey (\_ a _ -> a) k v m
@@ -146,6 +149,7 @@ upToDateUniqueStampPair pp@(Unique i created) = do
     writeTVar __UniqueUpdateIntMap newMap
     pure (created, lastUpdated)
 
+-- | deleteUniqueStampPair
 deleteUniqueStampPair :: Unique -> IO ()
 deleteUniqueStampPair (Unique i _) =
   atomically . modifyTVar' __UniqueUpdateIntMap $ M.delete i
