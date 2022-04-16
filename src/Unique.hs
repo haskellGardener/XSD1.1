@@ -2,7 +2,7 @@
     -Wno-name-shadowing
     -fwarn-unused-imports
 #-}
-{-| Time-stamp: <2022-04-15 17:19:03 CDT>
+{-|
 
 Module      : Unique
 Copyright   : Robert Lee, © 2022
@@ -49,7 +49,7 @@ infixr 0  $, $!, ‘seq‘
 -}
 
 module Unique
-  ( Unique                     -- Do not export the Value constructor -- ⚡
+  ( Unique                 -- Do not export the Value constructor ⚡
   , getUniqueCreated
   , unique
   )
@@ -68,11 +68,12 @@ import Control.Concurrent.STM
   , writeTVar
   )
 import Data.Hourglass   ( DateTime )
-import Data.Word        ( Word64 )
 import System.Hourglass ( dateCurrent )
 import System.IO.Unsafe ( unsafePerformIO )
 
 -- Qualified Imports
+
+import Data.IntMap.Strict as M
 
 -- Undisciplined Imports
 
@@ -81,7 +82,7 @@ import Prelude
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 
-data Unique = Unique Word64 DateTime -- Do not export the Value constructor -- ⚡
+data Unique = Unique Int DateTime -- Do not export the Value constructor ⚡
 
 instance Eq Unique where
   (==) (Unique a _) (Unique b _) = a == b
@@ -96,15 +97,51 @@ instance Show Unique where
 getUniqueCreated :: Unique -> DateTime
 getUniqueCreated (Unique _ created) = created
 
-{-# NOINLINE __UniqueWord #-}
-__UniqueWord :: TVar Word64
-__UniqueWord = unsafePerformIO (newTVarIO 0)
+{-# NOINLINE __UniqueInt #-} -- Do not export ⚡
+__UniqueInt :: TVar Int
+__UniqueInt = unsafePerformIO (newTVarIO 0)
 
 -- | unique creates a Unique.
 unique :: IO Unique
 unique = do
   currentDate <- dateCurrent
   atomically $ do
-    uniqueWord <- readTVar __UniqueWord >>= pure . succ
-    writeTVar __UniqueWord uniqueWord
-    pure $ Unique uniqueWord currentDate
+    uniqueInt <- readTVar __UniqueInt >>= pure . succ
+    writeTVar __UniqueInt uniqueInt
+    pure $ Unique uniqueInt currentDate
+
+-- -----------------------------------------------------------------------------------------------------------------------------------------------------
+-- Support for latest
+
+{-# NOINLINE __UniqueUpdateIntMap #-} -- Do not export ⚡
+__UniqueUpdateIntMap :: TVar (M.IntMap (Unique, DateTime))
+__UniqueUpdateIntMap = unsafePerformIO (newTVarIO M.empty)
+
+-- | getUniqueStampPair
+getUniqueStampPair :: Unique -> IO (DateTime, DateTime)
+getUniqueStampPair pp@(Unique i created) =
+  atomically $ do
+    uniqueUpdateIntMap <- readTVar __UniqueUpdateIntMap
+    case M.lookup i uniqueUpdateIntMap of
+      Just (_, lastUpdated) -> pure (created, lastUpdated)
+      Nothing ->
+        let insertedMap = M.insert i (pp, created) uniqueUpdateIntMap
+        in writeTVar __UniqueUpdateIntMap insertedMap
+             >> pure (created, created)
+
+-- | upToDateUniqueStampPair
+upToDateUniqueStampPair :: Unique -> IO (DateTime, DateTime)
+upToDateUniqueStampPair pp@(Unique i created) = do
+  currentDate <- dateCurrent
+  atomically $ do
+    uniqueUpdateIntMap <- readTVar __UniqueUpdateIntMap
+    let (lastUpdated, newMap) =
+          case insertLookup i (pp,currentDate) uniqueUpdateIntMap of
+            (Just (_, lastUpdated), newMap) -> (lastUpdated, newMap)
+            (Nothing              , newMap) -> (currentDate, newMap)
+    writeTVar __UniqueUpdateIntMap newMap
+    pure (created, lastUpdated)
+
+insertLookup :: M.Key -> v -> M.IntMap v -> (Maybe v, M.IntMap v)
+insertLookup k v m = M.insertLookupWithKey (\_ a _ -> a) k v m
+
