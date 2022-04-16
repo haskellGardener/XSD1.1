@@ -63,6 +63,7 @@ where
 import Control.Concurrent.STM
   ( TVar
   , atomically
+  , modifyTVar'
   , newTVarIO
   , readTVar
   , writeTVar
@@ -113,6 +114,9 @@ unique = do
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 -- Support for latest
 
+insertLookup :: M.Key -> v -> M.IntMap v -> (Maybe v, M.IntMap v)
+insertLookup k v m = M.insertLookupWithKey (\_ a _ -> a) k v m
+
 {-# NOINLINE __UniqueUpdateIntMap #-} -- Do not export ⚡
 __UniqueUpdateIntMap :: TVar (M.IntMap (Unique, DateTime))
 __UniqueUpdateIntMap = unsafePerformIO (newTVarIO M.empty)
@@ -142,6 +146,6 @@ upToDateUniqueStampPair pp@(Unique i created) = do
     writeTVar __UniqueUpdateIntMap newMap
     pure (created, lastUpdated)
 
-insertLookup :: M.Key -> v -> M.IntMap v -> (Maybe v, M.IntMap v)
-insertLookup k v m = M.insertLookupWithKey (\_ a _ -> a) k v m
-
+deleteUniqueStampPair :: Unique -> IO ()
+deleteUniqueStampPair (Unique i _) =
+  atomically . modifyTVar' __UniqueUpdateIntMap $ M.delete i
