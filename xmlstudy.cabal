@@ -1,4 +1,4 @@
-name:          XMLstudy
+name:          xmlstudy
 version:       0.3.0.1
 -- synopsis:
 -- description:
@@ -44,7 +44,7 @@ library
     , Regex
     , RegexOut
     , Unique
-  other-modules: Paths_XMLstudy
+  other-modules: Paths_xmlstudy
   build-depends:
       base >= 4.15 && < 5
     , array
@@ -66,7 +66,7 @@ library
     , xml-hamlet
     , xml-types
 
-executable XMLstudy-exe
+executable xmlstudy-exe
   default-language: Haskell2010
   ghc-options:      -Wall -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
   default-extensions:
@@ -84,9 +84,9 @@ executable XMLstudy-exe
    , classy-prelude
    , text
    , xml-conduit
-   , XMLstudy
+   , xmlstudy
 
-test-suite XMLstudy-test
+test-suite xmlstudy-test
   type:             exitcode-stdio-1.0
   default-language: Haskell2010
   ghc-options:      -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
@@ -113,4 +113,4 @@ test-suite XMLstudy-test
    , tasty-quickcheck
    , tasty-smallcheck
    , text
-   , XMLstudy
+   , xmlstudy
