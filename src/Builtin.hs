@@ -5,10 +5,12 @@
   , GeneralizedNewtypeDeriving
   , MultiParamTypeClasses
   , NegativeLiterals
+  , QuasiQuotes
   , ScopedTypeVariables
+  , TemplateHaskell
   , TypeApplications
  #-}
-{-| Time-stamp: <2022-04-14 12:52:44 CDT>
+{-|
 
 Module      : Builtin
 Copyright   : Robert Lee, © 2017-2022
@@ -246,7 +248,6 @@ module Builtin
     , yearMonthDayP
     , zeroMax
     , asMany
-
     , aLPHA
     , absoluteIRI
     , dIGIT
@@ -287,7 +288,6 @@ module Builtin
     , subDelims
     , ucschar
     , unreserved
-
     -- , doIt
     -- , makeFundies
     )
@@ -507,23 +507,27 @@ newtype Pattern = Pattern Text -- Placeholder
 
 type Assertion = () -- Placeholder
 
-data ExplicitTimezone = TZOffRequired
-                      | TZOffProhibited
-                      | TZOffOptional
+data ExplicitTimezone
+  = TZOffRequired
+  | TZOffProhibited
+  | TZOffOptional
 
-data Ords = OrdFalse
-          | OrdPartial
-          | OrdTotal
-            deriving (Eq, Ord, Show)
+data Ords
+  = OrdFalse
+  | OrdPartial
+  | OrdTotal
+    deriving (Eq, Ord, Show)
 
-data Cardinalities = CardFinite
-                   | CardInfinite
-                     deriving (Eq, Ord, Show)
+data Cardinalities
+  = CardFinite
+  | CardInfinite
+    deriving (Eq, Ord, Show)
 
-data WhiteSpace = WSPreserve
-                | WSCollapse
-                | WSReplace
-                  deriving (Eq, Ord, Show)
+data WhiteSpace
+  = WSPreserve
+  | WSCollapse
+  | WSReplace
+    deriving (Eq, Ord, Show)
 
 class AnySimpleType a => FacetC a where
   facetOrdC         :: Ords                             -- Value-based facet. See F.1 Fundamental Facets.
@@ -1026,15 +1030,14 @@ instance Aggregatio Names Name
     divide (Names xs) = xs
 
 newtype NMTOKEN = NMTOKEN Text
-                  deriving (Eq, Ord, Read, Show)
+  deriving (Eq, Ord, Read, Show)
 
 instance Transformatio NMTOKEN
   where
     scribe (NMTOKEN text) = text
     fac = parseCollapse nmtokenParser
 
-newtype NMTOKENS =
-  NMTOKENS [NMTOKEN]
+newtype NMTOKENS = NMTOKENS [NMTOKEN]
   deriving (Eq, Ord, Read, Show)
 
 instance Transformatio NMTOKENS
@@ -1049,10 +1052,14 @@ instance Aggregatio NMTOKENS NMTOKEN
     divide (NMTOKENS nmtokenList) = nmtokenList
 
 nameStartCharPattern :: Text
-nameStartCharPattern
-  = "\":\" | [A-Z] | \"_\" | [a-z] | [#xC0-#xD6] | [#xD8-#xF6]\
-    \ | [#xF8-#x2FF] | [#x370-#x37D] | [#x37F-#x1FFF] | [#x200C-#x200D]\
-    \ | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]"
+nameStartCharPattern = T.pack
+  [charsQQ|":"
+           | [A-Z] | "_" | [a-z] | [#xC0-#xD6] | [#xD8-#xF6]
+           | [#xF8-#x2FF] | [#x370-#x37D] | [#x37F-#x1FFF] | [#x200C-#x200D]
+           | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD]
+           | [#x10000-#xEFFFF]
+           |]
+   -- charsQQ is needed because of a bug in ghci which barfs errors (that don't really exist) without charsQQ.
 
 nameCharPattern :: Text
 nameCharPattern = "NameStartChar | \"-\" | \".\" | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]"
@@ -1068,37 +1075,6 @@ nmtokenPattern = "(NameChar)+"
 
 nmtokensPattern :: Text
 nmtokensPattern = "NMTOKEN (#x20 NMTOKEN)*"
-
--- nameStartCharParser :: Parser Char
--- nameStartCharParser =
---   choice [ char ':'
---          , char '_'
---          , satisfy $ inRange ('A','Z')
---          , satisfy $ inRange ('a','z')
---          , satisfy $ inRange ( C.chr 0xC0    , C.chr 0xD6    )
---          , satisfy $ inRange ( C.chr 0xD8    , C.chr 0xF6    )
---          , satisfy $ inRange ( C.chr 0xF8    , C.chr 0x2FF   )
---          , satisfy $ inRange ( C.chr 0x370   , C.chr 0x37D   )
---          , satisfy $ inRange ( C.chr 0x37F   , C.chr 0x1FFF  )
---          , satisfy $ inRange ( C.chr 0x200C  , C.chr 0x200D  )
---          , satisfy $ inRange ( C.chr 0x2070  , C.chr 0x218F  )
---          , satisfy $ inRange ( C.chr 0x2C00  , C.chr 0x2FEF  )
---          , satisfy $ inRange ( C.chr 0x3001  , C.chr 0xD7FF  )
---          , satisfy $ inRange ( C.chr 0xF900  , C.chr 0xFDCF  )
---          , satisfy $ inRange ( C.chr 0xFDF0  , C.chr 0xFFFD  )
---          , satisfy $ inRange ( C.chr 0x10000 , C.chr 0xEFFFF )
---          ]
-
--- nameCharParser :: Parser Char
--- nameCharParser =
---   choice [ nameStartCharParser
---          , char '-' -- ascii hyphen
---          , char '.' -- ascii period
---          , digit    -- [0-9]
---          , char '·' -- #xB7 'Middle Dot'
---          , satisfy (inRange (C.chr 0x0300, C.chr 0x036F)) -- Combining Diacritical Marks
---          , satisfy (inRange (C.chr 0x203F, C.chr 0x2040)) -- Part of the General Punctuation block
---          ]
 
 nameParser :: Parser Name
 nameParser = do
@@ -1125,7 +1101,7 @@ nmtokensParser = do
 -- NCN Non Colonized Names  (See https://www.w3.org/TR/xmlschema11-2/, https://www.w3.org/TR/xml-names11/#ns-qualnames)
 
 newtype NCName = NCName Text
-                 deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show)
 
 instance Transformatio NCName
   where scribe (NCName text) = text
@@ -1163,9 +1139,10 @@ nCNameParser = do
 type Prefix = NCName
 type LocalPart = NCName
 
-data QName = PrefixedName Prefix LocalPart
-           | UnprefixedName LocalPart
-             deriving (Eq, Ord, Show)
+data QName
+  = PrefixedName Prefix LocalPart
+  | UnprefixedName LocalPart
+    deriving (Eq, Ord, Show)
 
 instance Transformatio QName where
   fac = parseCollapse qNameParser
@@ -1184,7 +1161,7 @@ qNameParser =
   <|> (nCNameParser >>= pure . UnprefixedName) -- This will work if the calling parser is anchored on the end.
 
 newtype NOTATION = NOTATION QName
-                     deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show)
 
 instance Transformatio NOTATION where
   fac = fmap NOTATION . parseCollapse qNameParser
@@ -1296,7 +1273,7 @@ iDREFSParser = do
   pure . IDREFS $ idref:idrefs
 
 newtype ENTITY = ENTITY Text
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Ord, Show)
 
 instance Transformatio ENTITY
   where
@@ -1429,7 +1406,7 @@ nonNegativeIntegerParser =
     digits = many1 digit >>= pure . NonNegativeInteger . read -- Parsed read safe.
 
 newtype PositiveInteger = PositiveInteger Integer
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio PositiveInteger
   where
@@ -1452,7 +1429,7 @@ positiveIntegerParser = do
   else fail "Non-positive value"
 
 newtype NonPositiveInteger = NonPositiveInteger Integer
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio NonPositiveInteger
   where
@@ -1476,7 +1453,7 @@ nonPositiveIntegerParser = do
          ]
 
 newtype NegativeInteger = NegativeInteger Integer
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio NegativeInteger
   where
@@ -1514,7 +1491,7 @@ integerParser = do
         noPlus sign digits = sign:digits
 
 newtype Long = Long Int64
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio Long
   where
@@ -1543,7 +1520,7 @@ longParser = do
   else fail "Out of bounds"
 
 newtype Intxs = Intxs Int32
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio Intxs
   where
@@ -1563,7 +1540,7 @@ intxsParser = do
   else fail "Out of bounds"
 
 newtype Short = Short Int16
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio Short
   where
@@ -1583,7 +1560,7 @@ shortParser = do
   else fail "Out of bounds"
 
 newtype Byte = Byte Int8
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio Byte
   where
@@ -1603,7 +1580,7 @@ byteParser = do
   else fail "Out of bounds"
 
 newtype UnsignedLong = UnsignedLong Word64
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio UnsignedLong
   where
@@ -1623,7 +1600,7 @@ unsignedLongParser = do
   else fail "Out of bounds"
 
 newtype UnsignedInt = UnsignedInt Word32
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio UnsignedInt
   where
@@ -1643,7 +1620,7 @@ unsignedIntParser = do
   else fail "Out of bounds"
 
 newtype UnsignedShort = UnsignedShort Word16
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio UnsignedShort
   where
@@ -1663,7 +1640,7 @@ unsignedShortParser = do
   else fail "Out of bounds"
 
 newtype UnsignedByte = UnsignedByte Word8
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio UnsignedByte
   where
@@ -1683,7 +1660,7 @@ unsignedByteParser = do
   else fail "Out of bounds"
 
 newtype Decimal = Decimal SC.Scientific
-  deriving (Eq, Ord, Num, Show)
+  deriving (Eq, Num, Ord, Show)
 
 instance Transformatio Decimal
   where
@@ -1709,7 +1686,7 @@ decimalParser = do
                        ++ (null fracdigits ? "" $ decpoint ++ fracdigits) -- On empty fracdigits don't present a decimal point lest read error.      -- ⚡
 
 newtype Floatxs = Floatxs Float
-     deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show)
 
 instance Transformatio Floatxs
   where
@@ -2233,10 +2210,11 @@ gMonthParser = do
 -- --------------------------------------------------------------------------------------------------------------------------------------------------
 -- GDay stanzas
 
-data GDay = GDay { gDay :: Int
-                 , gDayTzOff :: Maybe H.TimezoneOffset
-                 }
-            deriving (Eq, Ord, Show)
+data GDay
+  = GDay { gDay :: Int
+         , gDayTzOff :: Maybe H.TimezoneOffset
+         }
+  deriving (Eq, Ord, Show)
 
 instance Transformatio GDay
   where
@@ -2482,7 +2460,8 @@ instance Res Timexs (H.TimeOfDay, Maybe H.TimezoneOffset)
         && inRange (0,59) minute
         && inRange (0,59) seconds -- Seconds have been denuded of leap second capability in 1.1 of the standard. See I.3 Date/time Datatypes.
         && i64_p99P nanos
-        && gTzOffP mTzOff = Just $ Timexs tod mTzOff
+        && gTzOffP mTzOff
+        = Just $ Timexs tod mTzOff
       | otherwise = Nothing
 
 -- Lexical Representation (([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?|(24:00:00(\.0+)?))(Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00))?
@@ -2707,7 +2686,8 @@ instance Res DateTimeStampxs (H.DateTime, H.TimezoneOffset)
 -- --------------------------------------------------------------------------------------------------------------------------------------------------
 -- AnyURI stanzas
 
-newtype AnyURI = AnyURI T.Text deriving (Show)
+newtype AnyURI = AnyURI T.Text
+  deriving (Show)
 
 instance Transformatio AnyURI
   where

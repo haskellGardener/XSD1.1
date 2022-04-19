@@ -61,6 +61,7 @@ library
     , random
     , scientific
     , stm
+    , template-haskell
     , text
     , xml-conduit
     , xml-hamlet

@@ -14,7 +14,7 @@ Portability : non-portable (GHC extensions)
 
 Contumacy   : Best viewed with unbroken/unwrapped 154 column display.
 
-Description : Provide support for unique system values paird with a create stamp.
+Description : Provide support for unique system values paired with time stamps.
 -}
 
 {-
@@ -50,11 +50,12 @@ infixr 0  $, $!, ‘seq‘
 
 module Unique
   ( Unique                 -- Do not export the Value constructor ⚡
-  , deleteUniqueStampPair
+  , deleteUniqueStamp
   , getUniqueCreated
-  , getUniqueStampPair
+  , getUniqueInt
+  , getUniqueStamp
   , unique
-  , upToDateUniqueStampPair
+  , upToDateUniqueStamp
   )
 
 where
@@ -81,10 +82,14 @@ import Data.IntMap.Strict as M
 
 -- Undisciplined Imports
 
-import Prelude
+import Prelude hiding (lookup)
 
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
+
+{-# NOINLINE __UniqueInt #-} -- Do not export ⚡
+__UniqueInt :: TVar Int
+__UniqueInt = unsafePerformIO (newTVarIO 0)
 
 data Unique = Unique Int DateTime -- Do not export the Value constructor ⚡
 
@@ -101,9 +106,9 @@ instance Show Unique where
 getUniqueCreated :: Unique -> DateTime
 getUniqueCreated (Unique _ created) = created
 
-{-# NOINLINE __UniqueInt #-} -- Do not export ⚡
-__UniqueInt :: TVar Int
-__UniqueInt = unsafePerformIO (newTVarIO 0)
+-- | getUniqueInt Int from Unique.
+getUniqueInt :: Unique -> Int
+getUniqueInt (Unique i _) = i
 
 -- | unique creates a Unique.
 unique :: IO Unique
@@ -115,41 +120,83 @@ unique = do
     pure $ Unique uniqueInt currentDate
 
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
--- Support for Unique with latest timestamp.
+-- Support for Unique with UniqueStamp.
 
-insertLookup :: M.Key -> v -> M.IntMap v -> (Maybe v, M.IntMap v)
-insertLookup k v m = M.insertLookupWithKey (\_ a _ -> a) k v m
+{-# NOINLINE __UniqueStampIntMap #-} -- Do not export ⚡
+__UniqueStampIntMap :: TVar (M.IntMap UniqueStamp)
+__UniqueStampIntMap = unsafePerformIO (newTVarIO M.empty)
 
-{-# NOINLINE __UniqueUpdateIntMap #-} -- Do not export ⚡
-__UniqueUpdateIntMap :: TVar (M.IntMap (Unique, DateTime))
-__UniqueUpdateIntMap = unsafePerformIO (newTVarIO M.empty)
+data UniqueStamp =
+  UniqueStamp
+  { created      :: DateTime
+  , latestUpdate :: DateTime
+  , priorUpdate  :: DateTime
+  } deriving (Eq, Ord, Show)
 
--- | getUniqueStampPair
-getUniqueStampPair :: Unique -> IO (DateTime, DateTime)
-getUniqueStampPair pp@(Unique i created) =
+data UniqueStampCondition
+  = UniqueStampConditionNew
+  | UniqueStampConditionOneUpdate
+  | UniqueStampConditionMultipleUpdates
+    deriving (Eq, Ord, Show)
+
+uniqueStampCondition :: UniqueStamp -> UniqueStampCondition
+uniqueStampCondition UniqueStamp {..}
+  | created == latestUpdate = UniqueStampConditionNew
+  | created == priorUpdate  = UniqueStampConditionOneUpdate
+  | otherwise               = UniqueStampConditionMultipleUpdates
+
+defaultUniqueStamp :: Unique -> UniqueStamp
+defaultUniqueStamp (Unique _ created_pp) =
+  UniqueStamp
+  { created      = created_pp
+  , latestUpdate = created_pp
+  , priorUpdate  = created_pp
+  }
+
+-- | getUniqueStamp will create a UniqueStamp if one does not already exist.
+getUniqueStamp :: Unique -> IO UniqueStamp
+getUniqueStamp pp@(Unique i created_pp) =
   atomically $ do
-    uniqueUpdateIntMap <- readTVar __UniqueUpdateIntMap
-    case M.lookup i uniqueUpdateIntMap of
-      Just (_, lastUpdated) -> pure (created, lastUpdated)
+    uniqueStampIntMap <- readTVar __UniqueStampIntMap
+    case M.lookup i uniqueStampIntMap of
+      Just uniqueStamp -> pure uniqueStamp
       Nothing ->
-        let insertedMap = M.insert i (pp, created) uniqueUpdateIntMap
-        in writeTVar __UniqueUpdateIntMap insertedMap
-             >> pure (created, created)
+        let insertedMap = M.insert i defaultStamp uniqueStampIntMap
+        in writeTVar __UniqueStampIntMap insertedMap
+             >> pure defaultStamp
+  where
+    defaultStamp = defaultUniqueStamp pp -- used when no element matches pp
 
--- | upToDateUniqueStampPair
-upToDateUniqueStampPair :: Unique -> IO (DateTime, DateTime)
-upToDateUniqueStampPair pp@(Unique i created) = do
+-- | upToDateUniqueStamp updates latestUpdate, and where needed, priorUpdate.
+--   As with getUniqueStamp, upToDateUniqueStamp will create a UniqueStamp if
+--   one does not already exist.
+upToDateUniqueStamp :: Unique -> IO UniqueStamp
+upToDateUniqueStamp pp@(Unique i created_pp) = do
   currentDate <- dateCurrent
   atomically $ do
-    uniqueUpdateIntMap <- readTVar __UniqueUpdateIntMap
-    let (lastUpdated, newMap) =
-          case insertLookup i (pp,currentDate) uniqueUpdateIntMap of
-            (Just (_, lastUpdated), newMap) -> (lastUpdated, newMap)
-            (Nothing              , newMap) -> (currentDate, newMap)
-    writeTVar __UniqueUpdateIntMap newMap
-    pure (created, lastUpdated)
+    uniqueStampIntMap <- readTVar __UniqueStampIntMap
+    let mUniqueStamp = lookup i uniqueStampIntMap
+        (alteredMap, uniqueStamp) =
+          case mUniqueStamp of
+            Nothing ->
+              let newStamp = UniqueStamp
+                             { created      = created_pp
+                             , latestUpdate = currentDate
+                             , priorUpdate  = created_pp
+                             }
+                  insertedMap = insert i newStamp uniqueStampIntMap
+              in (insertedMap, newStamp)
+            Just oldUniqueStamp ->
+              let adjustedStamp = oldUniqueStamp
+                                  { latestUpdate = currentDate
+                                  , priorUpdate  = latestUpdate oldUniqueStamp
+                                  }
+                  adjustedMap = adjust (const adjustedStamp) i uniqueStampIntMap
+              in (adjustedMap, adjustedStamp)
+    writeTVar __UniqueStampIntMap alteredMap
+    pure uniqueStamp
 
--- | deleteUniqueStampPair
-deleteUniqueStampPair :: Unique -> IO ()
-deleteUniqueStampPair (Unique i _) =
-  atomically . modifyTVar' __UniqueUpdateIntMap $ M.delete i
+-- | deleteUniqueStamp
+deleteUniqueStamp :: Unique -> IO ()
+deleteUniqueStamp (Unique i _) =
+  atomically . modifyTVar' __UniqueStampIntMap $ M.delete i

@@ -4,6 +4,7 @@
   , GeneralizedNewtypeDeriving
   , MultiParamTypeClasses
   , NegativeLiterals
+  , TemplateHaskell
 #-}
 {-# OPTIONS_GHC
     -Wno-name-shadowing
@@ -71,6 +72,9 @@ import Data.Hourglass (TimeOfDay(..))
 
 import ClassyPrelude hiding (IO)
 
+import Language.Haskell.TH
+import Language.Haskell.TH.Quote
+
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -89,3 +93,10 @@ eitherToMaybe (Right x) = Just x
 (?) False _ f = f
 
 infixl 1 ?
+
+charsQQ :: QuasiQuoter
+charsQQ = QuasiQuoter { quoteExp = stringE, .. }
+  where
+    quoteDec  = error "charsQQ"
+    quotePat  = error "charsQQ"
+    quoteType = error "charsQQ"
