@@ -7,7 +7,6 @@
   , NegativeLiterals
   , QuasiQuotes
   , ScopedTypeVariables
-  , TemplateHaskell
   , TypeApplications
  #-}
 {-|
@@ -304,6 +303,7 @@ import Control.Monad (fail)
 import Data.Int    (Int8, Int16)
 import Data.Ix     (inRange)
 import Data.Maybe  (fromJust)
+import Data.String.Here.Uninterpolated (hereLit)
 import Data.Word   (Word16)
 import Numeric     (showEFloat)
 import Text.Read   (read)
@@ -322,7 +322,7 @@ import qualified Data.Text.Encoding     as TE
 
 -- Undisciplined Imports
 
-import ClassyPrelude hiding (IO)
+import ClassyPrelude hiding (IO, String)
 import Data.Attoparsec.Text
 -- import Text.XML hiding (Name)
 
@@ -1053,13 +1053,13 @@ instance Aggregatio NMTOKENS NMTOKEN
 
 nameStartCharPattern :: Text
 nameStartCharPattern = T.pack
-  [charsQQ|":"
+  [hereLit|":"
            | [A-Z] | "_" | [a-z] | [#xC0-#xD6] | [#xD8-#xF6]
            | [#xF8-#x2FF] | [#x370-#x37D] | [#x37F-#x1FFF] | [#x200C-#x200D]
            | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD]
            | [#x10000-#xEFFFF]
            |]
-   -- charsQQ is needed because of a bug in ghci which barfs errors (that don't really exist) without charsQQ.
+   -- hereLit is needed because of a bug in ghci which barfs errors (that don't really exist) without hereLit.
 
 nameCharPattern :: Text
 nameCharPattern = "NameStartChar | \"-\" | \".\" | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]"
@@ -1394,8 +1394,9 @@ instance Transformatio NonNegativeInteger
 instance Res NonNegativeInteger Integer
   where
     redde (NonNegativeInteger i) = i
-    recipe candidateInteger | candidateInteger >= 0 = Just $ NonNegativeInteger candidateInteger
-                            | otherwise = Nothing
+    recipe candidateInteger
+      | candidateInteger >= 0 = Just $ NonNegativeInteger candidateInteger
+      | otherwise = Nothing
 
 nonNegativeIntegerParser :: Parser NonNegativeInteger
 nonNegativeIntegerParser =
@@ -1416,8 +1417,9 @@ instance Transformatio PositiveInteger
 instance Res PositiveInteger Integer
   where
     redde (PositiveInteger i) = i
-    recipe candidateInteger | candidateInteger > 0 = Just $ PositiveInteger candidateInteger
-                            | otherwise = Nothing
+    recipe candidateInteger
+      | candidateInteger > 0 = Just $ PositiveInteger candidateInteger
+      | otherwise = Nothing
 
 positiveIntegerParser :: Parser PositiveInteger
 positiveIntegerParser = do
@@ -1439,17 +1441,17 @@ instance Transformatio NonPositiveInteger
 instance Res NonPositiveInteger Integer
   where
     redde (NonPositiveInteger i) = i
-    recipe candidateInteger | candidateInteger <= 0 = Just $ NonPositiveInteger candidateInteger
-                            | otherwise = Nothing
+    recipe candidateInteger
+      | candidateInteger <= 0 = Just $ NonPositiveInteger candidateInteger
+      | otherwise = Nothing
 
 nonPositiveIntegerParser :: Parser NonPositiveInteger
 nonPositiveIntegerParser = do
   choice [ cinClass "+-" >> many1 (char '0') >> pure (NonPositiveInteger 0)
          , many1 (char '0') >> pure (NonPositiveInteger 0)
-         , do
-             void $ char '-'
-             digits <- many1 digit
-             pure . NonPositiveInteger . read $ "-" ++ digits -- Parsed read safe.
+         , do void $ char '-'
+              digits <- many1 digit
+              pure . NonPositiveInteger . read $ "-" ++ digits -- Parsed read safe.
          ]
 
 newtype NegativeInteger = NegativeInteger Integer
@@ -1463,8 +1465,9 @@ instance Transformatio NegativeInteger
 instance Res NegativeInteger Integer
   where
     redde (NegativeInteger i) = i
-    recipe candidateInteger | candidateInteger < 0 = Just $ NegativeInteger candidateInteger
-                            | otherwise = Nothing
+    recipe candidateInteger
+      | candidateInteger < 0 = Just $ NegativeInteger candidateInteger
+      | otherwise = Nothing
 
 negativeIntegerParser :: Parser NegativeInteger
 negativeIntegerParser = do
@@ -1486,9 +1489,10 @@ integerParser = do
   sign <- char '-' <|> char '+' <|> pure '+'
   digits <- many1 digit
   pure . read $ noPlus sign digits -- Parsed read safe.
-  where noPlus :: Char -> [] Char -> [] Char -- noPlus cures the integral read problem with a + at the beginning of digits.
-        noPlus '+' digits = digits
-        noPlus sign digits = sign:digits
+  where
+    noPlus :: Char -> [] Char -> [] Char -- noPlus cures the integral read problem with a + at the beginning of digits.
+    noPlus '+' digits = digits
+    noPlus sign digits = sign:digits
 
 newtype Long = Long Int64
   deriving (Eq, Num, Ord, Show)
@@ -1729,7 +1733,7 @@ floatxsParser = choice [floatxs, inf, notANumber]
       nums <- choice [ ratPar, dotNums ]
       expo <- choice [ expPar , pure "" ]
       let f :: Float
-          f = SC.toRealFloat . read $ sign ++ "0" ++ nums ++ expo -- Provide a complementary zero to avoid a read error.                         -- ⚡
+          f = SC.toRealFloat . read $ sign ++ "0" ++ nums ++ expo -- Provide a complementary zero to avoid a read error.                             -- ⚡
       pure $ if f == 0 && sign == "-"
              then Floatxs (-0.0 :: Float)
              else Floatxs f
@@ -1783,7 +1787,7 @@ doublexsParser = choice [doublexs, inf, notANumber]
       nums <- choice [ ratPar, dotNums ]
       expo <- choice [ expPar , pure "" ]
       let f :: Double
-          f = SC.toRealFloat . read $ sign ++ "0" ++ nums ++ expo -- Provide a complementary zero to avoid a read error.                         -- ⚡
+          f = SC.toRealFloat . read $ sign ++ "0" ++ nums ++ expo -- Provide a complementary zero to avoid a read error.                             -- ⚡
       pure $ if f == 0 && sign == "-"
              then Doublexs (-0.0 :: Double)
              else Doublexs f
@@ -1796,15 +1800,15 @@ doublexsParser = choice [doublexs, inf, notANumber]
 -- Durationxs ---------------------------------------------------------------------------------------------------------------------------------------
 
 periodpIntP :: Int -> Bool -- Both periodpIntP and durMaxN must change to 32 bit compatible versions when arch is 32
-periodpIntP | (maxBound :: Int) > ((2 :: Int) ^ (31 :: Int)) = i_p189P
+periodpIntP | maxBound @Int > 2 ^ 31 = i_p189P
             | otherwise = i_p99P
 
 periodpInt64P :: Int64 -> Bool
-periodpInt64P | (maxBound :: Int) > ((2 :: Int) ^ (31 :: Int)) = i64_p189P
+periodpInt64P | maxBound @Int > 2 ^ 31 = i64_p189P
               | otherwise = i64_p99P
 
 periodMaxN :: Int
-periodMaxN | (maxBound :: Int) > ((2 :: Int) ^ (31 :: Int)) = 18
+periodMaxN | maxBound @Int > 2 ^ 31 = 18
            | otherwise = 9
 
 -- defaultDurationxs :: Durationxs
@@ -1821,7 +1825,7 @@ instance Res Durationxs (Bool, H.Period, H.Duration)
            , duration@(H.Duration (H.Hours h) (H.Minutes mn) (H.Seconds s) (H.NanoSeconds ns))
            )
       |    periodpIntP y && periodpIntP m && periodpIntP d
-        && periodpInt64P h && periodpInt64P mn && periodpInt64P s && i64_p99P ns -- See 5.4 Partial Implementation of Infinite Datatypes.        -- ⚡
+        && periodpInt64P h && periodpInt64P mn && periodpInt64P s && i64_p99P ns -- See 5.4 Partial Implementation of Infinite Datatypes.            -- ⚡
          = Just $ Durationxs n period duration
       | otherwise = Nothing
 
@@ -1832,9 +1836,14 @@ instance Res Durationxs Durationxs -- This is used internally by the parser.
               period@(H.Period y m d)
               duration@(H.Duration (H.Hours h) (H.Minutes mn) (H.Seconds s) (H.NanoSeconds ns))
            )
-      |    periodpIntP y && periodpIntP m && periodpIntP d
-        && periodpInt64P h && periodpInt64P mn && periodpInt64P s && i64_p99P ns
-         = Just $ Durationxs n period duration -- See 5.4 Partial Implementation of Infinite Datatypes.                                          -- ⚡
+      |    periodpIntP y
+        && periodpIntP m
+        && periodpIntP d
+        && periodpInt64P h
+        && periodpInt64P mn
+        && periodpInt64P s
+        && i64_p99P ns
+         = Just $ Durationxs n period duration -- See 5.4 Partial Implementation of Infinite Datatypes.                                              -- ⚡
       | otherwise = Nothing
 
 instance Eq Durationxs
@@ -1918,7 +1927,7 @@ durationNormalize (Durationxs negativeP H.Period {..} H.Duration {..}) =
     yearMonth = quotRem months 12       -- Days play no role in incrementing months canonically.
     finalYear = (0, years + fst yearMonth)
 
-mStringToNS :: String -> Maybe H.NanoSeconds
+mStringToNS :: Chars -> Maybe H.NanoSeconds
 mStringToNS ""                  = Just $ H.NanoSeconds 0
 mStringToNS ('.':'.':_)         = Nothing
 mStringToNS ('0':'.':'.':_)     = Nothing
@@ -1926,12 +1935,13 @@ mStringToNS ('.':'0':'.':_)     = Nothing
 mStringToNS ('0':'.':'0':'.':_) = Nothing
 mStringToNS ('.':xs)            = mStringToNS xs
 mStringToNS ('0':'.':xs)        = mStringToNS xs
-mStringToNS pp | length pp > 9 = Nothing -- extra numerals beyond length 9 are not in spec for H.NanoSeconds
-               | otherwise =
-                 do num <- readMay pp :: Maybe Int64
-                    pure $ H.NanoSeconds $ num * 10 ^ (9 - DL.length pp)
+mStringToNS pp
+  | length pp > 9 = Nothing -- extra numerals beyond length 9 are not in spec for H.NanoSeconds
+  | otherwise = do
+      num <- readMay pp :: Maybe Int64
+      pure $ H.NanoSeconds $ num * 10 ^ (9 - DL.length pp)
 
-nsToString :: H.NanoSeconds -> String
+nsToString :: H.NanoSeconds -> Chars
 nsToString (H.NanoSeconds 0) = "0.0"
 nsToString (H.NanoSeconds ns) =
   "0." ++ (DL.dropWhileEnd ('0'==) $ (replicate (9 - num) '0' ++ clean))
@@ -1947,23 +1957,27 @@ durationxsParser = do
   negativeP <- (optional "-") >>= pure . isJust -- Negative predicate
   void "P"                                      -- Mandatory P
   candidate <- choice [ymdhmsDuration, hmsDuration]
-               >>= pure . (\(Durationxs _ period duration) -> Durationxs negativeP period duration)
-  guard $ isJust (recipe $ durationNormalize candidate :: Maybe Durationxs)
+           >>= pure . (\(Durationxs _ period duration) -> Durationxs negativeP period duration)
+  guard $ isJust (recipe @Durationxs $ durationNormalize candidate)
   pure candidate
   where
-    ymdhmsDuration = do (period,duration) <- ymdhmsduration'
-                        pure $ Durationxs False (periodFac period) (durationFac duration)
+    ymdhmsDuration = do
+      (period,duration) <- ymdhmsduration'
+      pure $ Durationxs False (periodFac period) (durationFac duration)
 
-    hmsDuration = do duration <- hmsDuration'
-                     pure $ Durationxs False (H.Period 0 0 0) (durationFac duration)
+    hmsDuration = do
+      duration <- hmsDuration'
+      pure $ Durationxs False (H.Period 0 0 0) (durationFac duration)
 
-    periodFac (y,m,d') = H.Period (y  == "" ? 0 $ read y )                     -- Parsed read safe
-                                  (m  == "" ? 0 $ read m )                     -- Parsed read safe
-                                  (d' == "" ? 0 $ read d')                     -- Parsed read safe
-    durationFac (h,m,s,fracs') = H.Duration (H.Hours   (h == "" ? 0 $ read h)) -- Parsed read safe
-                                            (H.Minutes (m == "" ? 0 $ read m)) -- Parsed read safe
-                                            (H.Seconds (s == "" ? 0 $ read s)) -- Parsed read safe
-                                            (unsafeStringToNS fracs')
+    periodFac (y,m,d') =
+      H.Period (y  == "" ? 0 $ read y ) -- Parsed read safe
+               (m  == "" ? 0 $ read m ) -- Parsed read safe
+               (d' == "" ? 0 $ read d') -- Parsed read safe
+    durationFac (h,m,s,fracs') =
+      H.Duration (H.Hours   (h == "" ? 0 $ read h)) -- Parsed read safe
+                 (H.Minutes (m == "" ? 0 $ read m)) -- Parsed read safe
+                 (H.Seconds (s == "" ? 0 $ read s)) -- Parsed read safe
+                 (unsafeStringToNS fracs')
 
     ymdhmsduration' = do
       ymd' <- choice [ ymd
@@ -1974,19 +1988,19 @@ durationxsParser = do
       pure (ymd', hmsf')
     ymd = do
       digits <- many1 digit
-      guard (length digits <= periodMaxN) -- See 5.4 Partial Implementation of Infinite Datatypes.                                               -- ⚡
+      guard (length digits <= periodMaxN) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                   -- ⚡
       void "Y"
       (m',d') <- md <|> pure ("","")
       pure (digits,m',d')
     md = do
       digits <- many1 digit
-      guard (length digits <= periodMaxN) -- See 5.4 Partial Implementation of Infinite Datatypes.                                               -- ⚡
+      guard (length digits <= periodMaxN) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                   -- ⚡
       void "M"
       d' <- d <|> pure ""
       pure (digits, d')
     d = do
       digits <- many1 digit
-      guard (length digits <= periodMaxN) -- See 5.4 Partial Implementation of Infinite Datatypes.                                               -- ⚡
+      guard (length digits <= periodMaxN) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                   -- ⚡
       "D" >> pure digits
 
     hmsDuration' = do
@@ -1997,26 +2011,26 @@ durationxsParser = do
              ]
     hmsf = do
       digits <- many1 digit
-      guard (length digits < 19) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                        -- ⚡
+      guard (length digits < 19) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                            -- ⚡
       void "H"
       (m,s,fracs') <- msf <|>  pure ("","","")
       pure (digits,m,s,fracs')
     msf = do
       digits <- many1 digit
-      guard (length digits < 19) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                        -- ⚡
+      guard (length digits < 19) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                            -- ⚡
       void "M"
       (s,fracs') <- sf <|>  pure ("","")
       pure (digits, s, fracs')
     sf = do
       digits <- many1 digit
-      guard (length digits < 19) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                        -- ⚡
+      guard (length digits < 19) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                            -- ⚡
       fracs' <- fracs <|>  pure ""
       void "S"
       pure (digits, fracs')
     fracs = do
       void "."
       digits <- many1 digit
-      guard (length digits < 10) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                        -- ⚡
+      guard (length digits < 10) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                            -- ⚡
       pure digits
     unsafeStringToNS = fromJust . mStringToNS
 
@@ -2025,9 +2039,10 @@ newtype YearMonthDuration = YearMonthDuration Durationxs
 
 instance Transformatio YearMonthDuration
   where
-    fac candidate = do ymd <- parseCollapse durationxsParser $ candidate
-                       res <- recipe ymd
-                       pure res
+    fac candidate = do
+      ymd <- parseCollapse durationxsParser $ candidate
+      res <- recipe ymd
+      pure res
     scribe (YearMonthDuration durationxs) = scribe durationxs
     canon  (YearMonthDuration durationxs) = canon  durationxs
 
@@ -2035,7 +2050,9 @@ instance Res YearMonthDuration Durationxs
   where
     redde (YearMonthDuration durationxs) = durationxs
     recipe durationxs@(Durationxs _ (H.Period y m 0) (H.Duration 0 0 0 0))
-      | periodpIntP y && periodpIntP m = Just $ YearMonthDuration durationxs -- See 5.4 Partial Implementation of Infinite Datatypes.            -- ⚡
+      |    periodpIntP y
+        && periodpIntP m
+        = Just $ YearMonthDuration durationxs -- See 5.4 Partial Implementation of Infinite Datatypes.                                               -- ⚡
       | otherwise = Nothing
     recipe _ = Nothing
 
@@ -2044,7 +2061,7 @@ instance Res YearMonthDuration (Bool, H.Period)
     redde (YearMonthDuration (Durationxs b period _)) = (b,period)
     recipe (b, p@(H.Period y m 0))
       | periodpIntP y && periodpIntP m
-          = Just $ YearMonthDuration (Durationxs b p (H.Duration 0 0 0 0)) -- See 5.4 Partial Implementation of Infinite Datatypes.              -- ⚡
+          = Just $ YearMonthDuration (Durationxs b p (H.Duration 0 0 0 0)) -- See 5.4 Partial Implementation of Infinite Datatypes.                  -- ⚡
       | otherwise = Nothing
     recipe _ = Nothing
 
@@ -2053,10 +2070,10 @@ newtype DayTimeDuration = DayTimeDuration Durationxs
 
 instance Transformatio DayTimeDuration
   where
-    fac candidate =
-      do dtdur <- parseCollapse durationxsParser $ candidate
-         res <- recipe dtdur
-         pure res
+    fac candidate = do
+      dtdur <- parseCollapse durationxsParser $ candidate
+      res <- recipe dtdur
+      pure res
     scribe (DayTimeDuration durationxs) = scribe durationxs
     canon  (DayTimeDuration durationxs) = canon  durationxs
 
@@ -2072,8 +2089,12 @@ instance Res DayTimeDuration Durationxs
                              (H.NanoSeconds ns)
                          )
                       )
-      | periodpIntP d && periodpInt64P h && periodpInt64P m && periodpInt64P s && i64_p99P ns
-          = Just $ DayTimeDuration durationxs -- See 5.4 Partial Implementation of Infinite Datatypes.                                           -- ⚡
+      |    periodpIntP d
+        && periodpInt64P h
+        && periodpInt64P m
+        && periodpInt64P s
+        && i64_p99P ns
+        = Just $ DayTimeDuration durationxs -- See 5.4 Partial Implementation of Infinite Datatypes.                                                 -- ⚡
       | otherwise = Nothing
     recipe _ = Nothing
 
@@ -2112,8 +2133,9 @@ tzOffParser = do
       pure [firstDigit, secondDigit]
 
 gYearP :: Int -> Bool
-gYearP year | year < 0 = periodpIntP $ negate year
-            | otherwise = periodpIntP year -- See 5.4 Partial Implementation of Infinite Datatypes.                                                  -- ⚡
+gYearP year
+  | year < 0 = periodpIntP $ negate year
+  | otherwise = periodpIntP year -- See 5.4 Partial Implementation of Infinite Datatypes.                                                            -- ⚡
 
 gMonthP :: Int -> Bool
 gMonthP candidate = inRange (1,12) candidate
@@ -2123,7 +2145,8 @@ gDayP candidate = inRange (1,31) candidate
 
 gTzOffP :: Maybe H.TimezoneOffset -> Bool
 gTzOffP Nothing = True
-gTzOffP (Just H.TimezoneOffset {..}) = inRange (-840, 840) timezoneOffsetToMinutes
+gTzOffP (Just H.TimezoneOffset {..}) =
+  inRange (-840, 840) timezoneOffsetToMinutes
 
 -- --------------------------------------------------------------------------------------------------------------------------------------------------
 -- GYear stanzas
@@ -2138,26 +2161,31 @@ instance Transformatio GYear
   where
     fac candidate = parseCollapse gYearParser $ candidate
     scribe (GYear year Nothing) = yearTx year
-    scribe (GYear year (Just H.TimezoneOffset {..})) = T.append (yearTx year) (tzTx timezoneOffsetToMinutes)
+    scribe (GYear year (Just H.TimezoneOffset {..}))
+      = T.append (yearTx year) (tzTx timezoneOffsetToMinutes)
 
 instance Res GYear (Int, Maybe H.TimezoneOffset)
   where
     redde (GYear year mTzOff) = (year, mTzOff)
-    recipe (year, mTzOff) | gYearP year && gTzOffP mTzOff = Just $ GYear year mTzOff
-                          | otherwise = Nothing
+    recipe (year, mTzOff)
+      | gYearP year && gTzOffP mTzOff = Just $ GYear year mTzOff
+      | otherwise = Nothing
 
 yearTx :: Int -> Text
-yearTx year | year < 0 = T.pack $ '-' : preFillWith '0' 4 (year * (-1))
-            | otherwise = T.pack $ preFillWith '0' 4 year
+yearTx year
+  | year < 0  = T.pack $ '-' : preFillWith '0' 4 (year * (-1))
+  | otherwise = T.pack $       preFillWith '0' 4 year
 
 -- | tzTx is equivalent to ·timezoneCanonicalFragmentMap· (t) → timezoneFrag in E.3.6 Canonical Mappings.
 tzTx :: Int -> Text
 tzTx 0 = "Z" -- This is canonical. See ·timezoneCanonicalFragmentMap· in E.3.6 Canonical Mappings.
-tzTx tzMinutes | tzMinutes < 0 = T.append "-" . T.drop 1 $ tzTx (tzMinutes * (-1))
-               | otherwise = let (h,m) = quotRem tzMinutes 60
-                                 hs = preFillWith '0' 2 h
-                                 ms = preFillWith '0' 2 m
-                             in T.pack $ concat ["+", hs, ":", ms]
+tzTx tzMinutes
+  | tzMinutes < 0 = T.append "-" . T.drop 1 $ tzTx (tzMinutes * (-1))
+  | otherwise =
+      let (h,m) = quotRem tzMinutes 60
+          hs = preFillWith '0' 2 h
+          ms = preFillWith '0' 2 m
+      in T.pack $ concat ["+", hs, ":", ms]
 
 gYearParser :: Parser GYear -- Lexical Representation   -?([1-9][0-9]{3,}|0[0-9]{3})(Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00))?
 gYearParser = do
@@ -2184,8 +2212,8 @@ instance Transformatio GMonth
   where
     fac candidate = parseCollapse gMonthParser $ candidate
     scribe (GMonth month Nothing) = monthTx month
-    scribe (GMonth month (Just H.TimezoneOffset {..})) =
-      T.append (monthTx month) (tzTx timezoneOffsetToMinutes)
+    scribe (GMonth month (Just H.TimezoneOffset {..}))
+      = T.append (monthTx month) (tzTx timezoneOffsetToMinutes)
 
 instance Res GMonth (Int, Maybe H.TimezoneOffset)
   where
@@ -2220,13 +2248,15 @@ instance Transformatio GDay
   where
     fac candidate = parseCollapse gDayParser $ candidate
     scribe (GDay day Nothing) = dayTx day
-    scribe (GDay day (Just H.TimezoneOffset {..})) = T.append (dayTx day) (tzTx timezoneOffsetToMinutes)
+    scribe (GDay day (Just H.TimezoneOffset {..}))
+      = T.append (dayTx day) (tzTx timezoneOffsetToMinutes)
 
 instance Res GDay (Int, Maybe H.TimezoneOffset)
   where
     redde (GDay day mTzOff) = (day, mTzOff)
-    recipe (day, mTzOff) | gDayP day && gTzOffP mTzOff = Just $ GDay day mTzOff
-                         | otherwise = Nothing
+    recipe (day, mTzOff)
+      | gDayP day && gTzOffP mTzOff = Just $ GDay day mTzOff
+      | otherwise = Nothing
 
 dayTx :: Int -> Text
 dayTx day = T.pack $ "---" ++ preFillWith '0' 2 day
@@ -2257,20 +2287,24 @@ instance Transformatio GYearMonth
   where
     fac candidate = parseCollapse gYearMonthParser $ candidate
     scribe (GYearMonth year month Nothing) = T.concat [yMYearTx year, "-", yMonthTx month]
-    scribe (GYearMonth year month (Just H.TimezoneOffset {..})) =
-      T.append (scribe $ GYearMonth year month Nothing)
-               (tzTx timezoneOffsetToMinutes)
+    scribe (GYearMonth year month (Just H.TimezoneOffset {..}))
+      = T.append (scribe $ GYearMonth year month Nothing)
+                 (tzTx timezoneOffsetToMinutes)
 
 instance Res GYearMonth (Int, Int, Maybe H.TimezoneOffset)
   where
     redde (GYearMonth year month mTzOff) = (year, month, mTzOff)
     recipe (year, month, mTzOff)
-      | gYearP year && gMonthP month && gTzOffP mTzOff = Just $ GYearMonth year month mTzOff
+      |    gYearP year
+        && gMonthP month
+        && gTzOffP mTzOff
+        = Just $ GYearMonth year month mTzOff
       | otherwise = Nothing
 
 yMYearTx :: Int -> Text
-yMYearTx year | year < 0 = T.pack $ '-' : preFillWith '0' 4 (year * (-1))
-              | otherwise = T.pack $ preFillWith '0' 4 year
+yMYearTx year
+  | year < 0  = T.pack $ '-' : preFillWith '0' 4 (year * (-1))
+  | otherwise = T.pack $ preFillWith '0' 4 year
 
 yMonthTx :: Int -> Text
 yMonthTx month = T.pack $ preFillWith '0' 2 month
@@ -2315,7 +2349,9 @@ instance Res GMonthDay (Int, Int, Maybe H.TimezoneOffset)
   where
     redde (GMonthDay month day mTzOff) = (month, day, mTzOff)
     recipe (month, day, mTzOff)
-      | gMonthDayP month day && gTzOffP mTzOff = Just $ GMonthDay month day mTzOff
+      |    gMonthDayP month day
+        && gTzOffP mTzOff
+        = Just $ GMonthDay month day mTzOff
       | otherwise = Nothing
 
 gMonthDayParser :: Parser GMonthDay -- Lexical Representation --(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00))?
@@ -2380,8 +2416,10 @@ instance Res Datexs (Int, Int, Int, Maybe H.TimezoneOffset)
   where
     redde (Datexs year month day mTzOff) = (year, month, day, mTzOff)
     recipe (year, month, day, mTzOff)
-      | gYearP year && yearMonthDayP year month day && gTzOffP mTzOff =
-          Just $ Datexs year month day mTzOff
+      |    gYearP year
+        && yearMonthDayP year month day
+        && gTzOffP mTzOff
+        = Just $ Datexs year month day mTzOff
       | otherwise = Nothing
 
 -- Lexical Representation -?([1-9][0-9]{3,}|0[0-9]{3})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00))?
@@ -2405,9 +2443,9 @@ datexsParser = do
       day   = read dDigits -- Parsed read safe.
       year  = read yDigits -- Parsed read safe.
   guard $ yearMonthDayP year month day
-  pure Datexs { dateYear = (negativeP ? negate $ id) year
+  pure Datexs { dateYear  = (negativeP ? negate $ id) year
               , dateMonth = month
-              , dateDay = day
+              , dateDay   = day
               , dateTzOff = mTzOff
               }
 
@@ -2443,8 +2481,8 @@ instance Transformatio Timexs
                    then T.empty
                    else T.pack . drop 1 $ nsToString nanos
                  ]
-    scribe (Timexs tod (Just H.TimezoneOffset {..})) =
-      T.append (scribe $ Timexs tod Nothing) (tzTx timezoneOffsetToMinutes)
+    scribe (Timexs tod (Just H.TimezoneOffset {..}))
+      = T.append (scribe $ Timexs tod Nothing) (tzTx timezoneOffsetToMinutes)
 instance Res Timexs (H.TimeOfDay, Maybe H.TimezoneOffset)
   where
     redde (Timexs tod mTzOff) = (tod, mTzOff)
@@ -2492,7 +2530,7 @@ timexsParser = do
     fracF = do
       void "."
       digits <- many1 digit
-      guard (length digits < 10) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                        -- ⚡
+      guard (length digits < 10) -- See 5.4 Partial Implementation of Infinite Datatypes.                                                            -- ⚡
       pure digits
     unsafeStringToNS = fromJust . mStringToNS
 
@@ -2557,9 +2595,9 @@ instance Transformatio DateTimexs
                    then T.empty
                    else T.pack . drop 1 $ nsToString nanos
                  ]
-    scribe (DateTimexs year month day tod (Just H.TimezoneOffset {..})) =
-      T.append (scribe $ DateTimexs year month day tod Nothing)
-               (tzTx timezoneOffsetToMinutes)
+    scribe (DateTimexs year month day tod (Just H.TimezoneOffset {..}))
+      = T.append (scribe $ DateTimexs year month day tod Nothing)
+                 (tzTx timezoneOffsetToMinutes)
 
 instance Res DateTimexs (Int, Int, Int, H.TimeOfDay, Maybe H.TimezoneOffset)
   where
@@ -2579,37 +2617,45 @@ instance Res DateTimexs (Int, Int, Int, H.TimeOfDay, Maybe H.TimezoneOffset)
         && inRange (0,59) minute
         && inRange (0,59) seconds -- Seconds have been denuded of leap second capability in 1.1 of the standard. See I.3 Date/time Datatypes.
         && i64_p99P nanos
-        && gTzOffP mTzOff = Just $ DateTimexs year month day tod mTzOff
+        && gTzOffP mTzOff
+        = Just $ DateTimexs year month day tod mTzOff
       | otherwise = Nothing
 
 instance Res DateTimexs (Datexs, Timexs)
   where
-    redde (DateTimexs year month day tod mTzOff) =
-      (Datexs year month day mTzOff, Timexs tod mTzOff)
-    recipe (Datexs year month day (Just tzDate), Timexs tod Nothing) =
-      Just $ DateTimexs year month day tod (Just tzDate)
-    recipe (Datexs year month day Nothing, Timexs tod (Just tzTime)) =
-      Just $ DateTimexs year month day tod (Just tzTime)
+    redde (DateTimexs year month day tod mTzOff)
+      = (Datexs year month day mTzOff, Timexs tod mTzOff)
+    recipe (Datexs year month day (Just tzDate), Timexs tod Nothing)
+      = Just $ DateTimexs year month day tod (Just tzDate)
+    recipe (Datexs year month day Nothing, Timexs tod (Just tzTime))
+      = Just $ DateTimexs year month day tod (Just tzTime)
     recipe (Datexs year month day mTzOffDxs, Timexs tod mTzOffTxs)
-      | mTzOffDxs == mTzOffTxs = Just $ DateTimexs year month day tod mTzOffDxs
+      | mTzOffDxs == mTzOffTxs
+        = Just $ DateTimexs year month day tod mTzOffDxs
       | otherwise = Nothing
 
 instance Res DateTimexs Datexs
   where
-    redde (DateTimexs year month day _ mTzOff) = Datexs year month day mTzOff
-    recipe (Datexs year month day mTzOff) = Just $ DateTimexs year month day leastTime mTzOff
+    redde (DateTimexs year month day _ mTzOff)
+      = Datexs year month day mTzOff
+    recipe (Datexs year month day mTzOff)
+      = Just $ DateTimexs year month day leastTime mTzOff
 
 instance Res DateTimexs (H.DateTime, Maybe H.TimezoneOffset)
   where
-    redde (DateTimexs year month day tod mTzOff) =
-      (H.DateTime { dtDate = H.Date year (toEnum $ month - 1) day, dtTime = tod }, mTzOff)
-    recipe (H.DateTime{..}, mTzOff) =
-      recipe ( H.dateYear dtDate
-             , fromEnum (H.dateMonth dtDate) + 1
-             , H.dateDay dtDate
-             , dtTime
-             , mTzOff
-             )
+    redde (DateTimexs year month day tod mTzOff)
+      = (H.DateTime { dtDate = H.Date year (toEnum $ month - 1) day
+                    , dtTime = tod
+                    }
+        , mTzOff
+        )
+    recipe (H.DateTime{..}, mTzOff)
+      = recipe ( H.dateYear dtDate
+               , fromEnum (H.dateMonth dtDate) + 1
+               , H.dateDay dtDate
+               , dtTime
+               , mTzOff
+               )
 
 instance Res DateTimexs H.DateTime
   where
@@ -2652,36 +2698,40 @@ dateTimeStampxsParser = do
 instance Transformatio DateTimeStampxs
   where
     fac candidate = parseCollapse dateTimeStampxsParser $ candidate
-    scribe (DateTimeStampxs year month day tod tzOff) = scribe (DateTimexs year month day tod (Just tzOff))
+    scribe (DateTimeStampxs year month day tod tzOff)
+      = scribe (DateTimexs year month day tod (Just tzOff))
 
 instance Res DateTimeStampxs DateTimexs
   where
-    redde (DateTimeStampxs year month day tod tzOff) = DateTimexs year month day tod (Just tzOff)
-    recipe (DateTimexs year month day tod (Just tzDate)) = Just $ DateTimeStampxs year month day tod tzDate
+    redde (DateTimeStampxs year month day tod tzOff)
+      = DateTimexs year month day tod (Just tzOff)
+    recipe (DateTimexs year month day tod (Just tzDate))
+      = Just $ DateTimeStampxs year month day tod tzDate
     recipe _ = Nothing
 
 instance Res DateTimeStampxs (Datexs, Timexs)
   where
     redde dts = redde (redde dts :: DateTimexs)
-    recipe pair = (recipe pair :: Maybe DateTimexs) >>= recipe
+    recipe pair = recipe @DateTimexs pair >>= recipe
 
 instance Res DateTimeStampxs Datexs
   where
     redde dts = redde (redde dts :: DateTimexs)
-    recipe datexs = (recipe datexs :: Maybe DateTimexs) >>= recipe
+    recipe datexs = recipe @DateTimexs datexs >>= recipe
 
 instance Res DateTimeStampxs (H.DateTime, H.TimezoneOffset)
   where
     redde (DateTimeStampxs year month day tod tzOff) =
       (H.DateTime { dtDate = H.Date year (toEnum $ month - 1) day, dtTime = tod }, tzOff)
     recipe (H.DateTime{..}, tzOff) =
-      (recipe ( H.dateYear dtDate
-              , fromEnum (H.dateMonth dtDate) + 1
-              , H.dateDay dtDate
-              , dtTime
-              , Just tzOff
-              ) :: Maybe DateTimexs
-      ) >>= recipe
+      recipe @DateTimexs
+             ( H.dateYear dtDate
+             , fromEnum (H.dateMonth dtDate) + 1
+             , H.dateDay dtDate
+             , dtTime
+             , Just tzOff
+             )
+      >>= recipe
 
 -- --------------------------------------------------------------------------------------------------------------------------------------------------
 -- AnyURI stanzas
@@ -2723,16 +2773,6 @@ instance Transformatio AnyURI
 --                    Just i  -> let (l, r) = splitAt i ds in l ++ "(" ++ r ++ ")"
 --                    Nothing -> let (c, f) = properFraction (10 * x) :: (Integer, Rational) in loop f (fs ++ [x]) (ds ++ show c)
 --     in if fproper == 0 then si else si ++ "." ++ decimals fproper
-
-
-
-
-
-
-
-
-
-
 
 
 -- --  Datatype                       ordered    bounded  cardinality         numeric

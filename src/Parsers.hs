@@ -1,5 +1,11 @@
-{-# Language ExistentialQuantification, MultiParamTypeClasses, FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals #-}
-{-| Time-stamp: <2022-04-14 14:16:31 CDT>
+{-# Language
+    ExistentialQuantification
+  , MultiParamTypeClasses
+  , FlexibleInstances
+  , GeneralizedNewtypeDeriving
+  , NegativeLiterals
+ #-}
+{-|
 
 Module      : Parsers
 Copyright   : Robert Lee, © 2017-2022
@@ -47,69 +53,69 @@ infixr 0  $, $!, ‘seq‘
 -}
 
 module Parsers
-    ( aLPHA
-    , absoluteIRI
-    , anchorParser
-    , asMany
-    , cinClass
-    , collapse
-    , dIGIT
-    , decOctet
-    , extrasParser
-    , genDelims
-    , h16
-    , hEXDIG
-    , iPliteral
-    , iPv4address
-    , iPv6address
-    , iPvFuture
-    , iauthority
-    , ifragment
-    , ihierPart
-    , ihost
-    , ipath
-    , ipathABEmpty
-    , ipathAbsolute
-    , ipathNoScheme
-    , ipathRootless
-    , ipchar
-    , iprivate
-    , iquery
-    , iregName
-    , irelativePart
-    , irelativeRef
-    , iriParser
-    , iriReference
-    , isegment
-    , isegmentNz
-    , iunreserved
-    , iuserinfo
-    , ls32
-    , minMax
-    , nameCharParser
-    , nameStartCharParser
-    , notMatchCharParse
-    , pORT
-    , parsePair
-    , parse2
-    , parseCollapse
-    , parsedP
-    , parserPair
-    , pctEncoded
-    , preFillWith
-    , replaceXmlWhite
-    , reserved
-    , revEnum
-    , scheme
-    , skipC
-    , skipS
-    , subDelims
-    , ucschar
-    , unreserved
-    , xmlWhite
-    , xmlWhiteTx
-    , zeroMax
-    )
+  ( aLPHA
+  , absoluteIRI
+  , anchorParser
+  , asMany
+  , cinClass
+  , collapse
+  , dIGIT
+  , decOctet
+  , extrasParser
+  , genDelims
+  , h16
+  , hEXDIG
+  , iPliteral
+  , iPv4address
+  , iPv6address
+  , iPvFuture
+  , iauthority
+  , ifragment
+  , ihierPart
+  , ihost
+  , ipath
+  , ipathABEmpty
+  , ipathAbsolute
+  , ipathNoScheme
+  , ipathRootless
+  , ipchar
+  , iprivate
+  , iquery
+  , iregName
+  , irelativePart
+  , irelativeRef
+  , iriParser
+  , iriReference
+  , isegment
+  , isegmentNz
+  , iunreserved
+  , iuserinfo
+  , ls32
+  , minMax
+  , nameCharParser
+  , nameStartCharParser
+  , notMatchCharParse
+  , pORT
+  , parsePair
+  , parse2
+  , parseCollapse
+  , parsedP
+  , parserPair
+  , pctEncoded
+  , preFillWith
+  , replaceXmlWhite
+  , reserved
+  , revEnum
+  , scheme
+  , skipC
+  , skipS
+  , subDelims
+  , ucschar
+  , unreserved
+  , xmlWhite
+  , xmlWhiteTx
+  , zeroMax
+  )
 where
 
 -- Local Imports
@@ -125,15 +131,14 @@ import Numeric     (readHex)
 
 -- Qualified Imports
 
-import qualified Data.Char              as C
-import qualified Data.List              as DL
-import qualified Data.Text              as T
+import qualified Data.Char as C
+import qualified Data.List as DL
+import qualified Data.Text as T
 
 -- Undisciplined Imports
 
-import ClassyPrelude hiding (IO)
+import ClassyPrelude hiding (IO, String)
 import Data.Attoparsec.Text
--- import Text.XML hiding (Name)
 
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -143,38 +148,43 @@ import Data.Attoparsec.Text
 asMany :: [Parser a] -> Parser [a]
 asMany [] = pure []
 asMany (p:[]) = p >>= pure . (:[])
-asMany (p:ps) = do a <- p
-                   rest <- asMany ps <|> pure []
-                   pure (a:rest)
+asMany (p:ps) = do
+  a <- p
+  rest <- asMany ps <|> pure []
+  pure (a:rest)
 
 -- | zeroMax does not fail, but is constrained by maxi.
 zeroMax :: Int -> Parser a -> Parser [a]
 zeroMax maxi parsi = asMany (replicate maxi parsi) <|> pure []
 
 minMax :: Int -> Int -> Parser a -> Parser [a]
-minMax mini maxi parsi | mini < maxi = do minis <- count mini parsi
-                                          rest <- zeroMax (maxi - mini) parsi
-                                          pure $ minis ++ rest
-                       | mini == maxi = count mini parsi
-                       | otherwise = fail "minimum is greater than maximum"
+minMax mini maxi parsi
+  | mini < maxi
+    = do minis <- count mini parsi
+         rest <- zeroMax (maxi - mini) parsi
+         pure $ minis ++ rest
+  | mini == maxi = count mini parsi
+  | otherwise = fail "minimum is greater than maximum"
 
-preFillWith :: Show showable => Char -> Int -> showable -> String
-preFillWith c n s = let ss = show s
-                        lng = length ss
-                    in if lng < n
-                       then replicate (n - lng) c ++ ss
-                       else ss
+preFillWith :: Show showable => Char -> Int -> showable -> Chars
+preFillWith c n s
+  | lng < n = replicate (n - lng) c ++ ss
+  | otherwise = ss
+  where
+    ss = show s
+    lng = length ss
 
-cinClass :: String -> Parser Char
+cinClass :: Chars -> Parser Char
 cinClass = satisfy . inClass
 
-parsedP :: forall b. Parser b -> T.Text -> Bool
+parsedP :: forall b. Parser b -> Text -> Bool
 parsedP parser = isRight . parseOnly parser
 
 parse2 :: (Parser a, Parser a) -> Parser [a] -- Helper function for those two something parsers.
-parse2 (firstC, secondC) = do fc <- firstC
-                              sc <- secondC
-                              pure [fc,sc]
+parse2 (firstC, secondC) = do
+  fc <- firstC
+  sc <- secondC
+  pure [fc,sc]
 
 anchorParser :: forall b. Parser b -> Parser b
 anchorParser parserToAnchor = do
@@ -186,7 +196,8 @@ extrasParser :: forall b. Parser b -> Parser [b]
 extrasParser parser = many' (char ' ' >> parser)
 
 parseCollapse :: forall b. Parser b -> Text -> Maybe b
-parseCollapse parser candidate = eitherToMaybe . parseOnly (anchorParser parser) $ collapse candidate
+parseCollapse parser candidate =
+  eitherToMaybe . parseOnly (anchorParser parser) $ collapse candidate
 
 xmlWhite :: [] Char
 xmlWhite = " \t\r\n"
@@ -200,25 +211,28 @@ replaceXmlWhite = T.map (\c -> T.any (== c) " \t\r\n" ? ' ' $ c)
 -- collapse = T.unwords . T.words -- This is not correct due to the broader reach of whitespace (isSpace) in unicode than in the XS spec.
 
 collapse :: Text -> Text
-collapse = T.dropWhileEnd (' ' ==) . T.dropWhile (' ' ==) . collapseG                               -- 4.  Eliminate leading and trailing spaces.
-  where collapseG = T.concat . DL.map (\t -> if T.isPrefixOf " " t
-                                             then T.pack . DL.nubBy (\a _ -> ' ' == a) $ T.unpack t -- 3a. Reduce multiple spaces to a single space.
-                                             else t                                                 -- 3b. Leave non-spaces unmolested.
-                                      )
-                  . T.groupBy (\a b -> a == ' ' && b == ' ')                                        -- 2.  Separate spaces from the rest.
-                  . replaceXmlWhite                                                                 -- 1.  Replace xmlWhite Chars with ' '.
+collapse = T.dropWhileEnd (' ' ==) . T.dropWhile (' ' ==) . collapseG                -- 4.  Eliminate leading and trailing spaces.
+  where
+    collapseG = T.concat
+              . DL.map (\t -> if T.isPrefixOf " " t
+                              then T.pack . DL.nubBy (\a _ -> ' ' == a) $ T.unpack t -- 3a. Reduce multiple spaces to a single space.
+                              else t                                                 -- 3b. Leave non-spaces unmolested.
+                       )
+              . T.groupBy (\a b -> a == ' ' && b == ' ')                             -- 2.  Separate spaces from the rest.
+              . replaceXmlWhite                                                      -- 1.  Replace xmlWhite Chars with ' '.
 
 revEnum :: (Enum a, Bounded a) => [] a
 revEnum = reverse $ enumFromTo minBound maxBound -- reverse is essential for types that enumerate the shortest value constructors first              -- ⚡
 
 parserPair :: (Show a) => a -> Parser (a, Text)
 parserPair a = do
-  res <- string . T.pack $ show a
+  res <- string $ tshow a
   pure (a, res)
 
 parsePair :: (a, Parser b) -> Parser (a, b)
-parsePair (a, p) = do res <- p
-                      pure (a, res)
+parsePair (a, p) = do
+  res <- p
+  pure (a, res)
 
 skipC :: Char -> Parser ()
 skipC = void . char
@@ -227,7 +241,8 @@ skipS :: Text -> Parser ()
 skipS = void . string
 
 notMatchCharParse :: Parser any -> Parser ()
-notMatchCharParse parser = guard . isLeft . parseOnly parser . T.singleton =<< peekChar'
+notMatchCharParse parser =
+  guard . isLeft . parseOnly parser . T.singleton =<< peekChar'
 
 nameStartCharParser :: Parser Char
 nameStartCharParser =
@@ -276,13 +291,14 @@ nameCharParser =
        W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes (3.3.17 anyURI)
 -}
 
-data IAddrTx = IAddrTxIPv4       (T.Text, T.Text, T.Text, T.Text)
-             | IAddrTxIPv4Future (T.Text, T.Text)
-             | IAddrTxIPv6       ([T.Text], Maybe (Either (T.Text,T.Text) IAddrTx))
-             | IAddrTxRegName    T.Text
-               deriving (Show)
+data IAddrTx
+  = IAddrTxIPv4       (Text, Text, Text, Text)
+  | IAddrTxIPv4Future (Text, Text)
+  | IAddrTxIPv6       ([Text], Maybe (Either (Text,Text) IAddrTx))
+  | IAddrTxRegName    Text
+    deriving (Show)
 
-pORT :: Parser T.Text
+pORT :: Parser Text
 pORT = many dIGIT >>= pure . T.pack
 
 -- | DIGIT = %x30-39 ; 0-9
@@ -296,77 +312,88 @@ aLPHA = choice [ satisfy $ inRange ('A','Z')
                ]
 
 -- | IRI-reference = IRI / irelative-ref
-iriReference :: Parser (Either (T.Text, (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text, Maybe T.Text)
-                               ((Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text, Maybe T.Text)
+iriReference :: Parser (Either (Text, (Maybe (Maybe Text, IAddrTx, Maybe Text), [Text]), Maybe Text, Maybe Text)
+                               ((Maybe (Maybe Text, IAddrTx, Maybe Text), [Text]), Maybe Text, Maybe Text)
                        )
 iriReference = choice [ iriParser    >>= pure . Left
                       , irelativeRef >>= pure . Right
                       ]
 
 -- | IRI = scheme ":" ihier-part [ "?" iquery ] [ "#" ifragment ]
-iriParser :: Parser (T.Text, (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text, Maybe T.Text)
-iriParser = do schemeL <- scheme
-               void ":"
-               ihP <- ihierPart
-               mIquery   <- option Nothing (char '?' >> iquery    >>= pure . Just)
-               mFragment <- option Nothing (char '#' >> ifragment >>= pure . Just)
-               pure (schemeL, ihP, mIquery, mFragment)
+iriParser :: Parser (Text, (Maybe (Maybe Text, IAddrTx, Maybe Text), [Text]), Maybe Text, Maybe Text)
+iriParser = do
+  schemeL <- scheme
+  void ":"
+  ihP <- ihierPart
+  mIquery   <- option Nothing (char '?' >> iquery    >>= pure . Just)
+  mFragment <- option Nothing (char '#' >> ifragment >>= pure . Just)
+  pure (schemeL, ihP, mIquery, mFragment)
 
 -- | absolute-IRI = scheme ":" ihier-part [ "?" iquery ]
-absoluteIRI :: Parser (T.Text, (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text)
-absoluteIRI = do schemeL <- scheme
-                 void ":"
-                 ihP <- ihierPart
-                 mIquery <- option Nothing (char '?' >> iquery >>= pure . Just)
-                 pure (schemeL, ihP, mIquery)
+absoluteIRI :: Parser (Text, (Maybe (Maybe Text, IAddrTx, Maybe Text), [Text]), Maybe Text)
+absoluteIRI = do
+  schemeL <- scheme
+  void ":"
+  ihP <- ihierPart
+  mIquery <- option Nothing (char '?' >> iquery >>= pure . Just)
+  pure (schemeL, ihP, mIquery)
 
 {- | ihier-part = "//" iauthority ipath-abempty
                 / ipath-absolute
                 / ipath-rootless
                 / ipath-empty
 -}
-ihierPart :: Parser (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text])
-ihierPart = do choice [ auth, option (Nothing, []) ipaths ] -- option (Nothing, []) accounts for ipath-empty
-  where auth = do void "//"
-                  iauth <- iauthority
-                  segs <- ipathABEmpty
-                  pure (Just iauth, segs)
-        ipaths = do segs <- choice [ipathAbsolute, ipathRootless]
-                    pure (Nothing, segs)
+ihierPart :: Parser (Maybe (Maybe Text, IAddrTx, Maybe Text), [Text])
+ihierPart =
+  choice [ auth, option (Nothing, []) ipaths ] -- option (Nothing, []) accounts for ipath-empty
+  where
+    auth = do
+      void "//"
+      iauth <- iauthority
+      segs <- ipathABEmpty
+      pure (Just iauth, segs)
+    ipaths = do
+      segs <- choice [ipathAbsolute, ipathRootless]
+      pure (Nothing, segs)
 
 -- | irelative-ref = irelative-part [ "?" iquery ] [ "#" ifragment ]
-irelativeRef :: Parser ((Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text]), Maybe T.Text, Maybe T.Text)
-irelativeRef = do irelPart   <- irelativePart
-                  mIquery    <- option Nothing (char '?' >> iquery >>= pure . Just)
-                  mIfragment <- option Nothing (char '#' >> ifragment >>= pure . Just)
-                  pure (irelPart, mIquery, mIfragment)
+irelativeRef :: Parser ((Maybe (Maybe Text, IAddrTx, Maybe Text), [Text]), Maybe Text, Maybe Text)
+irelativeRef = do
+  irelPart   <- irelativePart
+  mIquery    <- option Nothing (char '?' >> iquery >>= pure . Just)
+  mIfragment <- option Nothing (char '#' >> ifragment >>= pure . Just)
+  pure (irelPart, mIquery, mIfragment)
 
 {- | irelative-part = "//" iauthority ipath-abempty
                     / ipath-absolute
                     / ipath-noscheme
                     / ipath-empty
 -}
-irelativePart :: Parser (Maybe (Maybe T.Text, IAddrTx, Maybe T.Text), [T.Text])
-irelativePart = do choice [ auth, option (Nothing, []) ipaths ] -- option (Nothing, []) accounts for ipath-empty
-  where auth = do void "//"
-                  iauth <- iauthority
-                  segs  <- ipathABEmpty
-                  pure (Just iauth, segs)
-        ipaths = do segs <- choice [ipathAbsolute, ipathNoScheme]
-                    pure (Nothing, segs)
+irelativePart :: Parser (Maybe (Maybe Text, IAddrTx, Maybe Text), [Text])
+irelativePart = choice [ auth, option (Nothing, []) ipaths ] -- option (Nothing, []) accounts for ipath-empty
+  where
+    auth = do
+      void "//"
+      iauth <- iauthority
+      segs  <- ipathABEmpty
+      pure (Just iauth, segs)
+    ipaths = do
+      segs <- choice [ipathAbsolute, ipathNoScheme]
+      pure (Nothing, segs)
 
 -- | iauthority = [ iuserinfo "@" ] ihost [ ":" port ]
-iauthority :: Parser (Maybe T.Text, IAddrTx, Maybe T.Text)
-iauthority = do mUinfo <- option Nothing ( do uinfo <- iuserinfo
-                                              void $ char '@'
-                                              pure $ Just uinfo
-                                         )
-                host   <- ihost
-                mPort  <- option Nothing ( do ":" >> pORT >>= pure . Just )
-                pure (mUinfo, host, mPort)
+iauthority :: Parser (Maybe Text, IAddrTx, Maybe Text)
+iauthority = do
+  mUinfo <- option Nothing ( do uinfo <- iuserinfo
+                                void $ char '@'
+                                pure $ Just uinfo
+                           )
+  host   <- ihost
+  mPort  <- option Nothing ( ":" >> pORT >>= pure . Just )
+  pure (mUinfo, host, mPort)
 
 -- | iuserinfo = *( iunreserved / pct-encoded / sub-delims / ":" )
-iuserinfo :: Parser T.Text
+iuserinfo :: Parser Text
 iuserinfo = many (choice [iunreserved, pctEncoded, subDelims, char ':']) >>= pure . T.pack
 
 -- | ihost = IP-literal / IPv4address / ireg-name
@@ -375,7 +402,8 @@ ihost = choice [iPliteral, iPv4address, iregName]
 
 -- | ireg-name = *( iunreserved / pct-encoded / sub-delims )
 iregName :: Parser IAddrTx
-iregName = many (choice [iunreserved, pctEncoded, subDelims]) >>= pure . IAddrTxRegName . T.pack
+iregName = many (choice [iunreserved, pctEncoded, subDelims])
+             >>= pure . IAddrTxRegName . T.pack
 
 {- | ipath = ipath-abempty   ; begins with "/" or is empty
            / ipath-absolute  ; begins with "/" but not "//"
@@ -383,43 +411,46 @@ iregName = many (choice [iunreserved, pctEncoded, subDelims]) >>= pure . IAddrTx
            / ipath-rootless  ; begins with a segment
            / ipath-empty     ; zero ipchars
 -}
-ipath :: Parser (Either [T.Text] [T.Text]) -- (Left absolute) (Right relative)
-ipath = option (Right []) $ choice [ ipathAbsolute >>= pure . Left
-                                   , ipathABEmpty  >>= pure . Left
-                                   , ipathNoScheme >>= pure . Right
-                                   , ipathRootless >>= pure . Right
-                                   ] -- option (Right []) accounts for ipath-empty.
+ipath :: Parser (Either [Text] [Text]) -- (Left absolute) (Right relative)
+ipath = option (Right [])
+      $ choice [ ipathAbsolute >>= pure . Left
+               , ipathABEmpty  >>= pure . Left
+               , ipathNoScheme >>= pure . Right
+               , ipathRootless >>= pure . Right
+               ] -- option (Right []) accounts for ipath-empty.
 
 -- | ipath-abempty  = *( "/" isegment )
-ipathABEmpty :: Parser [T.Text] -- Can be zero length. ABEmpty means absolute or empty.
+ipathABEmpty :: Parser [Text] -- Can be zero length. ABEmpty means absolute or empty.
 ipathABEmpty = many (char '/' >> isegment)
 
 -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
-ipathAbsolute :: Parser [T.Text]
+ipathAbsolute :: Parser [Text]
 ipathAbsolute = char '/' >> option [] ipathRootless
 
 -- | ipath-noscheme = isegment-nz-nc *( "/" isegment )
-ipathNoScheme :: Parser [T.Text]
-ipathNoScheme = do isegNzNc <- isegmentNzNc
-                   segs <- many (char '/' >> isegment)
-                   pure $ isegNzNc:segs
+ipathNoScheme :: Parser [Text]
+ipathNoScheme = do
+  isegNzNc <- isegmentNzNc
+  segs <- many (char '/' >> isegment)
+  pure $ isegNzNc:segs
 
 -- | ipath-rootless = isegment-nz *( "/" isegment )
-ipathRootless :: Parser [T.Text]
-ipathRootless = do isegNz <- isegmentNz
-                   segs <- many (char '/' >> isegment)
-                   pure $ isegNz:segs
+ipathRootless :: Parser [Text]
+ipathRootless = do
+  isegNz <- isegmentNz
+  segs <- many (char '/' >> isegment)
+  pure $ isegNz:segs
 
 -- | isegment = *ipchar
-isegment :: Parser T.Text -- Can have zero length
+isegment :: Parser Text -- Can have zero length
 isegment = many ipchar >>= pure . T.pack
 
 -- | isegment-nz = 1*ipchar
-isegmentNz :: Parser T.Text -- Non-zero length (Nz)
+isegmentNz :: Parser Text -- Non-zero length (Nz)
 isegmentNz = many1 ipchar >>= pure . T.pack
 
 -- | isegment-nz-nc = 1*( iunreserved / pct-encoded / sub-delims / "@" ) ; non-zero-length segment without any colon ":"
-isegmentNzNc :: Parser T.Text -- Non-zero length (Nz) and no-colon (Nc)
+isegmentNzNc :: Parser Text -- Non-zero length (Nz) and no-colon (Nc)
 isegmentNzNc = many1 (choice [iunreserved, pctEncoded, subDelims, char '@']) >>= pure . T.pack
 
 -- | ipchar = iunreserved / pct-encoded / sub-delims / ":" / "@"
@@ -427,11 +458,11 @@ ipchar :: Parser Char
 ipchar = choice [ iunreserved, pctEncoded, subDelims, char ':', char '@' ]
 
 -- | iquery = *( ipchar / iprivate / "/" / "?" )
-iquery :: Parser T.Text
+iquery :: Parser Text
 iquery = many (choice [ ipchar, iprivate, char '/', char '?' ]) >>= pure . T.pack
 
 -- | ifragment = *( ipchar / "/" / "?" )
-ifragment :: Parser T.Text
+ifragment :: Parser Text
 ifragment = many (choice [ ipchar, char '/', char '?' ]) >>= pure . T.pack
 
 -- | iunreserved = ALPHA / DIGIT / "-" / "." / "_" / "~" / ucschar
@@ -460,12 +491,13 @@ hEXDIG = choice [ dIGIT, satisfy $ inClass "ABCDEF" ]
 
 -- | pct-encoded = "%" HEXDIG HEXDIG
 pctEncoded :: Parser Char
-pctEncoded = do void $ char '%'
-                hexDigs <- count 2 hEXDIG
-                let reads = readHex hexDigs
-                case reads of
-                  [] -> fail "hex read failed"
-                  (c, _):_ -> pure $ C.chr c
+pctEncoded = do
+  void $ char '%'
+  hexDigs <- count 2 hEXDIG
+  let reads = readHex hexDigs
+  case reads of
+    [] -> fail "hex read failed"
+    (c, _):_ -> pure $ C.chr c
 
 {- | dec-octet = DIGIT                 ; 0-9
                / %x31-39 DIGIT         ; 10-99
@@ -473,29 +505,36 @@ pctEncoded = do void $ char '%'
                / "2" %x30-34 DIGIT     ; 200-249
                / "25" %x30-35          ; 250-255
 -}
-decOctet :: Parser T.Text
-decOctet = choice [ twoHun50
-                  , twoHun49
-                  , oneHun
-                  , ten99
-                  , dIGIT >>= pure . T.singleton
-                  ]
-  where ten99 = do numeral <- satisfy $ inClass "123456789"
-                   d <- dIGIT
-                   pure $ T.pack [numeral, d]
+decOctet :: Parser Text
+decOctet =
+  choice [ twoHun50
+         , twoHun49
+         , oneHun
+         , ten99
+         , dIGIT >>= pure . T.singleton
+         ]
+  where
+    ten99 = do
+      numeral <- satisfy $ inClass "123456789"
+      d <- dIGIT
+      pure $ T.pack [numeral, d]
 
-        oneHun = do void "1"
-                    d10 <- dIGIT
-                    d1 <- dIGIT
-                    pure $ T.pack ['1',d10,d1]
-        twoHun49 = do void "2"
-                      d10 <- satisfy $ inClass "01234"
-                      d1 <- dIGIT
-                      pure $ T.pack ['2',d10,d1]
+    oneHun = do
+      void "1"
+      d10 <- dIGIT
+      d1 <- dIGIT
+      pure $ T.pack ['1',d10,d1]
 
-        twoHun50 = do void "25"
-                      d1 <- satisfy $ inClass "012345"
-                      pure $ T.snoc "25" d1
+    twoHun49 = do
+      void "2"
+      d10 <- satisfy $ inClass "01234"
+      d1 <- dIGIT
+      pure $ T.pack ['2',d10,d1]
+
+    twoHun50 = do
+      void "25"
+      d1 <- satisfy $ inClass "012345"
+      pure $ T.snoc "25" d1
 
 -- | IPv4address = dec-octet "." dec-octet "." dec-octet "." dec-octet
 iPv4address :: Parser IAddrTx
@@ -507,14 +546,14 @@ iPv4address = do
   pure $ IAddrTxIPv4 (a,b,c,d)
 
 -- | scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-scheme :: Parser T.Text
+scheme :: Parser Text
 scheme = do
   one <- aLPHA
   rest <- many $ choice [ aLPHA, dIGIT, char '+', char '-', char '.' ]
   pure $ T.pack $ one:rest
 
 -- | IP-literal = "[" ( IPv6address / IPvFuture  ) "]"
-iPliteral :: Parser IAddrTx -- (Either ([T.Text], Maybe (Either (T.Text,T.Text) (T.Text, T.Text, T.Text, T.Text))) (T.Text,T.Text))
+iPliteral :: Parser IAddrTx -- (Either ([Text], Maybe (Either (Text,Text) (Text, Text, Text, Text))) (Text,Text))
 iPliteral = do
   void "["
   res <- choice [ iPv6address
@@ -542,84 +581,94 @@ iPvFuture = do
                  / [ *5( h16 ":" ) h16 ] "::"              h16
                  / [ *6( h16 ":" ) h16 ] "::"
 -}
-iPv6address :: Parser IAddrTx -- ([T.Text], Maybe (Either (T.Text,T.Text) (T.Text, T.Text, T.Text, T.Text)))
+iPv6address :: Parser IAddrTx -- ([Text], Maybe (Either (Text,Text) (Text, Text, Text, Text)))
 iPv6address = do choice [v6a,v6b,v6c,v6d,v6e,v6f,v6g,v6h,v6i] >>= pure . IAddrTxIPv6
   where
-    hPat = do h <- h16
-              void ":"
-              pure h
+    hPat = do
+      h <- h16
+      void ":"
+      pure h
 
-    v6a = do hs <- count 6 hPat                                            --                           6( h16 ":" ) ls32
-             ls <- ls32
-             pure (hs, Just ls)
+    v6a = do
+      hs <- count 6 hPat                                 --                           6( h16 ":" ) ls32
+      ls <- ls32
+      pure (hs, Just ls)
 
-    v6b = do void "::"                                                     --                      "::" 5( h16 ":" ) ls32
-             hs <- count 5 hPat
-             ls <- ls32
-             pure (hs, Just ls)
+    v6b = do
+      void "::"                                          --                      "::" 5( h16 ":" ) ls32
+      hs <- count 5 hPat
+      ls <- ls32
+      pure (hs, Just ls)
 
-    v6c = do h1 <- option "" h16                                           -- [               h16 ] "::" 4( h16 ":" ) ls32
-             void "::"
-             hs <- count 4 hPat
-             ls <- ls32
-             pure (filter (not . T.null) $ h1:hs, Just ls)
+    v6c = do
+      h1 <- option "" h16                                -- [               h16 ] "::" 4( h16 ":" ) ls32
+      void "::"
+      hs <- count 4 hPat
+      ls <- ls32
+      pure (filter (not . T.null) $ h1:hs, Just ls)
 
-    v6d = do hi <- option [] $ do                                          -- [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
-                     hp <- option "" hPat
-                     hz <- h16
-                     pure [hp,hz]
-             void "::"
-             hs <- count 3 hPat
-             ls <- ls32
-             pure (filter (not . T.null) $ hi++hs, Just ls)
+    v6d = do
+      hi <- option [] $ do                               -- [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
+              hp <- option "" hPat
+              hz <- h16
+              pure [hp,hz]
+      void "::"
+      hs <- count 3 hPat
+      ls <- ls32
+      pure (filter (not . T.null) $ hi++hs, Just ls)
 
-    v6e = do hi <- option [] $ do                                          -- [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
-                     hp <- zeroMax 2 hPat
-                     hz <- h16
-                     pure $ hp ++ [hz]
-             void "::"
-             hs <- count 2 hPat
-             ls <- ls32
-             pure (filter (not . T.null) $ hi++hs, Just ls)
+    v6e = do
+      hi <- option [] $ do                               -- [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
+              hp <- zeroMax 2 hPat
+              hz <- h16
+              pure $ hp ++ [hz]
+      void "::"
+      hs <- count 2 hPat
+      ls <- ls32
+      pure (filter (not . T.null) $ hi++hs, Just ls)
 
-    v6f = do hi <- option [] $ do                                          -- [ *3( h16 ":" ) h16 ] "::"    h16 ":"   ls32
-                     hp <- zeroMax 3 hPat
-                     hz <- h16
-                     pure $ hp ++ [hz]
-             void "::"
-             hn <- hPat
-             ls <- ls32
-             pure (filter (not . T.null) $ hi++[hn], Just ls)
+    v6f = do
+      hi <- option [] $ do                               -- [ *3( h16 ":" ) h16 ] "::"    h16 ":"   ls32
+              hp <- zeroMax 3 hPat
+              hz <- h16
+              pure $ hp ++ [hz]
+      void "::"
+      hn <- hPat
+      ls <- ls32
+      pure (filter (not . T.null) $ hi++[hn], Just ls)
 
-    v6g = do hi <- option [] $ do                                          -- [ *4( h16 ":" ) h16 ] "::"              ls32
-                     hp <- zeroMax 4 hPat
-                     hz <- h16
-                     pure $ hp ++ [hz]
-             void "::"
-             ls <- ls32
-             pure (filter (not . T.null) hi, Just ls)
+    v6g = do
+      hi <- option [] $ do                               -- [ *4( h16 ":" ) h16 ] "::"              ls32
+              hp <- zeroMax 4 hPat
+              hz <- h16
+              pure $ hp ++ [hz]
+      void "::"
+      ls <- ls32
+      pure (filter (not . T.null) hi, Just ls)
 
-    v6h = do hi <- option [] $ do                                          -- [ *5( h16 ":" ) h16 ] "::"              h16
-                     hp <- zeroMax 5 hPat
-                     hz <- h16
-                     pure $ hp ++ [hz]
-             void "::"
-             h <- h16
-             pure (filter (not . T.null) $ hi ++ [h], Nothing)
+    v6h = do
+      hi <- option [] $ do                               -- [ *5( h16 ":" ) h16 ] "::"              h16
+              hp <- zeroMax 5 hPat
+              hz <- h16
+              pure $ hp ++ [hz]
+      void "::"
+      h <- h16
+      pure (filter (not . T.null) $ hi ++ [h], Nothing)
 
-    v6i = do hi <- option [] $ do                                          -- [ *6( h16 ":" ) h16 ] "::"
-                     hp <- zeroMax 6 hPat
-                     hz <- h16
-                     pure $ hp ++ [hz]
-             void "::"
-             pure (filter (not . T.null) $ hi, Nothing)
+    v6i = do
+      hi <- option [] $ do                               -- [ *6( h16 ":" ) h16 ] "::"
+              hp <- zeroMax 6 hPat
+              hz <- h16
+              pure $ hp ++ [hz]
+      void "::"
+      pure (filter (not . T.null) $ hi, Nothing)
 
 -- | h16 = 1*4HEXDIG
-h16 :: Parser T.Text
+h16 :: Parser Text
 h16 = minMax 1 4 hEXDIG >>= pure . T.pack
 
 -- | ls32 = ( h16 ":" h16 ) / IPv4address
-ls32 :: Parser (Either (T.Text,T.Text) IAddrTx)
+ls32 :: Parser (Either (Text,Text) IAddrTx)
 ls32 = choice [ do a <- h16
                    b <- ":" >> h16
                    pure $ Left (a,b)
@@ -661,67 +710,67 @@ iprivate = choice [ satisfy $ inRange ( C.chr 0xE000   , C.chr 0xF8FF   )
                   ]
 
 -- -- | irelative-ref  = irelative-part [ "?" iquery ] [ "#" ifragment ]
--- data IrelativeRef = IrelativeRef { irefIrelative_part :: T.Text
---                                  , irefIqueries       :: [] T.Text
---                                  , irefIfragments     :: [] T.Text
+-- data IrelativeRef = IrelativeRef { irefIrelative_part :: Text
+--                                  , irefIqueries       :: [] Text
+--                                  , irefIfragments     :: [] Text
 --                                  }
 
 -- -- | IRI-reference  = IRI / irelative-ref
 -- data IRIReference = IRIRefIRI IRI
---                   | IRIRefRelative T.Text
+--                   | IRIRefRelative Text
 
 -- -- | IRI = scheme ":" ihier-part [ "?" iquery ] [ "#" ifragment ]
--- data IRI = IRI { ischeme    :: T.Text
+-- data IRI = IRI { ischeme    :: Text
 --                , ihier_part :: IhierPart
---                , iqueries   :: [] T.Text
---                , ifragments :: [] T.Text
+--                , iqueries   :: [] Text
+--                , ifragments :: [] Text
 --                }
 
 -- -- | ihier-part = "//" iauthority ipath-abempty
 -- --              / ipath-absolute
 -- --              / ipath-rootless
 -- --              / ipath-empty
--- data IhierPart = IhierPartIAuth T.Text T.Text
---                | IhierPart_absolute T.Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
---                | IhierPart_rootless T.Text -- | ipath-rootless = isegment-nz *( "/" isegment )
---                | IhierPart_empty    T.Text -- | ipath-empty    = 0<ipchar>
+-- data IhierPart = IhierPartIAuth Text Text
+--                | IhierPart_absolute Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
+--                | IhierPart_rootless Text -- | ipath-rootless = isegment-nz *( "/" isegment )
+--                | IhierPart_empty    Text -- | ipath-empty    = 0<ipchar>
 
 -- -- | irelative-part = "//" iauthority ipath-abempty
 -- --                  / ipath-absolute
 -- --                  / ipath-noscheme
 -- --                  / ipath-empty
--- data IrelativePart = IrelPartIauthority     T.Text T.Text -- | ipath-abempty  = *( "/" isegment )
---                    | IrelPartIpath_absolute T.Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
---                    | IrelPartIpath_noscheme T.Text -- | ipath-noscheme = isegment-nz-nc *( "/" isegment )
---                    | IrelPartIpath_empty    T.Text -- | ipath-empty    = 0<ipchar>
+-- data IrelativePart = IrelPartIauthority     Text Text -- | ipath-abempty  = *( "/" isegment )
+--                    | IrelPartIpath_absolute Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
+--                    | IrelPartIpath_noscheme Text -- | ipath-noscheme = isegment-nz-nc *( "/" isegment )
+--                    | IrelPartIpath_empty    Text -- | ipath-empty    = 0<ipchar>
 
 
 -- -- | iauthority = [ iuserinfo "@" ] ihost [ ":" port ]
--- data IAuthority = IAuthority { iauthMIuserinfo :: Maybe T.Text
---                              , iauthIhost :: T.Text
---                              , iauthMPort :: Maybe T.Text
+-- data IAuthority = IAuthority { iauthMIuserinfo :: Maybe Text
+--                              , iauthIhost :: Text
+--                              , iauthMPort :: Maybe Text
 --                              }
 
 -- -- | iuserinfo = *( iunreserved / pct-encoded / sub-delims / ":" )
--- data IUserInfo = IUserInfoIunreserved T.Text
---                | IUserInfoPCT_encoded T.Text
---                | IUserInfoSUB_delims  T.Text
+-- data IUserInfo = IUserInfoIunreserved Text
+--                | IUserInfoPCT_encoded Text
+--                | IUserInfoSUB_delims  Text
 
 -- -- | ihost = IP-literal / IPv4address / ireg-name
--- data IHost = IHostIP_literal  T.Text
---            | IHostIPV4address T.Text
---            | IHostIReg_name   T.Text
+-- data IHost = IHostIP_literal  Text
+--            | IHostIPV4address Text
+--            | IHostIReg_name   Text
 
 -- -- | ipath = ipath-abempty   ; begins with "/" or is empty
 -- --         / ipath-absolute  ; begins with "/" but not "//"
 -- --         / ipath-noscheme  ; begins with a non-colon segment
 -- --         / ipath-rootless  ; begins with a segment
 -- --         / ipath-empty     ; zero characters
--- data IPath = IPath_abempty   T.Text -- | ipath-abempty  = *( "/" isegment )
---            | IPath_absolute  T.Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
---            | IPath_noscheme  T.Text -- | ipath-noscheme = isegment-nz-nc *( "/" isegment )
---            | IPath_rootless  T.Text -- | ipath-rootless = isegment-nz *( "/" isegment )
---            | IPath_empty     T.Text -- | ipath-empty    = 0<ipchar>
+-- data IPath = IPath_abempty   Text -- | ipath-abempty  = *( "/" isegment )
+--            | IPath_absolute  Text -- | ipath-absolute = "/" [ isegment-nz *( "/" isegment ) ]
+--            | IPath_noscheme  Text -- | ipath-noscheme = isegment-nz-nc *( "/" isegment )
+--            | IPath_rootless  Text -- | ipath-rootless = isegment-nz *( "/" isegment )
+--            | IPath_empty     Text -- | ipath-empty    = 0<ipchar>
 
 
 -- newtype IRI = IRI Text -- Placeholder for Internationalized Resource Identifiers (IRIs)

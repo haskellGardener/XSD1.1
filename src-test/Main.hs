@@ -1,5 +1,5 @@
 {-# Language ExistentialQuantification #-}
-{-| Time-stamp: <2022-04-14 13:16:33 CDT>
+{-| Time-stamp: <2022-04-20 16:40:40 CDT>
 
 Module      : Main
 Copyright   : Robert Lee, © 2017-2022
@@ -410,7 +410,6 @@ gen_YearMonthDuration_illegal = QC.oneof [ simples, dura, dura, dura, dura ]
     genF T_do = error "Calling for a number here is rubbish."                                                                                        -- ⛞
     genF x_do | x_do <= M_do = QC.choose (0,9999)
               | otherwise    = QC.choose (1,9999)
-
 
 gen_DayTimeDuration_legal :: QC.Gen Text
 gen_DayTimeDuration_legal = QC.oneof [ simples, dura, dura, dura, dura ]
@@ -915,7 +914,8 @@ byteNonNegativeIntegerOut :: Integer
 byteNonNegativeIntegerOut = fromIntegral (maxBound :: Word8) + 1
 
 case_UnsignedByte_LegalText :: Assertion
-case_UnsignedByte_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedByte_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
@@ -927,7 +927,8 @@ case_UnsignedByte_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just (UnsignedByte word8) -> fromIntegral word8 == n
 
 case_UnsignedByte_LegalTextWithWS :: Assertion
-case_UnsignedByte_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedByte_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
@@ -940,7 +941,8 @@ case_UnsignedByte_LegalTextWithWS = assertBool "Not All" (all id $ map f testRan
                Just (UnsignedByte word8) -> fromIntegral word8 == n
 
 case_UnsignedByte_LegalTextWithPlus :: Assertion
-case_UnsignedByte_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedByte_LegalTextWithPlus =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
@@ -953,7 +955,8 @@ case_UnsignedByte_LegalTextWithPlus = assertBool "Not All" (all id $ map f testR
                Just (UnsignedByte word8) -> fromIntegral word8 == n
 
 case_UnsignedByte_LegalTextWithMinus :: Assertion
-case_UnsignedByte_LegalTextWithMinus = assertBool "Borked" minusTest
+case_UnsignedByte_LegalTextWithMinus =
+  assertBool "Borked" minusTest
   where
     text = "-0"
     mUnsignedByte :: Maybe UnsignedByte
@@ -963,7 +966,8 @@ case_UnsignedByte_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just (UnsignedByte word8) -> word8 == 0
 
 case_UnsignedByte_Idempotent :: Assertion
-case_UnsignedByte_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedByte_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
@@ -973,14 +977,16 @@ case_UnsignedByte_Idempotent = assertBool "Not All" (all id $ map f testRange)
               fac' = fac
           in case mUnsignedByte of
                Nothing -> False
-               Just ub@(UnsignedByte word8) -> if fromIntegral word8 == n
-                                               then case fac' (canon ub) >>= fac' . canon of
-                                                      Nothing -> False
-                                                      Just (UnsignedByte word8') -> fromIntegral word8' == n
-                                               else False
+               Just ub@(UnsignedByte word8) ->
+                 if fromIntegral word8 == n
+                 then case fac' (canon ub) >>= fac' . canon of
+                        Nothing -> False
+                        Just (UnsignedByte word8') -> fromIntegral word8' == n
+                 else False
 
 case_UnsignedByte_IllegalTextRange :: Assertion
-case_UnsignedByte_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedByte_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> (n + 1) * byteNonNegativeIntegerOut) $ byteNonNegativeIntegers)
                 ++
@@ -994,7 +1000,8 @@ case_UnsignedByte_IllegalTextRange = assertBool "Some" (not . any id $ map f tes
                Just (UnsignedByte word8) -> fromIntegral word8 == n
 
 case_UnsignedByte_IllegalTextRangeWithWS :: Assertion
-case_UnsignedByte_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedByte_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> (n + 1) * byteNonNegativeIntegerOut) $ byteNonNegativeIntegers)
                 ++
@@ -1009,7 +1016,8 @@ case_UnsignedByte_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map
                Just (UnsignedByte word8) -> fromIntegral word8 == n
 
 case_UnsignedByte_IllegalTextWithOther :: Assertion
-case_UnsignedByte_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedByte_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
@@ -1028,7 +1036,8 @@ shortNonNegativeIntegerOut :: Integer
 shortNonNegativeIntegerOut = fromIntegral (maxBound :: Word16) + 1
 
 case_UnsignedShort_LegalText :: Assertion
-case_UnsignedShort_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedShort_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = shortNonNegativeIntegers
     f :: Integer -> Bool
@@ -1040,7 +1049,8 @@ case_UnsignedShort_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just (UnsignedShort word16) -> fromIntegral word16 == n
 
 case_UnsignedShort_LegalTextWithWS :: Assertion
-case_UnsignedShort_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedShort_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = shortNonNegativeIntegers
     f :: Integer -> Bool
@@ -1053,7 +1063,8 @@ case_UnsignedShort_LegalTextWithWS = assertBool "Not All" (all id $ map f testRa
                Just (UnsignedShort word16) -> fromIntegral word16 == n
 
 case_UnsignedShort_LegalTextWithPlus :: Assertion
-case_UnsignedShort_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedShort_LegalTextWithPlus =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = shortNonNegativeIntegers
     f :: Integer -> Bool
@@ -1066,7 +1077,8 @@ case_UnsignedShort_LegalTextWithPlus = assertBool "Not All" (all id $ map f test
                Just (UnsignedShort word16) -> fromIntegral word16 == n
 
 case_UnsignedShort_LegalTextWithMinus :: Assertion
-case_UnsignedShort_LegalTextWithMinus = assertBool "Borked" minusTest
+case_UnsignedShort_LegalTextWithMinus =
+  assertBool "Borked" minusTest
   where
     text = "-0"
     mUnsignedShort :: Maybe UnsignedShort
@@ -1076,7 +1088,8 @@ case_UnsignedShort_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just (UnsignedShort word16) -> word16 == 0
 
 case_UnsignedShort_Idempotent :: Assertion
-case_UnsignedShort_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedShort_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = shortNonNegativeIntegers
     f :: Integer -> Bool
@@ -1093,7 +1106,8 @@ case_UnsignedShort_Idempotent = assertBool "Not All" (all id $ map f testRange)
                                                  else False
 
 case_UnsignedShort_IllegalTextRange :: Assertion
-case_UnsignedShort_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedShort_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> (n + 1) * shortNonNegativeIntegerOut) $ shortNonNegativeIntegers)
                 ++
@@ -1107,7 +1121,8 @@ case_UnsignedShort_IllegalTextRange = assertBool "Some" (not . any id $ map f te
                Just (UnsignedShort word16) -> fromIntegral word16 == n
 
 case_UnsignedShort_IllegalTextRangeWithWS :: Assertion
-case_UnsignedShort_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedShort_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> (n + 1) * shortNonNegativeIntegerOut) $ shortNonNegativeIntegers)
                 ++
@@ -1122,7 +1137,8 @@ case_UnsignedShort_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ ma
                Just (UnsignedShort word16) -> fromIntegral word16 == n
 
 case_UnsignedShort_IllegalTextWithOther :: Assertion
-case_UnsignedShort_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedShort_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = shortNonNegativeIntegers
     f :: Integer -> Bool
@@ -1138,13 +1154,16 @@ intNonNegativeIntegers :: [] Integer
 intNonNegativeIntegers =
   range (fromIntegral (minBound :: Word32), fromIntegral (maxBound :: Word8)) -- Shorten the range or wait forever
   ++
-  range (fromIntegral (maxBound :: Word32) - fromIntegral (maxBound :: Word8), fromIntegral (maxBound :: Word32))
+  range ( fromIntegral (maxBound :: Word32) - fromIntegral (maxBound :: Word8)
+        , fromIntegral (maxBound :: Word32)
+        )
 
 intNonNegativeIntegerOut :: Integer
 intNonNegativeIntegerOut = fromIntegral (maxBound :: Word32) + 1
 
 case_UnsignedInt_LegalText :: Assertion
-case_UnsignedInt_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedInt_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = intNonNegativeIntegers
     f :: Integer -> Bool
@@ -1156,7 +1175,8 @@ case_UnsignedInt_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just (UnsignedInt word32) -> fromIntegral word32 == n
 
 case_UnsignedInt_LegalTextWithWS :: Assertion
-case_UnsignedInt_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedInt_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = intNonNegativeIntegers
     f :: Integer -> Bool
@@ -1169,7 +1189,8 @@ case_UnsignedInt_LegalTextWithWS = assertBool "Not All" (all id $ map f testRang
                Just (UnsignedInt word32) -> fromIntegral word32 == n
 
 case_UnsignedInt_LegalTextWithPlus :: Assertion
-case_UnsignedInt_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedInt_LegalTextWithPlus =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = intNonNegativeIntegers
     f :: Integer -> Bool
@@ -1182,7 +1203,8 @@ case_UnsignedInt_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRa
                Just (UnsignedInt word32) -> fromIntegral word32 == n
 
 case_UnsignedInt_LegalTextWithMinus :: Assertion
-case_UnsignedInt_LegalTextWithMinus = assertBool "Borked" minusTest
+case_UnsignedInt_LegalTextWithMinus =
+  assertBool "Borked" minusTest
   where
     text = "-0"
     mUnsignedInt :: Maybe UnsignedInt
@@ -1192,7 +1214,8 @@ case_UnsignedInt_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just (UnsignedInt word32) -> word32 == 0
 
 case_UnsignedInt_Idempotent :: Assertion
-case_UnsignedInt_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedInt_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = intNonNegativeIntegers
     f :: Integer -> Bool
@@ -1202,14 +1225,16 @@ case_UnsignedInt_Idempotent = assertBool "Not All" (all id $ map f testRange)
               fac' = fac
           in case mUnsignedInt of
                Nothing -> False
-               Just ub@(UnsignedInt word32) -> if fromIntegral word32 == n
-                                               then case fac' (canon ub) >>= fac' . canon of
-                                                      Nothing -> False
-                                                      Just (UnsignedInt word32') -> fromIntegral word32' == n
-                                               else False
+               Just ub@(UnsignedInt word32) ->
+                 if fromIntegral word32 == n
+                 then case fac' (canon ub) >>= fac' . canon of
+                        Nothing -> False
+                        Just (UnsignedInt word32') -> fromIntegral word32' == n
+                 else False
 
 case_UnsignedInt_IllegalTextRange :: Assertion
-case_UnsignedInt_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedInt_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> (n + 1) * intNonNegativeIntegerOut) $ intNonNegativeIntegers)
                 ++
@@ -1223,7 +1248,8 @@ case_UnsignedInt_IllegalTextRange = assertBool "Some" (not . any id $ map f test
                Just (UnsignedInt word32) -> fromIntegral word32 == n
 
 case_UnsignedInt_IllegalTextRangeWithWS :: Assertion
-case_UnsignedInt_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedInt_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> (n + 1) * intNonNegativeIntegerOut) $ intNonNegativeIntegers)
                 ++
@@ -1238,7 +1264,8 @@ case_UnsignedInt_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map 
                Just (UnsignedInt word32) -> fromIntegral word32 == n
 
 case_UnsignedInt_IllegalTextWithOther :: Assertion
-case_UnsignedInt_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedInt_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = intNonNegativeIntegers
     f :: Integer -> Bool
@@ -1260,7 +1287,8 @@ longNonNegativeIntegerOut :: Integer
 longNonNegativeIntegerOut = fromIntegral (maxBound :: Word64) + 1
 
 case_UnsignedLong_LegalText :: Assertion
-case_UnsignedLong_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedLong_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = longNonNegativeIntegers
     f :: Integer -> Bool
@@ -1272,7 +1300,8 @@ case_UnsignedLong_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just (UnsignedLong word64) -> fromIntegral word64 == n
 
 case_UnsignedLong_LegalTextWithWS :: Assertion
-case_UnsignedLong_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedLong_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = longNonNegativeIntegers
     f :: Integer -> Bool
@@ -1285,7 +1314,8 @@ case_UnsignedLong_LegalTextWithWS = assertBool "Not All" (all id $ map f testRan
                Just (UnsignedLong word64) -> fromIntegral word64 == n
 
 case_UnsignedLong_LegalTextWithPlus :: Assertion
-case_UnsignedLong_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedLong_LegalTextWithPlus =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = longNonNegativeIntegers
     f :: Integer -> Bool
@@ -1298,7 +1328,8 @@ case_UnsignedLong_LegalTextWithPlus = assertBool "Not All" (all id $ map f testR
                Just (UnsignedLong word64) -> fromIntegral word64 == n
 
 case_UnsignedLong_LegalTextWithMinus :: Assertion
-case_UnsignedLong_LegalTextWithMinus = assertBool "Borked" minusTest
+case_UnsignedLong_LegalTextWithMinus =
+  assertBool "Borked" minusTest
   where
     text = "-0"
     mUnsignedLong :: Maybe UnsignedLong
@@ -1308,7 +1339,8 @@ case_UnsignedLong_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just (UnsignedLong word64) -> word64 == 0
 
 case_UnsignedLong_Idempotent :: Assertion
-case_UnsignedLong_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_UnsignedLong_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = longNonNegativeIntegers
     f :: Integer -> Bool
@@ -1318,14 +1350,16 @@ case_UnsignedLong_Idempotent = assertBool "Not All" (all id $ map f testRange)
               fac' = fac
           in case mUnsignedLong of
                Nothing -> False
-               Just ub@(UnsignedLong word64) -> if fromIntegral word64 == n
-                                                then case fac' (canon ub) >>= fac' . canon of
-                                                       Nothing -> False
-                                                       Just (UnsignedLong word64') -> fromIntegral word64' == n
-                                                else False
+               Just ub@(UnsignedLong word64) ->
+                 if fromIntegral word64 == n
+                 then case fac' (canon ub) >>= fac' . canon of
+                        Nothing -> False
+                        Just (UnsignedLong word64') -> fromIntegral word64' == n
+                 else False
 
 case_UnsignedLong_IllegalTextRange :: Assertion
-case_UnsignedLong_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedLong_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> (n + 1) * longNonNegativeIntegerOut) $ longNonNegativeIntegers)
                 ++
@@ -1339,7 +1373,8 @@ case_UnsignedLong_IllegalTextRange = assertBool "Some" (not . any id $ map f tes
                Just (UnsignedLong word64) -> fromIntegral word64 == n
 
 case_UnsignedLong_IllegalTextRangeWithWS :: Assertion
-case_UnsignedLong_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedLong_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> (n + 1) * longNonNegativeIntegerOut) $ longNonNegativeIntegers)
                 ++
@@ -1354,7 +1389,8 @@ case_UnsignedLong_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map
                Just (UnsignedLong word64) -> fromIntegral word64 == n
 
 case_UnsignedLong_IllegalTextWithOther :: Assertion
-case_UnsignedLong_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_UnsignedLong_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = longNonNegativeIntegers
     f :: Integer -> Bool
@@ -1373,7 +1409,7 @@ byteIntegerOut :: Integer
 byteIntegerOut = fromIntegral (minBound :: Int8) - 1
 
 case_Byte_LegalText :: Assertion
-case_Byte_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_Byte_LegalText = assertBool "Not All" (and $ map f testRange)
   where
     testRange = byteIntegers
     f :: Integer -> Bool
@@ -1385,7 +1421,8 @@ case_Byte_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just (Byte int8) -> fromIntegral int8 == n
 
 case_Byte_LegalTextWithWS :: Assertion
-case_Byte_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_Byte_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = byteIntegers
     f :: Integer -> Bool
@@ -1398,7 +1435,8 @@ case_Byte_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
                Just (Byte int8) -> fromIntegral int8 == n
 
 case_Byte_LegalTextWithPlus :: Assertion
-case_Byte_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_Byte_LegalTextWithPlus =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = byteIntegers
     f :: Integer -> Bool
@@ -1413,7 +1451,8 @@ case_Byte_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
                Just (Byte int8) -> fromIntegral int8 == n
 
 case_Byte_LegalTextWithMinus :: Assertion
-case_Byte_LegalTextWithMinus = assertBool "Borked" minusTest
+case_Byte_LegalTextWithMinus =
+  assertBool "Borked" minusTest
   where
     text = "-0"
     mByte :: Maybe Byte
@@ -1423,7 +1462,8 @@ case_Byte_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just (Byte int8) -> int8 == 0
 
 case_Byte_Idempotent :: Assertion
-case_Byte_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_Byte_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = byteIntegers
     f :: Integer -> Bool
@@ -1433,14 +1473,16 @@ case_Byte_Idempotent = assertBool "Not All" (all id $ map f testRange)
               fac' = fac
           in case mByte of
                Nothing -> False
-               Just ub@(Byte int8) -> if fromIntegral int8 == n
-                                      then case fac' (canon ub) >>= fac' . canon of
-                                             Nothing -> False
-                                             Just (Byte int8') -> fromIntegral int8' == n
-                                      else False
+               Just ub@(Byte int8) ->
+                 if fromIntegral int8 == n
+                 then case fac' (canon ub) >>= fac' . canon of
+                        Nothing -> False
+                        Just (Byte int8') -> fromIntegral int8' == n
+                 else False
 
 case_Byte_IllegalTextRange :: Assertion
-case_Byte_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_Byte_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = map (* byteIntegerOut) $ filter (/= 0) byteIntegers
     f :: Integer -> Bool
@@ -1452,7 +1494,8 @@ case_Byte_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
                Just (Byte int8) -> fromIntegral int8 == n
 
 case_Byte_IllegalTextRangeWithWS :: Assertion
-case_Byte_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_Byte_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (* byteIntegerOut) $ filter (/= 0) byteIntegers)
     f :: Integer -> Bool
@@ -1465,7 +1508,8 @@ case_Byte_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testR
                Just (Byte int8) -> fromIntegral int8 == n
 
 case_Byte_IllegalTextWithOther :: Assertion
-case_Byte_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_Byte_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = byteIntegers
     f :: Integer -> Bool
@@ -1484,7 +1528,8 @@ shortIntegerOut :: Integer
 shortIntegerOut = fromIntegral (minBound :: Int16) - 1
 
 case_Short_LegalText :: Assertion
-case_Short_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_Short_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = shortIntegers
     f :: Integer -> Bool
@@ -1496,7 +1541,7 @@ case_Short_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just (Short int16) -> fromIntegral int16 == n
 
 case_Short_LegalTextWithWS :: Assertion
-case_Short_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_Short_LegalTextWithWS = assertBool "Not All" (and $ map f testRange)
   where
     testRange = shortIntegers
     f :: Integer -> Bool
@@ -1509,7 +1554,8 @@ case_Short_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
                Just (Short int16) -> fromIntegral int16 == n
 
 case_Short_LegalTextWithPlus :: Assertion
-case_Short_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_Short_LegalTextWithPlus =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = shortIntegers
     f :: Integer -> Bool
@@ -1534,7 +1580,8 @@ case_Short_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just (Short int16) -> int16 == 0
 
 case_Short_Idempotent :: Assertion
-case_Short_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_Short_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = shortIntegers
     f :: Integer -> Bool
@@ -1564,7 +1611,8 @@ case_Short_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
                Just (Short int16) -> fromIntegral int16 == n
 
 case_Short_IllegalTextRangeWithWS :: Assertion
-case_Short_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_Short_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (* shortIntegerOut) $ filter (/= 0) shortIntegers)
     f :: Integer -> Bool
@@ -1577,7 +1625,8 @@ case_Short_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f test
                Just (Short int16) -> fromIntegral int16 == n
 
 case_Short_IllegalTextWithOther :: Assertion
-case_Short_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_Short_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = shortIntegers
     f :: Integer -> Bool
@@ -1604,7 +1653,8 @@ intxsIntegerOut :: Integer
 intxsIntegerOut = fromIntegral (minBound :: Int32) - 1
 
 case_Intxs_LegalText :: Assertion
-case_Intxs_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_Intxs_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = intxsIntegers
     f :: Integer -> Bool
@@ -1616,7 +1666,8 @@ case_Intxs_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just (Intxs int32) -> fromIntegral int32 == n
 
 case_Intxs_LegalTextWithWS :: Assertion
-case_Intxs_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_Intxs_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = intxsIntegers
     f :: Integer -> Bool
@@ -1629,7 +1680,8 @@ case_Intxs_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
                Just (Intxs int32) -> fromIntegral int32 == n
 
 case_Intxs_LegalTextWithPlus :: Assertion
-case_Intxs_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_Intxs_LegalTextWithPlus =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = intxsIntegers
     f :: Integer -> Bool
@@ -1654,7 +1706,8 @@ case_Intxs_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just (Intxs int32) -> int32 == 0
 
 case_Intxs_Idempotent :: Assertion
-case_Intxs_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_Intxs_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = intxsIntegers
     f :: Integer -> Bool
@@ -1671,7 +1724,8 @@ case_Intxs_Idempotent = assertBool "Not All" (all id $ map f testRange)
                                         else False
 
 case_Intxs_IllegalTextRange :: Assertion
-case_Intxs_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_Intxs_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = map (* intxsIntegerOut) $ filter (/= 0) intxsIntegers
     f :: Integer -> Bool
@@ -1683,7 +1737,8 @@ case_Intxs_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
                Just (Intxs int32) -> fromIntegral int32 == n
 
 case_Intxs_IllegalTextRangeWithWS :: Assertion
-case_Intxs_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_Intxs_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (* intxsIntegerOut) $ filter (/= 0) intxsIntegers)
     f :: Integer -> Bool
@@ -1696,7 +1751,8 @@ case_Intxs_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f test
                Just (Intxs int32) -> fromIntegral int32 == n
 
 case_Intxs_IllegalTextWithOther :: Assertion
-case_Intxs_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_Intxs_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = intxsIntegers
     f :: Integer -> Bool
@@ -1719,7 +1775,8 @@ longIntegerOut :: Integer
 longIntegerOut = fromIntegral (minBound :: Int64) - 1
 
 case_Long_LegalText :: Assertion
-case_Long_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_Long_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = longIntegers
     f :: Integer -> Bool
@@ -1731,7 +1788,8 @@ case_Long_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just (Long int64) -> fromIntegral int64 == n
 
 case_Long_LegalTextWithWS :: Assertion
-case_Long_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_Long_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = longIntegers
     f :: Integer -> Bool
@@ -1744,7 +1802,7 @@ case_Long_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
                Just (Long int64) -> fromIntegral int64 == n
 
 case_Long_LegalTextWithPlus :: Assertion
-case_Long_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_Long_LegalTextWithPlus = assertBool "Not All" (and $ map f testRange)
   where
     testRange = longIntegers
     f :: Integer -> Bool
@@ -1757,7 +1815,8 @@ case_Long_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
                Just (Long int64) -> fromIntegral int64 == n
 
 case_Long_LegalTextWithMinus :: Assertion
-case_Long_LegalTextWithMinus = assertBool "Borked" minusTest
+case_Long_LegalTextWithMinus =
+  assertBool "Borked" minusTest
   where
     text = "-0"
     mLong :: Maybe Long
@@ -1767,7 +1826,8 @@ case_Long_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just (Long int64) -> int64 == 0
 
 case_Long_Idempotent :: Assertion
-case_Long_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_Long_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = longIntegers
     f :: Integer -> Bool
@@ -1797,7 +1857,8 @@ case_Long_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
                Just (Long int64) -> fromIntegral int64 == n
 
 case_Long_IllegalTextRangeWithWS :: Assertion
-case_Long_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_Long_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (* longIntegerOut) $ filter (/= 0) longIntegers)
     f :: Integer -> Bool
@@ -1810,7 +1871,8 @@ case_Long_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testR
                Just (Long int64) -> fromIntegral int64 == n
 
 case_Long_IllegalTextWithOther :: Assertion
-case_Long_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_Long_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = longIntegers
     f :: Integer -> Bool
@@ -1878,7 +1940,8 @@ integers = range (fromIntegral (minBound :: Int64), fromIntegral (minBound :: In
            range (fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8), fromIntegral (maxBound :: Int64))
 
 case_Integer_LegalText :: Assertion
-case_Integer_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_Integer_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = integers
     f :: Integer -> Bool
@@ -1890,7 +1953,8 @@ case_Integer_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just integer -> integer == n
 
 case_Integer_LegalTextWithWS :: Assertion
-case_Integer_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_Integer_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = integers
     f :: Integer -> Bool
@@ -1903,7 +1967,8 @@ case_Integer_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
                Just integer -> integer == n
 
 case_Integer_LegalTextWithPlus :: Assertion
-case_Integer_LegalTextWithPlus = assertBool "Not All" (all id $ map f testRange)
+case_Integer_LegalTextWithPlus =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = integers
     f :: Integer -> Bool
@@ -1928,7 +1993,7 @@ case_Integer_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just integer -> integer == 0
 
 case_Integer_Idempotent :: Assertion
-case_Integer_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_Integer_Idempotent = assertBool "Not All" (and $ map f testRange)
   where
     testRange = integers
     f :: Integer -> Bool
@@ -1938,14 +2003,16 @@ case_Integer_Idempotent = assertBool "Not All" (all id $ map f testRange)
               fac' = fac
           in case mInteger of
                Nothing -> False
-               Just ub@integer -> if integer == n
-                                       then case fac' (canon ub) >>= fac' . canon of
-                                              Nothing -> False
-                                              Just integer' -> integer' == n
-                                       else False
+               Just ub@integer ->
+                 if integer == n
+                 then case fac' (canon ub) >>= fac' . canon of
+                        Nothing -> False
+                        Just integer' -> integer' == n
+                 else False
 
 case_Integer_IllegalTextWithOther :: Assertion
-case_Integer_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_Integer_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = integers
     f :: Integer -> Bool
@@ -1961,7 +2028,7 @@ nonPositiveIntegers :: [] Integer
 nonPositiveIntegers = filter (<= 0) integers
 
 case_NonPositiveInteger_LegalText :: Assertion
-case_NonPositiveInteger_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_NonPositiveInteger_LegalText = assertBool "Not All" (and $ map f testRange)
   where
     testRange = nonPositiveIntegers
     f :: Integer -> Bool
@@ -1973,7 +2040,7 @@ case_NonPositiveInteger_LegalText = assertBool "Not All" (all id $ map f testRan
                Just nonPositiveInteger -> redde nonPositiveInteger == n
 
 case_NonPositiveInteger_LegalTextWithWS :: Assertion
-case_NonPositiveInteger_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_NonPositiveInteger_LegalTextWithWS = assertBool "Not All" (and $ map f testRange)
   where
     testRange = nonPositiveIntegers
     f :: Integer -> Bool
@@ -1986,7 +2053,8 @@ case_NonPositiveInteger_LegalTextWithWS = assertBool "Not All" (all id $ map f t
                Just nonPositiveInteger -> redde nonPositiveInteger == n
 
 case_NonPositiveInteger_LegalTextWithPlus :: Assertion
-case_NonPositiveInteger_LegalTextWithPlus = assertBool "Borked" plusTest
+case_NonPositiveInteger_LegalTextWithPlus =
+  assertBool "Borked" plusTest
   where
     text = "+0"
     mNonPositiveInteger :: Maybe NonPositiveInteger
@@ -1996,7 +2064,8 @@ case_NonPositiveInteger_LegalTextWithPlus = assertBool "Borked" plusTest
                  Just nonPositiveInteger -> redde nonPositiveInteger == (0 :: Integer)
 
 case_NonPositiveInteger_LegalTextWithMinus :: Assertion
-case_NonPositiveInteger_LegalTextWithMinus = assertBool "Borked" minusTest
+case_NonPositiveInteger_LegalTextWithMinus =
+  assertBool "Borked" minusTest
   where
     text = "-0"
     mNonPositiveInteger :: Maybe NonPositiveInteger
@@ -2006,7 +2075,8 @@ case_NonPositiveInteger_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just nonPositiveInteger -> redde nonPositiveInteger == (0 :: Integer)
 
 case_NonPositiveInteger_Idempotent :: Assertion
-case_NonPositiveInteger_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_NonPositiveInteger_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = nonPositiveIntegers
     f :: Integer -> Bool
@@ -2024,7 +2094,8 @@ case_NonPositiveInteger_Idempotent = assertBool "Not All" (all id $ map f testRa
                  else False
 
 case_NonPositiveInteger_IllegalTextRange :: Assertion
-case_NonPositiveInteger_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_NonPositiveInteger_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> n * (-1)) $ filter (/= 0) nonPositiveIntegers)
     f :: Integer -> Bool
@@ -2049,7 +2120,8 @@ case_NonPositiveInteger_IllegalTextRangeWithWS = assertBool "Some" (not . any id
                Just nonPositiveInteger -> redde nonPositiveInteger == n
 
 case_NonPositiveInteger_IllegalTextWithOther :: Assertion
-case_NonPositiveInteger_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_NonPositiveInteger_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = nonPositiveIntegers
     f :: Integer -> Bool
@@ -2065,7 +2137,8 @@ negativeIntegers :: [] Integer
 negativeIntegers = filter (< 0) integers
 
 case_NegativeInteger_LegalText :: Assertion
-case_NegativeInteger_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_NegativeInteger_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = negativeIntegers
     f :: Integer -> Bool
@@ -2077,7 +2150,8 @@ case_NegativeInteger_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just negativeInteger -> redde negativeInteger == n
 
 case_NegativeInteger_LegalTextWithWS :: Assertion
-case_NegativeInteger_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_NegativeInteger_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = negativeIntegers
     f :: Integer -> Bool
@@ -2090,7 +2164,8 @@ case_NegativeInteger_LegalTextWithWS = assertBool "Not All" (all id $ map f test
                Just negativeInteger -> redde negativeInteger == n
 
 case_NegativeInteger_LegalTextWithPlus :: Assertion
-case_NegativeInteger_LegalTextWithPlus = assertBool "Borked" (not plusTest)
+case_NegativeInteger_LegalTextWithPlus =
+  assertBool "Borked" (not plusTest)
   where
     text = "+0"
     mNegativeInteger :: Maybe NegativeInteger
@@ -2100,7 +2175,8 @@ case_NegativeInteger_LegalTextWithPlus = assertBool "Borked" (not plusTest)
                  Just negativeInteger -> redde negativeInteger == (0 :: Integer)
 
 case_NegativeInteger_LegalTextWithMinus :: Assertion
-case_NegativeInteger_LegalTextWithMinus = assertBool "Borked" (not minusTest)
+case_NegativeInteger_LegalTextWithMinus =
+  assertBool "Borked" (not minusTest)
   where
     text = "-0"
     mNegativeInteger :: Maybe NegativeInteger
@@ -2110,7 +2186,8 @@ case_NegativeInteger_LegalTextWithMinus = assertBool "Borked" (not minusTest)
                   Just negativeInteger -> redde negativeInteger == (0 :: Integer)
 
 case_NegativeInteger_Idempotent :: Assertion
-case_NegativeInteger_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_NegativeInteger_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = negativeIntegers
     f :: Integer -> Bool
@@ -2128,7 +2205,8 @@ case_NegativeInteger_Idempotent = assertBool "Not All" (all id $ map f testRange
                  else False
 
 case_NegativeInteger_IllegalTextRange :: Assertion
-case_NegativeInteger_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_NegativeInteger_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> n * (-1)) $ filter (/= 0) negativeIntegers)
     f :: Integer -> Bool
@@ -2140,7 +2218,8 @@ case_NegativeInteger_IllegalTextRange = assertBool "Some" (not . any id $ map f 
                Just negativeInteger -> redde negativeInteger == n
 
 case_NegativeInteger_IllegalTextRangeWithWS :: Assertion
-case_NegativeInteger_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_NegativeInteger_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> n * (-1)) $ filter (/= 0) negativeIntegers)
     f :: Integer -> Bool
@@ -2153,7 +2232,8 @@ case_NegativeInteger_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ 
                Just negativeInteger -> redde negativeInteger == n
 
 case_NegativeInteger_IllegalTextWithOther :: Assertion
-case_NegativeInteger_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_NegativeInteger_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = negativeIntegers
     f :: Integer -> Bool
@@ -2169,7 +2249,8 @@ nonNegativeIntegers :: [] Integer
 nonNegativeIntegers = filter (>= 0) integers
 
 case_NonNegativeInteger_LegalText :: Assertion
-case_NonNegativeInteger_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_NonNegativeInteger_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = nonNegativeIntegers
     f :: Integer -> Bool
@@ -2181,7 +2262,8 @@ case_NonNegativeInteger_LegalText = assertBool "Not All" (all id $ map f testRan
                Just nonNegativeInteger -> redde nonNegativeInteger == n
 
 case_NonNegativeInteger_LegalTextWithWS :: Assertion
-case_NonNegativeInteger_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_NonNegativeInteger_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = nonNegativeIntegers
     f :: Integer -> Bool
@@ -2194,7 +2276,8 @@ case_NonNegativeInteger_LegalTextWithWS = assertBool "Not All" (all id $ map f t
                Just nonNegativeInteger -> redde nonNegativeInteger == n
 
 case_NonNegativeInteger_LegalTextWithPlus :: Assertion
-case_NonNegativeInteger_LegalTextWithPlus = assertBool "Borked" plusTest
+case_NonNegativeInteger_LegalTextWithPlus =
+  assertBool "Borked" plusTest
   where
     text = "+0"
     mNonNegativeInteger :: Maybe NonNegativeInteger
@@ -2204,7 +2287,8 @@ case_NonNegativeInteger_LegalTextWithPlus = assertBool "Borked" plusTest
                  Just nonNegativeInteger -> redde nonNegativeInteger == (0 :: Integer)
 
 case_NonNegativeInteger_LegalTextWithMinus :: Assertion
-case_NonNegativeInteger_LegalTextWithMinus = assertBool "Borked" minusTest
+case_NonNegativeInteger_LegalTextWithMinus =
+  assertBool "Borked" minusTest
   where
     text = "-0"
     mNonNegativeInteger :: Maybe NonNegativeInteger
@@ -2214,7 +2298,8 @@ case_NonNegativeInteger_LegalTextWithMinus = assertBool "Borked" minusTest
                   Just nonNegativeInteger -> redde nonNegativeInteger == (0 :: Integer)
 
 case_NonNegativeInteger_Idempotent :: Assertion
-case_NonNegativeInteger_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_NonNegativeInteger_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = nonNegativeIntegers
     f :: Integer -> Bool
@@ -2232,7 +2317,8 @@ case_NonNegativeInteger_Idempotent = assertBool "Not All" (all id $ map f testRa
                  else False
 
 case_NonNegativeInteger_IllegalTextRange :: Assertion
-case_NonNegativeInteger_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
+case_NonNegativeInteger_IllegalTextRange =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> n * (-1)) $ filter (/= 0) nonNegativeIntegers)
     f :: Integer -> Bool
@@ -2244,7 +2330,8 @@ case_NonNegativeInteger_IllegalTextRange = assertBool "Some" (not . any id $ map
                Just nonNegativeInteger -> redde nonNegativeInteger == n
 
 case_NonNegativeInteger_IllegalTextRangeWithWS :: Assertion
-case_NonNegativeInteger_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_NonNegativeInteger_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> n * (-1)) $ filter (/= 0) nonNegativeIntegers)
     f :: Integer -> Bool
@@ -2257,7 +2344,8 @@ case_NonNegativeInteger_IllegalTextRangeWithWS = assertBool "Some" (not . any id
                Just nonNegativeInteger -> redde nonNegativeInteger == n
 
 case_NonNegativeInteger_IllegalTextWithOther :: Assertion
-case_NonNegativeInteger_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_NonNegativeInteger_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = nonNegativeIntegers
     f :: Integer -> Bool
@@ -2273,7 +2361,8 @@ positiveIntegers :: [] Integer
 positiveIntegers = filter (> 0) integers
 
 case_PositiveInteger_LegalText :: Assertion
-case_PositiveInteger_LegalText = assertBool "Not All" (all id $ map f testRange)
+case_PositiveInteger_LegalText =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = positiveIntegers
     f :: Integer -> Bool
@@ -2285,7 +2374,8 @@ case_PositiveInteger_LegalText = assertBool "Not All" (all id $ map f testRange)
                Just positiveInteger -> redde positiveInteger == n
 
 case_PositiveInteger_LegalTextWithWS :: Assertion
-case_PositiveInteger_LegalTextWithWS = assertBool "Not All" (all id $ map f testRange)
+case_PositiveInteger_LegalTextWithWS =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = positiveIntegers
     f :: Integer -> Bool
@@ -2298,7 +2388,8 @@ case_PositiveInteger_LegalTextWithWS = assertBool "Not All" (all id $ map f test
                Just positiveInteger -> redde positiveInteger == n
 
 case_PositiveInteger_LegalTextWithPlus :: Assertion
-case_PositiveInteger_LegalTextWithPlus = assertBool "Borked" (not plusTest)
+case_PositiveInteger_LegalTextWithPlus =
+  assertBool "Borked" (not plusTest)
   where
     text = "+0"
     mPositiveInteger :: Maybe PositiveInteger
@@ -2308,7 +2399,8 @@ case_PositiveInteger_LegalTextWithPlus = assertBool "Borked" (not plusTest)
                  Just positiveInteger -> redde positiveInteger == (0 :: Integer)
 
 case_PositiveInteger_LegalTextWithMinus :: Assertion
-case_PositiveInteger_LegalTextWithMinus = assertBool "Borked" (not minusTest)
+case_PositiveInteger_LegalTextWithMinus =
+  assertBool "Borked" (not minusTest)
   where
     text = "-0"
     mPositiveInteger :: Maybe PositiveInteger
@@ -2318,7 +2410,8 @@ case_PositiveInteger_LegalTextWithMinus = assertBool "Borked" (not minusTest)
                   Just positiveInteger -> redde positiveInteger == (0 :: Integer)
 
 case_PositiveInteger_Idempotent :: Assertion
-case_PositiveInteger_Idempotent = assertBool "Not All" (all id $ map f testRange)
+case_PositiveInteger_Idempotent =
+  assertBool "Not All" (and $ map f testRange)
   where
     testRange = positiveIntegers
     f :: Integer -> Bool
@@ -2348,7 +2441,8 @@ case_PositiveInteger_IllegalTextRange = assertBool "Some" (not . any id $ map f 
                Just positiveInteger -> redde positiveInteger == n
 
 case_PositiveInteger_IllegalTextRangeWithWS :: Assertion
-case_PositiveInteger_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
+case_PositiveInteger_IllegalTextRangeWithWS =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = (map (\n -> n * (-1)) $ filter (/= 0) positiveIntegers)
     f :: Integer -> Bool
@@ -2361,7 +2455,8 @@ case_PositiveInteger_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ 
                Just positiveInteger -> redde positiveInteger == n
 
 case_PositiveInteger_IllegalTextWithOther :: Assertion
-case_PositiveInteger_IllegalTextWithOther = assertBool "Some" (not . any id $ map f testRange)
+case_PositiveInteger_IllegalTextWithOther =
+  assertBool "Some" (not . any id $ map f testRange)
   where
     testRange = positiveIntegers
     f :: Integer -> Bool

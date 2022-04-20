@@ -1,6 +1,6 @@
 {-# Language ExistentialQuantification, MultiParamTypeClasses, TupleSections
   , FlexibleInstances, GeneralizedNewtypeDeriving, NegativeLiterals, MultiWayIf #-}
-{-| Time-stamp: <2022-04-14 13:17:16 CDT>
+{-| Time-stamp: <2022-04-20 17:03:59 CDT>
 
 Module      : Regex
 Copyright   : Robert Lee, © 2017-2022
@@ -130,7 +130,6 @@ pairSnds pp xs = pure . (pp,) . T.concat $ map snd xs
 
 instance TransRegex RE
   where scribeBR b (RE branches) = T.intercalate "|" $ map (scribeBR b) branches
-
         selegoR pp@(RE branches) = choice (map selegoR branches) >>= pairSnd pp
 
 instance TransRegex Branch
@@ -182,18 +181,20 @@ instance TransRegex QuantExact
         selegoR _ = error "Not supported irregular instance."
 
 instance TransRegex NormalChar
-  where scribeBR False (NormalChar c) = T.singleton c
-        scribeBR True  (NormalChar c) =
-          case M.lookup (Left $ C.ord c) eNumEntityMap of
-            Nothing -> if | C.ord c <= 0x1FFF -> T.singleton c
-                          | otherwise ->
-                              let stringA = (N.showHex $ C.ord c) ""
-                                  stringB = if | L.length stringA < 6 -> replicate (6 - L.length stringA) '0' ++ stringA
-                                               | otherwise            -> stringA
-                              in T.concat ["&#x", T.toUpper $ T.pack stringB, ";"]
-            Just t -> T.concat ["&", t, ";"]
+  where
+    scribeBR False (NormalChar c) = T.singleton c
+    scribeBR True  (NormalChar c) =
+      case M.lookup (Left $ C.ord c) eNumEntityMap of
+        Nothing ->
+          if | C.ord c <= 0x1FFF -> T.singleton c
+             | otherwise ->
+                 let stringA = (N.showHex $ C.ord c) ""
+                     stringB = if | L.length stringA < 6 -> replicate (6 - L.length stringA) '0' ++ stringA
+                                  | otherwise            -> stringA
+                 in T.concat ["&#x", T.toUpper $ T.pack stringB, ";"]
+        Just t -> T.concat ["&", t, ";"]
 
-        selegoR nc@(NormalChar c) = char c >>= pairChar nc
+    selegoR nc@(NormalChar c) = char c >>= pairChar nc
 
 instance TransRegex CharClass
   where scribeBR b (CharClassSingle cc) = scribeBR b cc
@@ -626,15 +627,17 @@ instance TransRegex UnicodeBlockName
 --
 -- Normalized text is free from character entity irritants.
 normalize :: Parser (Text, [] (Int, Int))
-normalize = do nlPairs <- many1 (match nChar)
-               let res :: [] (Char, Int, Int)
-                   res = if | null nlPairs -> []                                      -- Prevent tail from throwing an exception.
-                            | otherwise -> L.tail $ L.scanl scanF zeroElement nlPairs -- eliminate zero element from the result.
-               pure ( T.pack $ map (\(c, _, _) -> c) res
-                    , map (\(_, l, pos) -> (l, pos)) res
-                    )
+normalize = do
+  nlPairs <- many1 (match nChar)
+  let res :: [] (Char, Int, Int)
+      res = if | null nlPairs -> []                                      -- Prevent tail from throwing an exception.
+               | otherwise -> L.tail $ L.scanl scanF zeroElement nlPairs -- eliminate zero element from the result.
+  pure ( T.pack $ map (\(c, _, _) -> c) res
+       , map (\(_, l, pos) -> (l, pos)) res
+       )
   where scanF :: (Char, Int, Int) -> (Text, Char) -> (Char, Int, Int)
-        scanF (_, priorMatchedLength, priorPosition) (matchedText, c) = (c, T.length matchedText, priorPosition + priorMatchedLength)
+        scanF (_, priorMatchedLength, priorPosition) (matchedText, c)
+          = (c, T.length matchedText, priorPosition + priorMatchedLength)
 
         zeroElement :: (Char, Int, Int)
         zeroElement = (' ', 0, 0) -- ' ' is ignored by scanF.
@@ -970,26 +973,31 @@ singleCharEsc = do skipC '\\'
      character-property code, then [\P{X}] = [^\p{X}].
 -}
 
-data CatEsc = CatEsc CharProp                             -- CatEsc ∩ CompEsc = ∅, CatEsc - CompEsc = CatEsc
-              deriving (Show, Eq)
+data CatEsc
+  = CatEsc CharProp           -- CatEsc ∩ CompEsc = ∅, CatEsc - CompEsc = CatEsc
+    deriving (Show, Eq)
 
 catEsc :: Parser CatEsc
-catEsc = do skipS "\\p{"
-            cEsc <- charPropParse
-            skipC '}'
-            pure $ CatEsc cEsc
+catEsc = do
+  skipS "\\p{"
+  cEsc <- charPropParse
+  skipC '}'
+  pure $ CatEsc cEsc
 
-data ComplEsc = ComplEsc CharProp                         -- CompEsc ∩ CatEsc = ∅, CompEsc - CatEsc = CompEsc
-                deriving (Show, Eq)
+data ComplEsc
+  = ComplEsc CharProp        -- CompEsc ∩ CatEsc = ∅, CompEsc - CatEsc = CompEsc
+    deriving (Show, Eq)
 
 complEsc :: Parser ComplEsc
-complEsc = do skipS "\\P{"
-              cEsc <- charPropParse >>= pure . ComplEsc
-              skipC '}'
-              pure cEsc
+complEsc = do
+  skipS "\\P{"
+  cEsc <- charPropParse >>= pure . ComplEsc
+  skipC '}'
+  pure cEsc
 
-data CharProp = CharProp (Either IsCategory IsBlock)
-                deriving (Show, Eq)
+data CharProp
+  = CharProp (Either IsCategory IsBlock)
+    deriving (Show, Eq)
 
 charPropParse :: Parser CharProp
 charPropParse = (isBlock >>= pure . CharProp . Right) <|> (isCategory >>= pure . CharProp . Left)
@@ -1120,10 +1128,11 @@ unicodeBlockMatch = do
             | otherwise -> res
   where searchBlocks = map unicodeBlockPair lengthOrderedUnicodeBlockNames
         includeUnrecognized = searchBlocks ++ (unrecognizedBlock:[])
-        unrecognizedBlock = do ubs <- many1 $ do peeked <- peekChar'
-                                                 guard $ peeked /= '}'
-                                                 anyChar -- consumes and returns the non-'}' char.
-                               pure (UNRECOGNIZED_BLOCK, T.pack ubs)
+        unrecognizedBlock =
+          do ubs <- many1 $ do peeked <- peekChar'
+                               guard $ peeked /= '}'
+                               anyChar -- consumes and returns the non-'}' char.
+             pure (UNRECOGNIZED_BLOCK, T.pack ubs)
 
 unicodeBlockPair :: UnicodeBlockName -> Parser (UnicodeBlockName, Text)
 unicodeBlockPair ubnomen = string (scribeR ubnomen) >>= pure . (ubnomen,)
@@ -1144,217 +1153,218 @@ whichBlock :: Parser (UnicodeBlockName, Char)
 whichBlock = choice $ map parsePair unicodeBlockNameRanges -- This is not efficient, but it is correct.                                             -- η
 
 -- NB. Use asciiCI for case insensitive matching.
-data UnicodeBlockName = UNRECOGNIZED_BLOCK
-                      | AEGEAN_NUMBERS
-                      | ALCHEMICAL_SYMBOLS
-                      | ALPHABETIC_PRESENTATION_FORMS
-                      | ANCIENT_GREEK_MUSICAL_NOTATION
-                      | ANCIENT_GREEK_NUMBERS
-                      | ANCIENT_SYMBOLS
-                      | ARABIC
-                      | ARABIC_PRESENTATION_FORMS_A
-                      | ARABIC_PRESENTATION_FORMS_B
-                      | ARABIC_SUPPLEMENT
-                      | ARMENIAN
-                      | ARROWS
-                      | AVESTAN
-                      | BALINESE
-                      | BAMUM
-                      | BAMUM_SUPPLEMENT
-                      | BASIC_LATIN
-                      | BATAK
-                      | BENGALI
-                      | BLOCK_ELEMENTS
-                      | BOPOMOFO
-                      | BOPOMOFO_EXTENDED
-                      | BOX_DRAWING
-                      | BRAHMI
-                      | BRAILLE_PATTERNS
-                      | BUGINESE
-                      | BUHID
-                      | BYZANTINE_MUSICAL_SYMBOLS
-                      | CARIAN
-                      | CHAM
-                      | CHEROKEE
-                      | CJK_COMPATIBILITY
-                      | CJK_COMPATIBILITY_FORMS
-                      | CJK_COMPATIBILITY_IDEOGRAPHS
-                      | CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT
-                      | CJK_RADICALS_SUPPLEMENT
-                      | CJK_STROKES
-                      | CJK_SYMBOLS_AND_PUNCTUATION
-                      | CJK_UNIFIED_IDEOGRAPHS
-                      | CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
-                      | CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
-                      | CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C
-                      | CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D
-                      | COMBINING_DIACRITICAL_MARKS
-                      | COMBINING_DIACRITICAL_MARKS_FOR_SYMBOLS
-                      | COMBINING_DIACRITICAL_MARKS_SUPPLEMENT
-                      | COMBINING_HALF_MARKS
-                      | COMMON_INDIC_NUMBER_FORMS
-                      | CONTROL_PICTURES
-                      | COPTIC
-                      | COUNTING_ROD_NUMERALS
-                      | CUNEIFORM
-                      | CUNEIFORM_NUMBERS_AND_PUNCTUATION
-                      | CURRENCY_SYMBOLS
-                      | CYPRIOT_SYLLABARY
-                      | CYRILLIC
-                      | CYRILLIC_EXTENDED_A
-                      | CYRILLIC_EXTENDED_B
-                      | CYRILLIC_SUPPLEMENT
-                      | DESERET
-                      | DEVANAGARI
-                      | DEVANAGARI_EXTENDED
-                      | DINGBATS
-                      | DOMINO_TILES
-                      | EGYPTIAN_HIEROGLYPHS
-                      | EMOTICONS
-                      | ENCLOSED_ALPHANUMERICS
-                      | ENCLOSED_ALPHANUMERIC_SUPPLEMENT
-                      | ENCLOSED_CJK_LETTERS_AND_MONTHS
-                      | ENCLOSED_IDEOGRAPHIC_SUPPLEMENT
-                      | ETHIOPIC
-                      | ETHIOPIC_EXTENDED
-                      | ETHIOPIC_EXTENDED_A
-                      | ETHIOPIC_SUPPLEMENT
-                      | GENERAL_PUNCTUATION
-                      | GEOMETRIC_SHAPES
-                      | GEORGIAN
-                      | GEORGIAN_SUPPLEMENT
-                      | GLAGOLITIC
-                      | GOTHIC
-                      | GREEK_AND_COPTIC
-                      | GREEK_EXTENDED
-                      | GUJARATI
-                      | GURMUKHI
-                      | HALFWIDTH_AND_FULLWIDTH_FORMS
-                      | HANGUL_COMPATIBILITY_JAMO
-                      | HANGUL_JAMO
-                      | HANGUL_JAMO_EXTENDED_A
-                      | HANGUL_JAMO_EXTENDED_B
-                      | HANGUL_SYLLABLES
-                      | HANUNOO
-                      | HEBREW
-                      | HIGH_PRIVATE_USE_SURROGATES
-                      | HIGH_SURROGATES
-                      | HIRAGANA
-                      | IDEOGRAPHIC_DESCRIPTION_CHARACTERS
-                      | IMPERIAL_ARAMAIC
-                      | INSCRIPTIONAL_PAHLAVI
-                      | INSCRIPTIONAL_PARTHIAN
-                      | IPA_EXTENSIONS
-                      | JAVANESE
-                      | KAITHI
-                      | KANA_SUPPLEMENT
-                      | KANBUN
-                      | KANGXI_RADICALS
-                      | KANNADA
-                      | KATAKANA
-                      | KATAKANA_PHONETIC_EXTENSIONS
-                      | KAYAH_LI
-                      | KHAROSHTHI
-                      | KHMER
-                      | KHMER_SYMBOLS
-                      | LAO
-                      | LATIN_1_SUPPLEMENT
-                      | LATIN_EXTENDED_A
-                      | LATIN_EXTENDED_ADDITIONAL
-                      | LATIN_EXTENDED_B
-                      | LATIN_EXTENDED_C
-                      | LATIN_EXTENDED_D
-                      | LEPCHA
-                      | LETTERLIKE_SYMBOLS
-                      | LIMBU
-                      | LINEAR_B_IDEOGRAMS
-                      | LINEAR_B_SYLLABARY
-                      | LISU
-                      | LOW_SURROGATES
-                      | LYCIAN
-                      | LYDIAN
-                      | MAHJONG_TILES
-                      | MALAYALAM
-                      | MANDAIC
-                      | MATHEMATICAL_ALPHANUMERIC_SYMBOLS
-                      | MATHEMATICAL_OPERATORS
-                      | MEETEI_MAYEK
-                      | MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A
-                      | MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B
-                      | MISCELLANEOUS_SYMBOLS
-                      | MISCELLANEOUS_SYMBOLS_AND_ARROWS
-                      | MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS
-                      | MISCELLANEOUS_TECHNICAL
-                      | MODIFIER_TONE_LETTERS
-                      | MONGOLIAN
-                      | MUSICAL_SYMBOLS
-                      | MYANMAR
-                      | MYANMAR_EXTENDED_A
-                      | NEW_TAI_LUE
-                      | NKO
-                      | NUMBER_FORMS
-                      | OGHAM
-                      | OLD_ITALIC
-                      | OLD_PERSIAN
-                      | OLD_SOUTH_ARABIAN
-                      | OLD_TURKIC
-                      | OL_CHIKI
-                      | OPTICAL_CHARACTER_RECOGNITION
-                      | ORIYA
-                      | OSMANYA
-                      | PHAGS_PA
-                      | PHAISTOS_DISC
-                      | PHOENICIAN
-                      | PHONETIC_EXTENSIONS
-                      | PHONETIC_EXTENSIONS_SUPPLEMENT
-                      | PLAYING_CARDS
-                      | PRIVATE_USE_AREA
-                      | REJANG
-                      | RUMI_NUMERAL_SYMBOLS
-                      | RUNIC
-                      | SAMARITAN
-                      | SAURASHTRA
-                      | SHAVIAN
-                      | SINHALA
-                      | SMALL_FORM_VARIANTS
-                      | SPACING_MODIFIER_LETTERS
-                      | SPECIALS
-                      | SUNDANESE
-                      | SUPERSCRIPTS_AND_SUBSCRIPTS
-                      | SUPPLEMENTAL_ARROWS_A
-                      | SUPPLEMENTAL_ARROWS_B
-                      | SUPPLEMENTAL_MATHEMATICAL_OPERATORS
-                      | SUPPLEMENTAL_PUNCTUATION
-                      | SUPPLEMENTARY_PRIVATE_USE_AREA_A
-                      | SUPPLEMENTARY_PRIVATE_USE_AREA_B
-                      | SYLOTI_NAGRI
-                      | SYRIAC
-                      | TAGALOG
-                      | TAGBANWA
-                      | TAGS
-                      | TAI_LE
-                      | TAI_THAM
-                      | TAI_VIET
-                      | TAI_XUAN_JING_SYMBOLS
-                      | TAMIL
-                      | TELUGU
-                      | THAANA
-                      | THAI
-                      | TIBETAN
-                      | TIFINAGH
-                      | TRANSPORT_AND_MAP_SYMBOLS
-                      | UGARITIC
-                      | UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS
-                      | UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED
-                      | VAI
-                      | VARIATION_SELECTORS
-                      | VARIATION_SELECTORS_SUPPLEMENT
-                      | VEDIC_EXTENSIONS
-                      | VERTICAL_FORMS
-                      | YIJING_HEXAGRAM_SYMBOLS
-                      | YI_RADICALS
-                      | YI_SYLLABLES
-                        deriving (Show, Enum, Ord, Bounded, Eq)
+data UnicodeBlockName
+  = UNRECOGNIZED_BLOCK
+  | AEGEAN_NUMBERS
+  | ALCHEMICAL_SYMBOLS
+  | ALPHABETIC_PRESENTATION_FORMS
+  | ANCIENT_GREEK_MUSICAL_NOTATION
+  | ANCIENT_GREEK_NUMBERS
+  | ANCIENT_SYMBOLS
+  | ARABIC
+  | ARABIC_PRESENTATION_FORMS_A
+  | ARABIC_PRESENTATION_FORMS_B
+  | ARABIC_SUPPLEMENT
+  | ARMENIAN
+  | ARROWS
+  | AVESTAN
+  | BALINESE
+  | BAMUM
+  | BAMUM_SUPPLEMENT
+  | BASIC_LATIN
+  | BATAK
+  | BENGALI
+  | BLOCK_ELEMENTS
+  | BOPOMOFO
+  | BOPOMOFO_EXTENDED
+  | BOX_DRAWING
+  | BRAHMI
+  | BRAILLE_PATTERNS
+  | BUGINESE
+  | BUHID
+  | BYZANTINE_MUSICAL_SYMBOLS
+  | CARIAN
+  | CHAM
+  | CHEROKEE
+  | CJK_COMPATIBILITY
+  | CJK_COMPATIBILITY_FORMS
+  | CJK_COMPATIBILITY_IDEOGRAPHS
+  | CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT
+  | CJK_RADICALS_SUPPLEMENT
+  | CJK_STROKES
+  | CJK_SYMBOLS_AND_PUNCTUATION
+  | CJK_UNIFIED_IDEOGRAPHS
+  | CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+  | CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+  | CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C
+  | CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D
+  | COMBINING_DIACRITICAL_MARKS
+  | COMBINING_DIACRITICAL_MARKS_FOR_SYMBOLS
+  | COMBINING_DIACRITICAL_MARKS_SUPPLEMENT
+  | COMBINING_HALF_MARKS
+  | COMMON_INDIC_NUMBER_FORMS
+  | CONTROL_PICTURES
+  | COPTIC
+  | COUNTING_ROD_NUMERALS
+  | CUNEIFORM
+  | CUNEIFORM_NUMBERS_AND_PUNCTUATION
+  | CURRENCY_SYMBOLS
+  | CYPRIOT_SYLLABARY
+  | CYRILLIC
+  | CYRILLIC_EXTENDED_A
+  | CYRILLIC_EXTENDED_B
+  | CYRILLIC_SUPPLEMENT
+  | DESERET
+  | DEVANAGARI
+  | DEVANAGARI_EXTENDED
+  | DINGBATS
+  | DOMINO_TILES
+  | EGYPTIAN_HIEROGLYPHS
+  | EMOTICONS
+  | ENCLOSED_ALPHANUMERICS
+  | ENCLOSED_ALPHANUMERIC_SUPPLEMENT
+  | ENCLOSED_CJK_LETTERS_AND_MONTHS
+  | ENCLOSED_IDEOGRAPHIC_SUPPLEMENT
+  | ETHIOPIC
+  | ETHIOPIC_EXTENDED
+  | ETHIOPIC_EXTENDED_A
+  | ETHIOPIC_SUPPLEMENT
+  | GENERAL_PUNCTUATION
+  | GEOMETRIC_SHAPES
+  | GEORGIAN
+  | GEORGIAN_SUPPLEMENT
+  | GLAGOLITIC
+  | GOTHIC
+  | GREEK_AND_COPTIC
+  | GREEK_EXTENDED
+  | GUJARATI
+  | GURMUKHI
+  | HALFWIDTH_AND_FULLWIDTH_FORMS
+  | HANGUL_COMPATIBILITY_JAMO
+  | HANGUL_JAMO
+  | HANGUL_JAMO_EXTENDED_A
+  | HANGUL_JAMO_EXTENDED_B
+  | HANGUL_SYLLABLES
+  | HANUNOO
+  | HEBREW
+  | HIGH_PRIVATE_USE_SURROGATES
+  | HIGH_SURROGATES
+  | HIRAGANA
+  | IDEOGRAPHIC_DESCRIPTION_CHARACTERS
+  | IMPERIAL_ARAMAIC
+  | INSCRIPTIONAL_PAHLAVI
+  | INSCRIPTIONAL_PARTHIAN
+  | IPA_EXTENSIONS
+  | JAVANESE
+  | KAITHI
+  | KANA_SUPPLEMENT
+  | KANBUN
+  | KANGXI_RADICALS
+  | KANNADA
+  | KATAKANA
+  | KATAKANA_PHONETIC_EXTENSIONS
+  | KAYAH_LI
+  | KHAROSHTHI
+  | KHMER
+  | KHMER_SYMBOLS
+  | LAO
+  | LATIN_1_SUPPLEMENT
+  | LATIN_EXTENDED_A
+  | LATIN_EXTENDED_ADDITIONAL
+  | LATIN_EXTENDED_B
+  | LATIN_EXTENDED_C
+  | LATIN_EXTENDED_D
+  | LEPCHA
+  | LETTERLIKE_SYMBOLS
+  | LIMBU
+  | LINEAR_B_IDEOGRAMS
+  | LINEAR_B_SYLLABARY
+  | LISU
+  | LOW_SURROGATES
+  | LYCIAN
+  | LYDIAN
+  | MAHJONG_TILES
+  | MALAYALAM
+  | MANDAIC
+  | MATHEMATICAL_ALPHANUMERIC_SYMBOLS
+  | MATHEMATICAL_OPERATORS
+  | MEETEI_MAYEK
+  | MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A
+  | MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B
+  | MISCELLANEOUS_SYMBOLS
+  | MISCELLANEOUS_SYMBOLS_AND_ARROWS
+  | MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS
+  | MISCELLANEOUS_TECHNICAL
+  | MODIFIER_TONE_LETTERS
+  | MONGOLIAN
+  | MUSICAL_SYMBOLS
+  | MYANMAR
+  | MYANMAR_EXTENDED_A
+  | NEW_TAI_LUE
+  | NKO
+  | NUMBER_FORMS
+  | OGHAM
+  | OLD_ITALIC
+  | OLD_PERSIAN
+  | OLD_SOUTH_ARABIAN
+  | OLD_TURKIC
+  | OL_CHIKI
+  | OPTICAL_CHARACTER_RECOGNITION
+  | ORIYA
+  | OSMANYA
+  | PHAGS_PA
+  | PHAISTOS_DISC
+  | PHOENICIAN
+  | PHONETIC_EXTENSIONS
+  | PHONETIC_EXTENSIONS_SUPPLEMENT
+  | PLAYING_CARDS
+  | PRIVATE_USE_AREA
+  | REJANG
+  | RUMI_NUMERAL_SYMBOLS
+  | RUNIC
+  | SAMARITAN
+  | SAURASHTRA
+  | SHAVIAN
+  | SINHALA
+  | SMALL_FORM_VARIANTS
+  | SPACING_MODIFIER_LETTERS
+  | SPECIALS
+  | SUNDANESE
+  | SUPERSCRIPTS_AND_SUBSCRIPTS
+  | SUPPLEMENTAL_ARROWS_A
+  | SUPPLEMENTAL_ARROWS_B
+  | SUPPLEMENTAL_MATHEMATICAL_OPERATORS
+  | SUPPLEMENTAL_PUNCTUATION
+  | SUPPLEMENTARY_PRIVATE_USE_AREA_A
+  | SUPPLEMENTARY_PRIVATE_USE_AREA_B
+  | SYLOTI_NAGRI
+  | SYRIAC
+  | TAGALOG
+  | TAGBANWA
+  | TAGS
+  | TAI_LE
+  | TAI_THAM
+  | TAI_VIET
+  | TAI_XUAN_JING_SYMBOLS
+  | TAMIL
+  | TELUGU
+  | THAANA
+  | THAI
+  | TIBETAN
+  | TIFINAGH
+  | TRANSPORT_AND_MAP_SYMBOLS
+  | UGARITIC
+  | UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS
+  | UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED
+  | VAI
+  | VARIATION_SELECTORS
+  | VARIATION_SELECTORS_SUPPLEMENT
+  | VEDIC_EXTENSIONS
+  | VERTICAL_FORMS
+  | YIJING_HEXAGRAM_SYMBOLS
+  | YI_RADICALS
+  | YI_SYLLABLES
+    deriving (Show, Enum, Ord, Bounded, Eq)
 
 data UnicodeBlockRange = UBR Int Int
                          deriving (Show, Ord, Eq)
@@ -1574,24 +1584,27 @@ ubnns =  [ ( UNRECOGNIZED_BLOCK                             , UBR 0x0000   0x10F
 
 -- | § G.4.2.5 Multi-character escapes
 --   A multi-character escape provides a simple way to identify any of a commonly used set of characters.
-data MultiCharEsc = MultiCharEsc Char
-                    deriving (Show, Eq)
+data MultiCharEsc
+  = MultiCharEsc Char
+    deriving (Show, Eq)
 
 multiCharEsc :: Parser MultiCharEsc
 multiCharEsc = char '\\' >> satisfy (inClass "sSiIcCdDwW") >>= pure . MultiCharEsc
 
 -- | The wildcard character is a metacharacter which matches almost any single character
-data WildcardEsc = WildcardEsc
-                   deriving (Show, Eq)
+data WildcardEsc
+  = WildcardEsc
+    deriving (Show, Eq)
 
 wildCardEsc :: Parser WildcardEsc
 wildCardEsc  = skipC '.' >> pure WildcardEsc
 
-
 eNumEntityMap :: M.Map (Either Int [Int]) Text
-eNumEntityMap = M.fromList . map (\(t,e) -> (e,t))
-                           $ L.sortBy (\a b -> T.length (fst b) `compare` T.length (fst a)) -- shortest last take precedence.
-                             entityENum
+eNumEntityMap
+  = M.fromList
+  . map (\(t,e) -> (e,t))
+  $ L.sortBy (\a b -> T.length (fst b) `compare` T.length (fst a)) -- shortest last take precedence.
+    entityENum
 
 entityENumMap :: M.Map Text (Either Int [Int])
 entityENumMap = M.fromList entityENum
@@ -1600,2249 +1613,2245 @@ maxEntityName :: Int
 maxEntityName = L.maximum $ map (T.length . fst) entityENum
 
 entityENum :: [] (Text, Either Int [Int])                              -- Right multichar entities need work and support?                            -- ⚠
-entityENum = [ ("AElig"                                  , Left 0x000C6               ) -- LATIN CAPITAL LETTER AE
-             , ("AMP"                                    , Left 0x00026               ) -- AMPERSAND
-             , ("Aacgr"                                  , Left 0x00386               ) -- GREEK CAPITAL LETTER ALPHA WITH TONOS
-             , ("Aacute"                                 , Left 0x000C1               ) -- LATIN CAPITAL LETTER A WITH ACUTE
-             , ("Abreve"                                 , Left 0x00102               ) -- LATIN CAPITAL LETTER A WITH BREVE
-             , ("Acirc"                                  , Left 0x000C2               ) -- LATIN CAPITAL LETTER A WITH CIRCUMFLEX
-             , ("Acy"                                    , Left 0x00410               ) -- CYRILLIC CAPITAL LETTER A
-             , ("Afr"                                    , Left 0x1D504               ) -- MATHEMATICAL FRAKTUR CAPITAL A
-             , ("Agr"                                    , Left 0x00391               ) -- GREEK CAPITAL LETTER ALPHA
-             , ("Agrave"                                 , Left 0x000C0               ) -- LATIN CAPITAL LETTER A WITH GRAVE
-             , ("Alpha"                                  , Left 0x00391               ) -- GREEK CAPITAL LETTER ALPHA
-             , ("Amacr"                                  , Left 0x00100               ) -- LATIN CAPITAL LETTER A WITH MACRON
-             , ("And"                                    , Left 0x02A53               ) -- DOUBLE LOGICAL AND
-             , ("Aogon"                                  , Left 0x00104               ) -- LATIN CAPITAL LETTER A WITH OGONEK
-             , ("Aopf"                                   , Left 0x1D538               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL A
-             , ("ApplyFunction"                          , Left 0x02061               ) -- FUNCTION APPLICATION
-             , ("Aring"                                  , Left 0x000C5               ) -- LATIN CAPITAL LETTER A WITH RING ABOVE
-             , ("Ascr"                                   , Left 0x1D49C               ) -- MATHEMATICAL SCRIPT CAPITAL A
-             , ("Assign"                                 , Left 0x02254               ) -- COLON EQUALS
-             , ("Atilde"                                 , Left 0x000C3               ) -- LATIN CAPITAL LETTER A WITH TILDE
-             , ("Auml"                                   , Left 0x000C4               ) -- LATIN CAPITAL LETTER A WITH DIAERESIS
-             , ("Backslash"                              , Left 0x02216               ) -- SET MINUS
-             , ("Barv"                                   , Left 0x02AE7               ) -- SHORT DOWN TACK WITH OVERBAR
-             , ("Barwed"                                 , Left 0x02306               ) -- PERSPECTIVE
-             , ("Bcy"                                    , Left 0x00411               ) -- CYRILLIC CAPITAL LETTER BE
-             , ("Because"                                , Left 0x02235               ) -- BECAUSE
-             , ("Bernoullis"                             , Left 0x0212C               ) -- SCRIPT CAPITAL B
-             , ("Beta"                                   , Left 0x00392               ) -- GREEK CAPITAL LETTER BETA
-             , ("Bfr"                                    , Left 0x1D505               ) -- MATHEMATICAL FRAKTUR CAPITAL B
-             , ("Bgr"                                    , Left 0x00392               ) -- GREEK CAPITAL LETTER BETA
-             , ("Bopf"                                   , Left 0x1D539               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL B
-             , ("Breve"                                  , Left 0x002D8               ) -- BREVE
-             , ("Bscr"                                   , Left 0x0212C               ) -- SCRIPT CAPITAL B
-             , ("Bumpeq"                                 , Left 0x0224E               ) -- GEOMETRICALLY EQUIVALENT TO
-             , ("CHcy"                                   , Left 0x00427               ) -- CYRILLIC CAPITAL LETTER CHE
-             , ("COPY"                                   , Left 0x000A9               ) -- COPYRIGHT SIGN
-             , ("Cacute"                                 , Left 0x00106               ) -- LATIN CAPITAL LETTER C WITH ACUTE
-             , ("Cap"                                    , Left 0x022D2               ) -- DOUBLE INTERSECTION
-             , ("CapitalDifferentialD"                   , Left 0x02145               ) -- DOUBLE-STRUCK ITALIC CAPITAL D
-             , ("Cayleys"                                , Left 0x0212D               ) -- BLACK-LETTER CAPITAL C
-             , ("Ccaron"                                 , Left 0x0010C               ) -- LATIN CAPITAL LETTER C WITH CARON
-             , ("Ccedil"                                 , Left 0x000C7               ) -- LATIN CAPITAL LETTER C WITH CEDILLA
-             , ("Ccirc"                                  , Left 0x00108               ) -- LATIN CAPITAL LETTER C WITH CIRCUMFLEX
-             , ("Cconint"                                , Left 0x02230               ) -- VOLUME INTEGRAL
-             , ("Cdot"                                   , Left 0x0010A               ) -- LATIN CAPITAL LETTER C WITH DOT ABOVE
-             , ("Cedilla"                                , Left 0x000B8               ) -- CEDILLA
-             , ("CenterDot"                              , Left 0x000B7               ) -- MIDDLE DOT
-             , ("Cfr"                                    , Left 0x0212D               ) -- BLACK-LETTER CAPITAL C
-             , ("Chi"                                    , Left 0x003A7               ) -- GREEK CAPITAL LETTER CHI
-             , ("CircleDot"                              , Left 0x02299               ) -- CIRCLED DOT OPERATOR
-             , ("CircleMinus"                            , Left 0x02296               ) -- CIRCLED MINUS
-             , ("CirclePlus"                             , Left 0x02295               ) -- CIRCLED PLUS
-             , ("CircleTimes"                            , Left 0x02297               ) -- CIRCLED TIMES
-             , ("ClockwiseContourIntegral"               , Left 0x02232               ) -- CLOCKWISE CONTOUR INTEGRAL
-             , ("CloseCurlyDoubleQuote"                  , Left 0x0201D               ) -- RIGHT DOUBLE QUOTATION MARK
-             , ("CloseCurlyQuote"                        , Left 0x02019               ) -- RIGHT SINGLE QUOTATION MARK
-             , ("Colon"                                  , Left 0x02237               ) -- PROPORTION
-             , ("Colone"                                 , Left 0x02A74               ) -- DOUBLE COLON EQUAL
-             , ("Congruent"                              , Left 0x02261               ) -- IDENTICAL TO
-             , ("Conint"                                 , Left 0x0222F               ) -- SURFACE INTEGRAL
-             , ("ContourIntegral"                        , Left 0x0222E               ) -- CONTOUR INTEGRAL
-             , ("Copf"                                   , Left 0x02102               ) -- DOUBLE-STRUCK CAPITAL C
-             , ("Coproduct"                              , Left 0x02210               ) -- N-ARY COPRODUCT
-             , ("CounterClockwiseContourIntegral"        , Left 0x02233               ) -- ANTICLOCKWISE CONTOUR INTEGRAL
-             , ("Cross"                                  , Left 0x02A2F               ) -- VECTOR OR CROSS PRODUCT
-             , ("Cscr"                                   , Left 0x1D49E               ) -- MATHEMATICAL SCRIPT CAPITAL C
-             , ("Cup"                                    , Left 0x022D3               ) -- DOUBLE UNION
-             , ("CupCap"                                 , Left 0x0224D               ) -- EQUIVALENT TO
-             , ("DD"                                     , Left 0x02145               ) -- DOUBLE-STRUCK ITALIC CAPITAL D
-             , ("DDotrahd"                               , Left 0x02911               ) -- RIGHTWARDS ARROW WITH DOTTED STEM
-             , ("DJcy"                                   , Left 0x00402               ) -- CYRILLIC CAPITAL LETTER DJE
-             , ("DScy"                                   , Left 0x00405               ) -- CYRILLIC CAPITAL LETTER DZE
-             , ("DZcy"                                   , Left 0x0040F               ) -- CYRILLIC CAPITAL LETTER DZHE
-             , ("Dagger"                                 , Left 0x02021               ) -- DOUBLE DAGGER
-             , ("Darr"                                   , Left 0x021A1               ) -- DOWNWARDS TWO HEADED ARROW
-             , ("Dashv"                                  , Left 0x02AE4               ) -- VERTICAL BAR DOUBLE LEFT TURNSTILE
-             , ("Dcaron"                                 , Left 0x0010E               ) -- LATIN CAPITAL LETTER D WITH CARON
-             , ("Dcy"                                    , Left 0x00414               ) -- CYRILLIC CAPITAL LETTER DE
-             , ("Del"                                    , Left 0x02207               ) -- NABLA
-             , ("Delta"                                  , Left 0x00394               ) -- GREEK CAPITAL LETTER DELTA
-             , ("Dfr"                                    , Left 0x1D507               ) -- MATHEMATICAL FRAKTUR CAPITAL D
-             , ("Dgr"                                    , Left 0x00394               ) -- GREEK CAPITAL LETTER DELTA
-             , ("DiacriticalAcute"                       , Left 0x000B4               ) -- ACUTE ACCENT
-             , ("DiacriticalDot"                         , Left 0x002D9               ) -- DOT ABOVE
-             , ("DiacriticalDoubleAcute"                 , Left 0x002DD               ) -- DOUBLE ACUTE ACCENT
-             , ("DiacriticalGrave"                       , Left 0x00060               ) -- GRAVE ACCENT
-             , ("DiacriticalTilde"                       , Left 0x002DC               ) -- SMALL TILDE
-             , ("Diamond"                                , Left 0x022C4               ) -- DIAMOND OPERATOR
-             , ("DifferentialD"                          , Left 0x02146               ) -- DOUBLE-STRUCK ITALIC SMALL D
-             , ("Dopf"                                   , Left 0x1D53B               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL D
-             , ("Dot"                                    , Left 0x000A8               ) -- DIAERESIS
-             , ("DotDot"                                 , Left 0x020DC               ) -- COMBINING FOUR DOTS ABOVE
-             , ("DotEqual"                               , Left 0x02250               ) -- APPROACHES THE LIMIT
-             , ("DoubleContourIntegral"                  , Left 0x0222F               ) -- SURFACE INTEGRAL
-             , ("DoubleDot"                              , Left 0x000A8               ) -- DIAERESIS
-             , ("DoubleDownArrow"                        , Left 0x021D3               ) -- DOWNWARDS DOUBLE ARROW
-             , ("DoubleLeftArrow"                        , Left 0x021D0               ) -- LEFTWARDS DOUBLE ARROW
-             , ("DoubleLeftRightArrow"                   , Left 0x021D4               ) -- LEFT RIGHT DOUBLE ARROW
-             , ("DoubleLeftTee"                          , Left 0x02AE4               ) -- VERTICAL BAR DOUBLE LEFT TURNSTILE
-             , ("DoubleLongLeftArrow"                    , Left 0x027F8               ) -- LONG LEFTWARDS DOUBLE ARROW
-             , ("DoubleLongLeftRightArrow"               , Left 0x027FA               ) -- LONG LEFT RIGHT DOUBLE ARROW
-             , ("DoubleLongRightArrow"                   , Left 0x027F9               ) -- LONG RIGHTWARDS DOUBLE ARROW
-             , ("DoubleRightArrow"                       , Left 0x021D2               ) -- RIGHTWARDS DOUBLE ARROW
-             , ("DoubleRightTee"                         , Left 0x022A8               ) -- TRUE
-             , ("DoubleUpArrow"                          , Left 0x021D1               ) -- UPWARDS DOUBLE ARROW
-             , ("DoubleUpDownArrow"                      , Left 0x021D5               ) -- UP DOWN DOUBLE ARROW
-             , ("DoubleVerticalBar"                      , Left 0x02225               ) -- PARALLEL TO
-             , ("DownArrow"                              , Left 0x02193               ) -- DOWNWARDS ARROW
-             , ("DownArrowBar"                           , Left 0x02913               ) -- DOWNWARDS ARROW TO BAR
-             , ("DownArrowUpArrow"                       , Left 0x021F5               ) -- DOWNWARDS ARROW LEFTWARDS OF UPWARDS ARROW
-             , ("DownBreve"                              , Left 0x00311               ) -- COMBINING INVERTED BREVE
-             , ("DownLeftRightVector"                    , Left 0x02950               ) -- LEFT BARB DOWN RIGHT BARB DOWN HARPOON
-             , ("DownLeftTeeVector"                      , Left 0x0295E               ) -- LEFTWARDS HARPOON WITH BARB DOWN FROM BAR
-             , ("DownLeftVector"                         , Left 0x021BD               ) -- LEFTWARDS HARPOON WITH BARB DOWNWARDS
-             , ("DownLeftVectorBar"                      , Left 0x02956               ) -- LEFTWARDS HARPOON WITH BARB DOWN TO BAR
-             , ("DownRightTeeVector"                     , Left 0x0295F               ) -- RIGHTWARDS HARPOON WITH BARB DOWN FROM BAR
-             , ("DownRightVector"                        , Left 0x021C1               ) -- RIGHTWARDS HARPOON WITH BARB DOWNWARDS
-             , ("DownRightVectorBar"                     , Left 0x02957               ) -- RIGHTWARDS HARPOON WITH BARB DOWN TO BAR
-             , ("DownTee"                                , Left 0x022A4               ) -- DOWN TACK
-             , ("DownTeeArrow"                           , Left 0x021A7               ) -- DOWNWARDS ARROW FROM BAR
-             , ("Downarrow"                              , Left 0x021D3               ) -- DOWNWARDS DOUBLE ARROW
-             , ("Dscr"                                   , Left 0x1D49F               ) -- MATHEMATICAL SCRIPT CAPITAL D
-             , ("Dstrok"                                 , Left 0x00110               ) -- LATIN CAPITAL LETTER D WITH STROKE
-             , ("EEacgr"                                 , Left 0x00389               ) -- GREEK CAPITAL LETTER ETA WITH TONOS
-             , ("EEgr"                                   , Left 0x00397               ) -- GREEK CAPITAL LETTER ETA
-             , ("ENG"                                    , Left 0x0014A               ) -- LATIN CAPITAL LETTER ENG
-             , ("ETH"                                    , Left 0x000D0               ) -- LATIN CAPITAL LETTER ETH
-             , ("Eacgr"                                  , Left 0x00388               ) -- GREEK CAPITAL LETTER EPSILON WITH TONOS
-             , ("Eacute"                                 , Left 0x000C9               ) -- LATIN CAPITAL LETTER E WITH ACUTE
-             , ("Ecaron"                                 , Left 0x0011A               ) -- LATIN CAPITAL LETTER E WITH CARON
-             , ("Ecirc"                                  , Left 0x000CA               ) -- LATIN CAPITAL LETTER E WITH CIRCUMFLEX
-             , ("Ecy"                                    , Left 0x0042D               ) -- CYRILLIC CAPITAL LETTER E
-             , ("Edot"                                   , Left 0x00116               ) -- LATIN CAPITAL LETTER E WITH DOT ABOVE
-             , ("Efr"                                    , Left 0x1D508               ) -- MATHEMATICAL FRAKTUR CAPITAL E
-             , ("Egr"                                    , Left 0x00395               ) -- GREEK CAPITAL LETTER EPSILON
-             , ("Egrave"                                 , Left 0x000C8               ) -- LATIN CAPITAL LETTER E WITH GRAVE
-             , ("Element"                                , Left 0x02208               ) -- ELEMENT OF
-             , ("Emacr"                                  , Left 0x00112               ) -- LATIN CAPITAL LETTER E WITH MACRON
-             , ("EmptySmallSquare"                       , Left 0x025FB               ) -- WHITE MEDIUM SQUARE
-             , ("EmptyVerySmallSquare"                   , Left 0x025AB               ) -- WHITE SMALL SQUARE
-             , ("Eogon"                                  , Left 0x00118               ) -- LATIN CAPITAL LETTER E WITH OGONEK
-             , ("Eopf"                                   , Left 0x1D53C               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL E
-             , ("Epsilon"                                , Left 0x00395               ) -- GREEK CAPITAL LETTER EPSILON
-             , ("Equal"                                  , Left 0x02A75               ) -- TWO CONSECUTIVE EQUALS SIGNS
-             , ("EqualTilde"                             , Left 0x02242               ) -- MINUS TILDE
-             , ("Equilibrium"                            , Left 0x021CC               ) -- RIGHTWARDS HARPOON OVER LEFTWARDS HARPOON
-             , ("Escr"                                   , Left 0x02130               ) -- SCRIPT CAPITAL E
-             , ("Esim"                                   , Left 0x02A73               ) -- EQUALS SIGN ABOVE TILDE OPERATOR
-             , ("Eta"                                    , Left 0x00397               ) -- GREEK CAPITAL LETTER ETA
-             , ("Euml"                                   , Left 0x000CB               ) -- LATIN CAPITAL LETTER E WITH DIAERESIS
-             , ("Exists"                                 , Left 0x02203               ) -- THERE EXISTS
-             , ("ExponentialE"                           , Left 0x02147               ) -- DOUBLE-STRUCK ITALIC SMALL E
-             , ("Fcy"                                    , Left 0x00424               ) -- CYRILLIC CAPITAL LETTER EF
-             , ("Ffr"                                    , Left 0x1D509               ) -- MATHEMATICAL FRAKTUR CAPITAL F
-             , ("FilledSmallSquare"                      , Left 0x025FC               ) -- BLACK MEDIUM SQUARE
-             , ("FilledVerySmallSquare"                  , Left 0x025AA               ) -- BLACK SMALL SQUARE
-             , ("Fopf"                                   , Left 0x1D53D               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL F
-             , ("ForAll"                                 , Left 0x02200               ) -- FOR ALL
-             , ("Fouriertrf"                             , Left 0x02131               ) -- SCRIPT CAPITAL F
-             , ("Fscr"                                   , Left 0x02131               ) -- SCRIPT CAPITAL F
-             , ("GJcy"                                   , Left 0x00403               ) -- CYRILLIC CAPITAL LETTER GJE
-             , ("GT"                                     , Left 0x0003E               ) -- GREATER-THAN SIGN
-             , ("Gamma"                                  , Left 0x00393               ) -- GREEK CAPITAL LETTER GAMMA
-             , ("Gammad"                                 , Left 0x003DC               ) -- GREEK LETTER DIGAMMA
-             , ("Gbreve"                                 , Left 0x0011E               ) -- LATIN CAPITAL LETTER G WITH BREVE
-             , ("Gcedil"                                 , Left 0x00122               ) -- LATIN CAPITAL LETTER G WITH CEDILLA
-             , ("Gcirc"                                  , Left 0x0011C               ) -- LATIN CAPITAL LETTER G WITH CIRCUMFLEX
-             , ("Gcy"                                    , Left 0x00413               ) -- CYRILLIC CAPITAL LETTER GHE
-             , ("Gdot"                                   , Left 0x00120               ) -- LATIN CAPITAL LETTER G WITH DOT ABOVE
-             , ("Gfr"                                    , Left 0x1D50A               ) -- MATHEMATICAL FRAKTUR CAPITAL G
-             , ("Gg"                                     , Left 0x022D9               ) -- VERY MUCH GREATER-THAN
-             , ("Ggr"                                    , Left 0x00393               ) -- GREEK CAPITAL LETTER GAMMA
-             , ("Gopf"                                   , Left 0x1D53E               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL G
-             , ("GreaterEqual"                           , Left 0x02265               ) -- GREATER-THAN OR EQUAL TO
-             , ("GreaterEqualLess"                       , Left 0x022DB               ) -- GREATER-THAN EQUAL TO OR LESS-THAN
-             , ("GreaterFullEqual"                       , Left 0x02267               ) -- GREATER-THAN OVER EQUAL TO
-             , ("GreaterGreater"                         , Left 0x02AA2               ) -- DOUBLE NESTED GREATER-THAN
-             , ("GreaterLess"                            , Left 0x02277               ) -- GREATER-THAN OR LESS-THAN
-             , ("GreaterSlantEqual"                      , Left 0x02A7E               ) -- GREATER-THAN OR SLANTED EQUAL TO
-             , ("GreaterTilde"                           , Left 0x02273               ) -- GREATER-THAN OR EQUIVALENT TO
-             , ("Gscr"                                   , Left 0x1D4A2               ) -- MATHEMATICAL SCRIPT CAPITAL G
-             , ("Gt"                                     , Left 0x0226B               ) -- MUCH GREATER-THAN
-             , ("HARDcy"                                 , Left 0x0042A               ) -- CYRILLIC CAPITAL LETTER HARD SIGN
-             , ("Hacek"                                  , Left 0x002C7               ) -- CARON
-             , ("Hat"                                    , Left 0x0005E               ) -- CIRCUMFLEX ACCENT
-             , ("Hcirc"                                  , Left 0x00124               ) -- LATIN CAPITAL LETTER H WITH CIRCUMFLEX
-             , ("Hfr"                                    , Left 0x0210C               ) -- BLACK-LETTER CAPITAL H
-             , ("HilbertSpace"                           , Left 0x0210B               ) -- SCRIPT CAPITAL H
-             , ("Hopf"                                   , Left 0x0210D               ) -- DOUBLE-STRUCK CAPITAL H
-             , ("HorizontalLine"                         , Left 0x02500               ) -- BOX DRAWINGS LIGHT HORIZONTAL
-             , ("Hscr"                                   , Left 0x0210B               ) -- SCRIPT CAPITAL H
-             , ("Hstrok"                                 , Left 0x00126               ) -- LATIN CAPITAL LETTER H WITH STROKE
-             , ("HumpDownHump"                           , Left 0x0224E               ) -- GEOMETRICALLY EQUIVALENT TO
-             , ("HumpEqual"                              , Left 0x0224F               ) -- DIFFERENCE BETWEEN
-             , ("IEcy"                                   , Left 0x00415               ) -- CYRILLIC CAPITAL LETTER IE
-             , ("IJlig"                                  , Left 0x00132               ) -- LATIN CAPITAL LIGATURE IJ
-             , ("IOcy"                                   , Left 0x00401               ) -- CYRILLIC CAPITAL LETTER IO
-             , ("Iacgr"                                  , Left 0x0038A               ) -- GREEK CAPITAL LETTER IOTA WITH TONOS
-             , ("Iacute"                                 , Left 0x000CD               ) -- LATIN CAPITAL LETTER I WITH ACUTE
-             , ("Icirc"                                  , Left 0x000CE               ) -- LATIN CAPITAL LETTER I WITH CIRCUMFLEX
-             , ("Icy"                                    , Left 0x00418               ) -- CYRILLIC CAPITAL LETTER I
-             , ("Idigr"                                  , Left 0x003AA               ) -- GREEK CAPITAL LETTER IOTA WITH DIALYTIKA
-             , ("Idot"                                   , Left 0x00130               ) -- LATIN CAPITAL LETTER I WITH DOT ABOVE
-             , ("Ifr"                                    , Left 0x02111               ) -- BLACK-LETTER CAPITAL I
-             , ("Igr"                                    , Left 0x00399               ) -- GREEK CAPITAL LETTER IOTA
-             , ("Igrave"                                 , Left 0x000CC               ) -- LATIN CAPITAL LETTER I WITH GRAVE
-             , ("Im"                                     , Left 0x02111               ) -- BLACK-LETTER CAPITAL I
-             , ("Imacr"                                  , Left 0x0012A               ) -- LATIN CAPITAL LETTER I WITH MACRON
-             , ("ImaginaryI"                             , Left 0x02148               ) -- DOUBLE-STRUCK ITALIC SMALL I
-             , ("Implies"                                , Left 0x021D2               ) -- RIGHTWARDS DOUBLE ARROW
-             , ("Int"                                    , Left 0x0222C               ) -- DOUBLE INTEGRAL
-             , ("Integral"                               , Left 0x0222B               ) -- INTEGRAL
-             , ("Intersection"                           , Left 0x022C2               ) -- N-ARY INTERSECTION
-             , ("InvisibleComma"                         , Left 0x02063               ) -- INVISIBLE SEPARATOR
-             , ("InvisibleTimes"                         , Left 0x02062               ) -- INVISIBLE TIMES
-             , ("Iogon"                                  , Left 0x0012E               ) -- LATIN CAPITAL LETTER I WITH OGONEK
-             , ("Iopf"                                   , Left 0x1D540               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL I
-             , ("Iota"                                   , Left 0x00399               ) -- GREEK CAPITAL LETTER IOTA
-             , ("Iscr"                                   , Left 0x02110               ) -- SCRIPT CAPITAL I
-             , ("Itilde"                                 , Left 0x00128               ) -- LATIN CAPITAL LETTER I WITH TILDE
-             , ("Iukcy"                                  , Left 0x00406               ) -- CYRILLIC CAPITAL LETTER BYELORUSSIAN-UKRAINIAN I
-             , ("Iuml"                                   , Left 0x000CF               ) -- LATIN CAPITAL LETTER I WITH DIAERESIS
-             , ("Jcirc"                                  , Left 0x00134               ) -- LATIN CAPITAL LETTER J WITH CIRCUMFLEX
-             , ("Jcy"                                    , Left 0x00419               ) -- CYRILLIC CAPITAL LETTER SHORT I
-             , ("Jfr"                                    , Left 0x1D50D               ) -- MATHEMATICAL FRAKTUR CAPITAL J
-             , ("Jopf"                                   , Left 0x1D541               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL J
-             , ("Jscr"                                   , Left 0x1D4A5               ) -- MATHEMATICAL SCRIPT CAPITAL J
-             , ("Jsercy"                                 , Left 0x00408               ) -- CYRILLIC CAPITAL LETTER JE
-             , ("Jukcy"                                  , Left 0x00404               ) -- CYRILLIC CAPITAL LETTER UKRAINIAN IE
-             , ("KHcy"                                   , Left 0x00425               ) -- CYRILLIC CAPITAL LETTER HA
-             , ("KHgr"                                   , Left 0x003A7               ) -- GREEK CAPITAL LETTER CHI
-             , ("KJcy"                                   , Left 0x0040C               ) -- CYRILLIC CAPITAL LETTER KJE
-             , ("Kappa"                                  , Left 0x0039A               ) -- GREEK CAPITAL LETTER KAPPA
-             , ("Kcedil"                                 , Left 0x00136               ) -- LATIN CAPITAL LETTER K WITH CEDILLA
-             , ("Kcy"                                    , Left 0x0041A               ) -- CYRILLIC CAPITAL LETTER KA
-             , ("Kfr"                                    , Left 0x1D50E               ) -- MATHEMATICAL FRAKTUR CAPITAL K
-             , ("Kgr"                                    , Left 0x0039A               ) -- GREEK CAPITAL LETTER KAPPA
-             , ("Kopf"                                   , Left 0x1D542               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL K
-             , ("Kscr"                                   , Left 0x1D4A6               ) -- MATHEMATICAL SCRIPT CAPITAL K
-             , ("LJcy"                                   , Left 0x00409               ) -- CYRILLIC CAPITAL LETTER LJE
-             , ("LT"                                     , Left 0x0003C               ) -- LESS-THAN SIGN
-             , ("Lacute"                                 , Left 0x00139               ) -- LATIN CAPITAL LETTER L WITH ACUTE
-             , ("Lambda"                                 , Left 0x0039B               ) -- GREEK CAPITAL LETTER LAMDA
-             , ("Lang"                                   , Left 0x027EA               ) -- MATHEMATICAL LEFT DOUBLE ANGLE BRACKET
-             , ("Laplacetrf"                             , Left 0x02112               ) -- SCRIPT CAPITAL L
-             , ("Larr"                                   , Left 0x0219E               ) -- LEFTWARDS TWO HEADED ARROW
-             , ("Lcaron"                                 , Left 0x0013D               ) -- LATIN CAPITAL LETTER L WITH CARON
-             , ("Lcedil"                                 , Left 0x0013B               ) -- LATIN CAPITAL LETTER L WITH CEDILLA
-             , ("Lcy"                                    , Left 0x0041B               ) -- CYRILLIC CAPITAL LETTER EL
-             , ("LeftAngleBracket"                       , Left 0x027E8               ) -- MATHEMATICAL LEFT ANGLE BRACKET
-             , ("LeftArrow"                              , Left 0x02190               ) -- LEFTWARDS ARROW
-             , ("LeftArrowBar"                           , Left 0x021E4               ) -- LEFTWARDS ARROW TO BAR
-             , ("LeftArrowRightArrow"                    , Left 0x021C6               ) -- LEFTWARDS ARROW OVER RIGHTWARDS ARROW
-             , ("LeftCeiling"                            , Left 0x02308               ) -- LEFT CEILING
-             , ("LeftDoubleBracket"                      , Left 0x027E6               ) -- MATHEMATICAL LEFT WHITE SQUARE BRACKET
-             , ("LeftDownTeeVector"                      , Left 0x02961               ) -- DOWNWARDS HARPOON WITH BARB LEFT FROM BAR
-             , ("LeftDownVector"                         , Left 0x021C3               ) -- DOWNWARDS HARPOON WITH BARB LEFTWARDS
-             , ("LeftDownVectorBar"                      , Left 0x02959               ) -- DOWNWARDS HARPOON WITH BARB LEFT TO BAR
-             , ("LeftFloor"                              , Left 0x0230A               ) -- LEFT FLOOR
-             , ("LeftRightArrow"                         , Left 0x02194               ) -- LEFT RIGHT ARROW
-             , ("LeftRightVector"                        , Left 0x0294E               ) -- LEFT BARB UP RIGHT BARB UP HARPOON
-             , ("LeftTee"                                , Left 0x022A3               ) -- LEFT TACK
-             , ("LeftTeeArrow"                           , Left 0x021A4               ) -- LEFTWARDS ARROW FROM BAR
-             , ("LeftTeeVector"                          , Left 0x0295A               ) -- LEFTWARDS HARPOON WITH BARB UP FROM BAR
-             , ("LeftTriangle"                           , Left 0x022B2               ) -- NORMAL SUBGROUP OF
-             , ("LeftTriangleBar"                        , Left 0x029CF               ) -- LEFT TRIANGLE BESIDE VERTICAL BAR
-             , ("LeftTriangleEqual"                      , Left 0x022B4               ) -- NORMAL SUBGROUP OF OR EQUAL TO
-             , ("LeftUpDownVector"                       , Left 0x02951               ) -- UP BARB LEFT DOWN BARB LEFT HARPOON
-             , ("LeftUpTeeVector"                        , Left 0x02960               ) -- UPWARDS HARPOON WITH BARB LEFT FROM BAR
-             , ("LeftUpVector"                           , Left 0x021BF               ) -- UPWARDS HARPOON WITH BARB LEFTWARDS
-             , ("LeftUpVectorBar"                        , Left 0x02958               ) -- UPWARDS HARPOON WITH BARB LEFT TO BAR
-             , ("LeftVector"                             , Left 0x021BC               ) -- LEFTWARDS HARPOON WITH BARB UPWARDS
-             , ("LeftVectorBar"                          , Left 0x02952               ) -- LEFTWARDS HARPOON WITH BARB UP TO BAR
-             , ("Leftarrow"                              , Left 0x021D0               ) -- LEFTWARDS DOUBLE ARROW
-             , ("Leftrightarrow"                         , Left 0x021D4               ) -- LEFT RIGHT DOUBLE ARROW
-             , ("LessEqualGreater"                       , Left 0x022DA               ) -- LESS-THAN EQUAL TO OR GREATER-THAN
-             , ("LessFullEqual"                          , Left 0x02266               ) -- LESS-THAN OVER EQUAL TO
-             , ("LessGreater"                            , Left 0x02276               ) -- LESS-THAN OR GREATER-THAN
-             , ("LessLess"                               , Left 0x02AA1               ) -- DOUBLE NESTED LESS-THAN
-             , ("LessSlantEqual"                         , Left 0x02A7D               ) -- LESS-THAN OR SLANTED EQUAL TO
-             , ("LessTilde"                              , Left 0x02272               ) -- LESS-THAN OR EQUIVALENT TO
-             , ("Lfr"                                    , Left 0x1D50F               ) -- MATHEMATICAL FRAKTUR CAPITAL L
-             , ("Lgr"                                    , Left 0x0039B               ) -- GREEK CAPITAL LETTER LAMDA
-             , ("Ll"                                     , Left 0x022D8               ) -- VERY MUCH LESS-THAN
-             , ("Lleftarrow"                             , Left 0x021DA               ) -- LEFTWARDS TRIPLE ARROW
-             , ("Lmidot"                                 , Left 0x0013F               ) -- LATIN CAPITAL LETTER L WITH MIDDLE DOT
-             , ("LongLeftArrow"                          , Left 0x027F5               ) -- LONG LEFTWARDS ARROW
-             , ("LongLeftRightArrow"                     , Left 0x027F7               ) -- LONG LEFT RIGHT ARROW
-             , ("LongRightArrow"                         , Left 0x027F6               ) -- LONG RIGHTWARDS ARROW
-             , ("Longleftarrow"                          , Left 0x027F8               ) -- LONG LEFTWARDS DOUBLE ARROW
-             , ("Longleftrightarrow"                     , Left 0x027FA               ) -- LONG LEFT RIGHT DOUBLE ARROW
-             , ("Longrightarrow"                         , Left 0x027F9               ) -- LONG RIGHTWARDS DOUBLE ARROW
-             , ("Lopf"                                   , Left 0x1D543               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL L
-             , ("LowerLeftArrow"                         , Left 0x02199               ) -- SOUTH WEST ARROW
-             , ("LowerRightArrow"                        , Left 0x02198               ) -- SOUTH EAST ARROW
-             , ("Lscr"                                   , Left 0x02112               ) -- SCRIPT CAPITAL L
-             , ("Lsh"                                    , Left 0x021B0               ) -- UPWARDS ARROW WITH TIP LEFTWARDS
-             , ("Lstrok"                                 , Left 0x00141               ) -- LATIN CAPITAL LETTER L WITH STROKE
-             , ("Lt"                                     , Left 0x0226A               ) -- MUCH LESS-THAN
-             , ("Map"                                    , Left 0x02905               ) -- RIGHTWARDS TWO-HEADED ARROW FROM BAR
-             , ("Mcy"                                    , Left 0x0041C               ) -- CYRILLIC CAPITAL LETTER EM
-             , ("MediumSpace"                            , Left 0x0205F               ) -- MEDIUM MATHEMATICAL SPACE
-             , ("Mellintrf"                              , Left 0x02133               ) -- SCRIPT CAPITAL M
-             , ("Mfr"                                    , Left 0x1D510               ) -- MATHEMATICAL FRAKTUR CAPITAL M
-             , ("Mgr"                                    , Left 0x0039C               ) -- GREEK CAPITAL LETTER MU
-             , ("MinusPlus"                              , Left 0x02213               ) -- MINUS-OR-PLUS SIGN
-             , ("Mopf"                                   , Left 0x1D544               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL M
-             , ("Mscr"                                   , Left 0x02133               ) -- SCRIPT CAPITAL M
-             , ("Mu"                                     , Left 0x0039C               ) -- GREEK CAPITAL LETTER MU
-             , ("NJcy"                                   , Left 0x0040A               ) -- CYRILLIC CAPITAL LETTER NJE
-             , ("Nacute"                                 , Left 0x00143               ) -- LATIN CAPITAL LETTER N WITH ACUTE
-             , ("Ncaron"                                 , Left 0x00147               ) -- LATIN CAPITAL LETTER N WITH CARON
-             , ("Ncedil"                                 , Left 0x00145               ) -- LATIN CAPITAL LETTER N WITH CEDILLA
-             , ("Ncy"                                    , Left 0x0041D               ) -- CYRILLIC CAPITAL LETTER EN
-             , ("NegativeMediumSpace"                    , Left 0x0200B               ) -- ZERO WIDTH SPACE
-             , ("NegativeThickSpace"                     , Left 0x0200B               ) -- ZERO WIDTH SPACE
-             , ("NegativeThinSpace"                      , Left 0x0200B               ) -- ZERO WIDTH SPACE
-             , ("NegativeVeryThinSpace"                  , Left 0x0200B               ) -- ZERO WIDTH SPACE
-             , ("NestedGreaterGreater"                   , Left 0x0226B               ) -- MUCH GREATER-THAN
-             , ("NestedLessLess"                         , Left 0x0226A               ) -- MUCH LESS-THAN
-             , ("NewLine"                                , Left 0x0000A               ) -- LINE FEED (LF)
-             , ("Nfr"                                    , Left 0x1D511               ) -- MATHEMATICAL FRAKTUR CAPITAL N
-             , ("Ngr"                                    , Left 0x0039D               ) -- GREEK CAPITAL LETTER NU
-             , ("NoBreak"                                , Left 0x02060               ) -- WORD JOINER
-             , ("NonBreakingSpace"                       , Left 0x000A0               ) -- NO-BREAK SPACE
-             , ("Nopf"                                   , Left 0x02115               ) -- DOUBLE-STRUCK CAPITAL N
-             , ("Not"                                    , Left 0x02AEC               ) -- DOUBLE STROKE NOT SIGN
-             , ("NotCongruent"                           , Left 0x02262               ) -- NOT IDENTICAL TO
-             , ("NotCupCap"                              , Left 0x0226D               ) -- NOT EQUIVALENT TO
-             , ("NotDoubleVerticalBar"                   , Left 0x02226               ) -- NOT PARALLEL TO
-             , ("NotElement"                             , Left 0x02209               ) -- NOT AN ELEMENT OF
-             , ("NotEqual"                               , Left 0x02260               ) -- NOT EQUAL TO
-             , ("NotEqualTilde"                          , Right [ 0x02242, 0x00338 ] ) -- MINUS TILDE with slash
-             , ("NotExists"                              , Left 0x02204               ) -- THERE DOES NOT EXIST
-             , ("NotGreater"                             , Left 0x0226F               ) -- NOT GREATER-THAN
-             , ("NotGreaterEqual"                        , Left 0x02271               ) -- NEITHER GREATER-THAN NOR EQUAL TO
-             , ("NotGreaterFullEqual"                    , Right [ 0x02267, 0x00338 ] ) -- GREATER-THAN OVER EQUAL TO with slash
-             , ("NotGreaterGreater"                      , Right [ 0x0226B, 0x00338 ] ) -- MUCH GREATER THAN with slash
-             , ("NotGreaterLess"                         , Left 0x02279               ) -- NEITHER GREATER-THAN NOR LESS-THAN
-             , ("NotGreaterSlantEqual"                   , Right [ 0x02A7E, 0x00338 ] ) -- GREATER-THAN OR SLANTED EQUAL TO with slash
-             , ("NotGreaterTilde"                        , Left 0x02275               ) -- NEITHER GREATER-THAN NOR EQUIVALENT TO
-             , ("NotHumpDownHump"                        , Right [ 0x0224E, 0x00338 ] ) -- GEOMETRICALLY EQUIVALENT TO with slash
-             , ("NotHumpEqual"                           , Right [ 0x0224F, 0x00338 ] ) -- DIFFERENCE BETWEEN with slash
-             , ("NotLeftTriangle"                        , Left 0x022EA               ) -- NOT NORMAL SUBGROUP OF
-             , ("NotLeftTriangleBar"                     , Right [ 0x029CF, 0x00338 ] ) -- LEFT TRIANGLE BESIDE VERTICAL BAR with slash
-             , ("NotLeftTriangleEqual"                   , Left 0x022EC               ) -- NOT NORMAL SUBGROUP OF OR EQUAL TO
-             , ("NotLess"                                , Left 0x0226E               ) -- NOT LESS-THAN
-             , ("NotLessEqual"                           , Left 0x02270               ) -- NEITHER LESS-THAN NOR EQUAL TO
-             , ("NotLessGreater"                         , Left 0x02278               ) -- NEITHER LESS-THAN NOR GREATER-THAN
-             , ("NotLessLess"                            , Right [ 0x0226A, 0x00338 ] ) -- MUCH LESS THAN with slash
-             , ("NotLessSlantEqual"                      , Right [ 0x02A7D, 0x00338 ] ) -- LESS-THAN OR SLANTED EQUAL TO with slash
-             , ("NotLessTilde"                           , Left 0x02274               ) -- NEITHER LESS-THAN NOR EQUIVALENT TO
-             , ("NotNestedGreaterGreater"                , Right [ 0x02AA2, 0x00338 ] ) -- DOUBLE NESTED GREATER-THAN with slash
-             , ("NotNestedLessLess"                      , Right [ 0x02AA1, 0x00338 ] ) -- DOUBLE NESTED LESS-THAN with slash
-             , ("NotPrecedes"                            , Left 0x02280               ) -- DOES NOT PRECEDE
-             , ("NotPrecedesEqual"                       , Right [ 0x02AAF, 0x00338 ] ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN with slash
-             , ("NotPrecedesSlantEqual"                  , Left 0x022E0               ) -- DOES NOT PRECEDE OR EQUAL
-             , ("NotReverseElement"                      , Left 0x0220C               ) -- DOES NOT CONTAIN AS MEMBER
-             , ("NotRightTriangle"                       , Left 0x022EB               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP
-             , ("NotRightTriangleBar"                    , Right [ 0x029D0, 0x00338 ] ) -- VERTICAL BAR BESIDE RIGHT TRIANGLE with slash
-             , ("NotRightTriangleEqual"                  , Left 0x022ED               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP OR EQUAL
-             , ("NotSquareSubset"                        , Right [ 0x0228F, 0x00338 ] ) -- SQUARE IMAGE OF with slash
-             , ("NotSquareSubsetEqual"                   , Left 0x022E2               ) -- NOT SQUARE IMAGE OF OR EQUAL TO
-             , ("NotSquareSuperset"                      , Right [ 0x02290, 0x00338 ] ) -- SQUARE ORIGINAL OF with slash
-             , ("NotSquareSupersetEqual"                 , Left 0x022E3               ) -- NOT SQUARE ORIGINAL OF OR EQUAL TO
-             , ("NotSubset"                              , Right [ 0x02282, 0x020D2 ] ) -- SUBSET OF with vertical line
-             , ("NotSubsetEqual"                         , Left 0x02288               ) -- NEITHER A SUBSET OF NOR EQUAL TO
-             , ("NotSucceeds"                            , Left 0x02281               ) -- DOES NOT SUCCEED
-             , ("NotSucceedsEqual"                       , Right [ 0x02AB0, 0x00338 ] ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN with slash
-             , ("NotSucceedsSlantEqual"                  , Left 0x022E1               ) -- DOES NOT SUCCEED OR EQUAL
-             , ("NotSucceedsTilde"                       , Right [ 0x0227F, 0x00338 ] ) -- SUCCEEDS OR EQUIVALENT TO with slash
-             , ("NotSuperset"                            , Right [ 0x02283, 0x020D2 ] ) -- SUPERSET OF with vertical line
-             , ("NotSupersetEqual"                       , Left 0x02289               ) -- NEITHER A SUPERSET OF NOR EQUAL TO
-             , ("NotTilde"                               , Left 0x02241               ) -- NOT TILDE
-             , ("NotTildeEqual"                          , Left 0x02244               ) -- NOT ASYMPTOTICALLY EQUAL TO
-             , ("NotTildeFullEqual"                      , Left 0x02247               ) -- NEITHER APPROXIMATELY NOR ACTUALLY EQUAL TO
-             , ("NotTildeTilde"                          , Left 0x02249               ) -- NOT ALMOST EQUAL TO
-             , ("NotVerticalBar"                         , Left 0x02224               ) -- DOES NOT DIVIDE
-             , ("Nscr"                                   , Left 0x1D4A9               ) -- MATHEMATICAL SCRIPT CAPITAL N
-             , ("Ntilde"                                 , Left 0x000D1               ) -- LATIN CAPITAL LETTER N WITH TILDE
-             , ("Nu"                                     , Left 0x0039D               ) -- GREEK CAPITAL LETTER NU
-             , ("OElig"                                  , Left 0x00152               ) -- LATIN CAPITAL LIGATURE OE
-             , ("OHacgr"                                 , Left 0x0038F               ) -- GREEK CAPITAL LETTER OMEGA WITH TONOS
-             , ("OHgr"                                   , Left 0x003A9               ) -- GREEK CAPITAL LETTER OMEGA
-             , ("Oacgr"                                  , Left 0x0038C               ) -- GREEK CAPITAL LETTER OMICRON WITH TONOS
-             , ("Oacute"                                 , Left 0x000D3               ) -- LATIN CAPITAL LETTER O WITH ACUTE
-             , ("Ocirc"                                  , Left 0x000D4               ) -- LATIN CAPITAL LETTER O WITH CIRCUMFLEX
-             , ("Ocy"                                    , Left 0x0041E               ) -- CYRILLIC CAPITAL LETTER O
-             , ("Odblac"                                 , Left 0x00150               ) -- LATIN CAPITAL LETTER O WITH DOUBLE ACUTE
-             , ("Ofr"                                    , Left 0x1D512               ) -- MATHEMATICAL FRAKTUR CAPITAL O
-             , ("Ogr"                                    , Left 0x0039F               ) -- GREEK CAPITAL LETTER OMICRON
-             , ("Ograve"                                 , Left 0x000D2               ) -- LATIN CAPITAL LETTER O WITH GRAVE
-             , ("Omacr"                                  , Left 0x0014C               ) -- LATIN CAPITAL LETTER O WITH MACRON
-             , ("Omega"                                  , Left 0x003A9               ) -- GREEK CAPITAL LETTER OMEGA
-             , ("Omicron"                                , Left 0x0039F               ) -- GREEK CAPITAL LETTER OMICRON
-             , ("Oopf"                                   , Left 0x1D546               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL O
-             , ("OpenCurlyDoubleQuote"                   , Left 0x0201C               ) -- LEFT DOUBLE QUOTATION MARK
-             , ("OpenCurlyQuote"                         , Left 0x02018               ) -- LEFT SINGLE QUOTATION MARK
-             , ("Or"                                     , Left 0x02A54               ) -- DOUBLE LOGICAL OR
-             , ("Oscr"                                   , Left 0x1D4AA               ) -- MATHEMATICAL SCRIPT CAPITAL O
-             , ("Oslash"                                 , Left 0x000D8               ) -- LATIN CAPITAL LETTER O WITH STROKE
-             , ("Otilde"                                 , Left 0x000D5               ) -- LATIN CAPITAL LETTER O WITH TILDE
-             , ("Otimes"                                 , Left 0x02A37               ) -- MULTIPLICATION SIGN IN DOUBLE CIRCLE
-             , ("Ouml"                                   , Left 0x000D6               ) -- LATIN CAPITAL LETTER O WITH DIAERESIS
-             , ("OverBar"                                , Left 0x0203E               ) -- OVERLINE
-             , ("OverBrace"                              , Left 0x023DE               ) -- TOP CURLY BRACKET
-             , ("OverBracket"                            , Left 0x023B4               ) -- TOP SQUARE BRACKET
-             , ("OverParenthesis"                        , Left 0x023DC               ) -- TOP PARENTHESIS
-             , ("PHgr"                                   , Left 0x003A6               ) -- GREEK CAPITAL LETTER PHI
-             , ("PSgr"                                   , Left 0x003A8               ) -- GREEK CAPITAL LETTER PSI
-             , ("PartialD"                               , Left 0x02202               ) -- PARTIAL DIFFERENTIAL
-             , ("Pcy"                                    , Left 0x0041F               ) -- CYRILLIC CAPITAL LETTER PE
-             , ("Pfr"                                    , Left 0x1D513               ) -- MATHEMATICAL FRAKTUR CAPITAL P
-             , ("Pgr"                                    , Left 0x003A0               ) -- GREEK CAPITAL LETTER PI
-             , ("Phi"                                    , Left 0x003A6               ) -- GREEK CAPITAL LETTER PHI
-             , ("Pi"                                     , Left 0x003A0               ) -- GREEK CAPITAL LETTER PI
-             , ("PlusMinus"                              , Left 0x000B1               ) -- PLUS-MINUS SIGN
-             , ("Poincareplane"                          , Left 0x0210C               ) -- BLACK-LETTER CAPITAL H
-             , ("Popf"                                   , Left 0x02119               ) -- DOUBLE-STRUCK CAPITAL P
-             , ("Pr"                                     , Left 0x02ABB               ) -- DOUBLE PRECEDES
-             , ("Precedes"                               , Left 0x0227A               ) -- PRECEDES
-             , ("PrecedesEqual"                          , Left 0x02AAF               ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN
-             , ("PrecedesSlantEqual"                     , Left 0x0227C               ) -- PRECEDES OR EQUAL TO
-             , ("PrecedesTilde"                          , Left 0x0227E               ) -- PRECEDES OR EQUIVALENT TO
-             , ("Prime"                                  , Left 0x02033               ) -- DOUBLE PRIME
-             , ("Product"                                , Left 0x0220F               ) -- N-ARY PRODUCT
-             , ("Proportion"                             , Left 0x02237               ) -- PROPORTION
-             , ("Proportional"                           , Left 0x0221D               ) -- PROPORTIONAL TO
-             , ("Pscr"                                   , Left 0x1D4AB               ) -- MATHEMATICAL SCRIPT CAPITAL P
-             , ("Psi"                                    , Left 0x003A8               ) -- GREEK CAPITAL LETTER PSI
-             , ("QUOT"                                   , Left 0x00022               ) -- QUOTATION MARK
-             , ("Qfr"                                    , Left 0x1D514               ) -- MATHEMATICAL FRAKTUR CAPITAL Q
-             , ("Qopf"                                   , Left 0x0211A               ) -- DOUBLE-STRUCK CAPITAL Q
-             , ("Qscr"                                   , Left 0x1D4AC               ) -- MATHEMATICAL SCRIPT CAPITAL Q
-             , ("RBarr"                                  , Left 0x02910               ) -- RIGHTWARDS TWO-HEADED TRIPLE DASH ARROW
-             , ("REG"                                    , Left 0x000AE               ) -- REGISTERED SIGN
-             , ("Racute"                                 , Left 0x00154               ) -- LATIN CAPITAL LETTER R WITH ACUTE
-             , ("Rang"                                   , Left 0x027EB               ) -- MATHEMATICAL RIGHT DOUBLE ANGLE BRACKET
-             , ("Rarr"                                   , Left 0x021A0               ) -- RIGHTWARDS TWO HEADED ARROW
-             , ("Rarrtl"                                 , Left 0x02916               ) -- RIGHTWARDS TWO-HEADED ARROW WITH TAIL
-             , ("Rcaron"                                 , Left 0x00158               ) -- LATIN CAPITAL LETTER R WITH CARON
-             , ("Rcedil"                                 , Left 0x00156               ) -- LATIN CAPITAL LETTER R WITH CEDILLA
-             , ("Rcy"                                    , Left 0x00420               ) -- CYRILLIC CAPITAL LETTER ER
-             , ("Re"                                     , Left 0x0211C               ) -- BLACK-LETTER CAPITAL R
-             , ("ReverseElement"                         , Left 0x0220B               ) -- CONTAINS AS MEMBER
-             , ("ReverseEquilibrium"                     , Left 0x021CB               ) -- LEFTWARDS HARPOON OVER RIGHTWARDS HARPOON
-             , ("ReverseUpEquilibrium"                   , Left 0x0296F               ) -- DOWNWARDS HARPOON WITH BARB LEFT BESIDE UPWARDS HARPOON WITH BARB RIGHT
-             , ("Rfr"                                    , Left 0x0211C               ) -- BLACK-LETTER CAPITAL R
-             , ("Rgr"                                    , Left 0x003A1               ) -- GREEK CAPITAL LETTER RHO
-             , ("Rho"                                    , Left 0x003A1               ) -- GREEK CAPITAL LETTER RHO
-             , ("RightAngleBracket"                      , Left 0x027E9               ) -- MATHEMATICAL RIGHT ANGLE BRACKET
-             , ("RightArrow"                             , Left 0x02192               ) -- RIGHTWARDS ARROW
-             , ("RightArrowBar"                          , Left 0x021E5               ) -- RIGHTWARDS ARROW TO BAR
-             , ("RightArrowLeftArrow"                    , Left 0x021C4               ) -- RIGHTWARDS ARROW OVER LEFTWARDS ARROW
-             , ("RightCeiling"                           , Left 0x02309               ) -- RIGHT CEILING
-             , ("RightDoubleBracket"                     , Left 0x027E7               ) -- MATHEMATICAL RIGHT WHITE SQUARE BRACKET
-             , ("RightDownTeeVector"                     , Left 0x0295D               ) -- DOWNWARDS HARPOON WITH BARB RIGHT FROM BAR
-             , ("RightDownVector"                        , Left 0x021C2               ) -- DOWNWARDS HARPOON WITH BARB RIGHTWARDS
-             , ("RightDownVectorBar"                     , Left 0x02955               ) -- DOWNWARDS HARPOON WITH BARB RIGHT TO BAR
-             , ("RightFloor"                             , Left 0x0230B               ) -- RIGHT FLOOR
-             , ("RightTee"                               , Left 0x022A2               ) -- RIGHT TACK
-             , ("RightTeeArrow"                          , Left 0x021A6               ) -- RIGHTWARDS ARROW FROM BAR
-             , ("RightTeeVector"                         , Left 0x0295B               ) -- RIGHTWARDS HARPOON WITH BARB UP FROM BAR
-             , ("RightTriangle"                          , Left 0x022B3               ) -- CONTAINS AS NORMAL SUBGROUP
-             , ("RightTriangleBar"                       , Left 0x029D0               ) -- VERTICAL BAR BESIDE RIGHT TRIANGLE
-             , ("RightTriangleEqual"                     , Left 0x022B5               ) -- CONTAINS AS NORMAL SUBGROUP OR EQUAL TO
-             , ("RightUpDownVector"                      , Left 0x0294F               ) -- UP BARB RIGHT DOWN BARB RIGHT HARPOON
-             , ("RightUpTeeVector"                       , Left 0x0295C               ) -- UPWARDS HARPOON WITH BARB RIGHT FROM BAR
-             , ("RightUpVector"                          , Left 0x021BE               ) -- UPWARDS HARPOON WITH BARB RIGHTWARDS
-             , ("RightUpVectorBar"                       , Left 0x02954               ) -- UPWARDS HARPOON WITH BARB RIGHT TO BAR
-             , ("RightVector"                            , Left 0x021C0               ) -- RIGHTWARDS HARPOON WITH BARB UPWARDS
-             , ("RightVectorBar"                         , Left 0x02953               ) -- RIGHTWARDS HARPOON WITH BARB UP TO BAR
-             , ("Rightarrow"                             , Left 0x021D2               ) -- RIGHTWARDS DOUBLE ARROW
-             , ("Ropf"                                   , Left 0x0211D               ) -- DOUBLE-STRUCK CAPITAL R
-             , ("RoundImplies"                           , Left 0x02970               ) -- RIGHT DOUBLE ARROW WITH ROUNDED HEAD
-             , ("Rrightarrow"                            , Left 0x021DB               ) -- RIGHTWARDS TRIPLE ARROW
-             , ("Rscr"                                   , Left 0x0211B               ) -- SCRIPT CAPITAL R
-             , ("Rsh"                                    , Left 0x021B1               ) -- UPWARDS ARROW WITH TIP RIGHTWARDS
-             , ("RuleDelayed"                            , Left 0x029F4               ) -- RULE-DELAYED
-             , ("SHCHcy"                                 , Left 0x00429               ) -- CYRILLIC CAPITAL LETTER SHCHA
-             , ("SHcy"                                   , Left 0x00428               ) -- CYRILLIC CAPITAL LETTER SHA
-             , ("SOFTcy"                                 , Left 0x0042C               ) -- CYRILLIC CAPITAL LETTER SOFT SIGN
-             , ("Sacute"                                 , Left 0x0015A               ) -- LATIN CAPITAL LETTER S WITH ACUTE
-             , ("Sc"                                     , Left 0x02ABC               ) -- DOUBLE SUCCEEDS
-             , ("Scaron"                                 , Left 0x00160               ) -- LATIN CAPITAL LETTER S WITH CARON
-             , ("Scedil"                                 , Left 0x0015E               ) -- LATIN CAPITAL LETTER S WITH CEDILLA
-             , ("Scirc"                                  , Left 0x0015C               ) -- LATIN CAPITAL LETTER S WITH CIRCUMFLEX
-             , ("Scy"                                    , Left 0x00421               ) -- CYRILLIC CAPITAL LETTER ES
-             , ("Sfr"                                    , Left 0x1D516               ) -- MATHEMATICAL FRAKTUR CAPITAL S
-             , ("Sgr"                                    , Left 0x003A3               ) -- GREEK CAPITAL LETTER SIGMA
-             , ("ShortDownArrow"                         , Left 0x02193               ) -- DOWNWARDS ARROW
-             , ("ShortLeftArrow"                         , Left 0x02190               ) -- LEFTWARDS ARROW
-             , ("ShortRightArrow"                        , Left 0x02192               ) -- RIGHTWARDS ARROW
-             , ("ShortUpArrow"                           , Left 0x02191               ) -- UPWARDS ARROW
-             , ("Sigma"                                  , Left 0x003A3               ) -- GREEK CAPITAL LETTER SIGMA
-             , ("SmallCircle"                            , Left 0x02218               ) -- RING OPERATOR
-             , ("Sopf"                                   , Left 0x1D54A               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL S
-             , ("Sqrt"                                   , Left 0x0221A               ) -- SQUARE ROOT
-             , ("Square"                                 , Left 0x025A1               ) -- WHITE SQUARE
-             , ("SquareIntersection"                     , Left 0x02293               ) -- SQUARE CAP
-             , ("SquareSubset"                           , Left 0x0228F               ) -- SQUARE IMAGE OF
-             , ("SquareSubsetEqual"                      , Left 0x02291               ) -- SQUARE IMAGE OF OR EQUAL TO
-             , ("SquareSuperset"                         , Left 0x02290               ) -- SQUARE ORIGINAL OF
-             , ("SquareSupersetEqual"                    , Left 0x02292               ) -- SQUARE ORIGINAL OF OR EQUAL TO
-             , ("SquareUnion"                            , Left 0x02294               ) -- SQUARE CUP
-             , ("Sscr"                                   , Left 0x1D4AE               ) -- MATHEMATICAL SCRIPT CAPITAL S
-             , ("Star"                                   , Left 0x022C6               ) -- STAR OPERATOR
-             , ("Sub"                                    , Left 0x022D0               ) -- DOUBLE SUBSET
-             , ("Subset"                                 , Left 0x022D0               ) -- DOUBLE SUBSET
-             , ("SubsetEqual"                            , Left 0x02286               ) -- SUBSET OF OR EQUAL TO
-             , ("Succeeds"                               , Left 0x0227B               ) -- SUCCEEDS
-             , ("SucceedsEqual"                          , Left 0x02AB0               ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN
-             , ("SucceedsSlantEqual"                     , Left 0x0227D               ) -- SUCCEEDS OR EQUAL TO
-             , ("SucceedsTilde"                          , Left 0x0227F               ) -- SUCCEEDS OR EQUIVALENT TO
-             , ("SuchThat"                               , Left 0x0220B               ) -- CONTAINS AS MEMBER
-             , ("Sum"                                    , Left 0x02211               ) -- N-ARY SUMMATION
-             , ("Sup"                                    , Left 0x022D1               ) -- DOUBLE SUPERSET
-             , ("Superset"                               , Left 0x02283               ) -- SUPERSET OF
-             , ("SupersetEqual"                          , Left 0x02287               ) -- SUPERSET OF OR EQUAL TO
-             , ("Supset"                                 , Left 0x022D1               ) -- DOUBLE SUPERSET
-             , ("THORN"                                  , Left 0x000DE               ) -- LATIN CAPITAL LETTER THORN
-             , ("THgr"                                   , Left 0x00398               ) -- GREEK CAPITAL LETTER THETA
-             , ("TRADE"                                  , Left 0x02122               ) -- TRADE MARK SIGN
-             , ("TSHcy"                                  , Left 0x0040B               ) -- CYRILLIC CAPITAL LETTER TSHE
-             , ("TScy"                                   , Left 0x00426               ) -- CYRILLIC CAPITAL LETTER TSE
-             , ("Tab"                                    , Left 0x00009               ) -- CHARACTER TABULATION
-             , ("Tau"                                    , Left 0x003A4               ) -- GREEK CAPITAL LETTER TAU
-             , ("Tcaron"                                 , Left 0x00164               ) -- LATIN CAPITAL LETTER T WITH CARON
-             , ("Tcedil"                                 , Left 0x00162               ) -- LATIN CAPITAL LETTER T WITH CEDILLA
-             , ("Tcy"                                    , Left 0x00422               ) -- CYRILLIC CAPITAL LETTER TE
-             , ("Tfr"                                    , Left 0x1D517               ) -- MATHEMATICAL FRAKTUR CAPITAL T
-             , ("Tgr"                                    , Left 0x003A4               ) -- GREEK CAPITAL LETTER TAU
-             , ("Therefore"                              , Left 0x02234               ) -- THEREFORE
-             , ("Theta"                                  , Left 0x00398               ) -- GREEK CAPITAL LETTER THETA
-             , ("ThickSpace"                             , Right [ 0x0205F, 0x0200A ] ) -- space of width 5/18 em
-             , ("ThinSpace"                              , Left 0x02009               ) -- THIN SPACE
-             , ("Tilde"                                  , Left 0x0223C               ) -- TILDE OPERATOR
-             , ("TildeEqual"                             , Left 0x02243               ) -- ASYMPTOTICALLY EQUAL TO
-             , ("TildeFullEqual"                         , Left 0x02245               ) -- APPROXIMATELY EQUAL TO
-             , ("TildeTilde"                             , Left 0x02248               ) -- ALMOST EQUAL TO
-             , ("Topf"                                   , Left 0x1D54B               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL T
-             , ("TripleDot"                              , Left 0x020DB               ) -- COMBINING THREE DOTS ABOVE
-             , ("Tscr"                                   , Left 0x1D4AF               ) -- MATHEMATICAL SCRIPT CAPITAL T
-             , ("Tstrok"                                 , Left 0x00166               ) -- LATIN CAPITAL LETTER T WITH STROKE
-             , ("Uacgr"                                  , Left 0x0038E               ) -- GREEK CAPITAL LETTER UPSILON WITH TONOS
-             , ("Uacute"                                 , Left 0x000DA               ) -- LATIN CAPITAL LETTER U WITH ACUTE
-             , ("Uarr"                                   , Left 0x0219F               ) -- UPWARDS TWO HEADED ARROW
-             , ("Uarrocir"                               , Left 0x02949               ) -- UPWARDS TWO-HEADED ARROW FROM SMALL CIRCLE
-             , ("Ubrcy"                                  , Left 0x0040E               ) -- CYRILLIC CAPITAL LETTER SHORT U
-             , ("Ubreve"                                 , Left 0x0016C               ) -- LATIN CAPITAL LETTER U WITH BREVE
-             , ("Ucirc"                                  , Left 0x000DB               ) -- LATIN CAPITAL LETTER U WITH CIRCUMFLEX
-             , ("Ucy"                                    , Left 0x00423               ) -- CYRILLIC CAPITAL LETTER U
-             , ("Udblac"                                 , Left 0x00170               ) -- LATIN CAPITAL LETTER U WITH DOUBLE ACUTE
-             , ("Udigr"                                  , Left 0x003AB               ) -- GREEK CAPITAL LETTER UPSILON WITH DIALYTIKA
-             , ("Ufr"                                    , Left 0x1D518               ) -- MATHEMATICAL FRAKTUR CAPITAL U
-             , ("Ugr"                                    , Left 0x003A5               ) -- GREEK CAPITAL LETTER UPSILON
-             , ("Ugrave"                                 , Left 0x000D9               ) -- LATIN CAPITAL LETTER U WITH GRAVE
-             , ("Umacr"                                  , Left 0x0016A               ) -- LATIN CAPITAL LETTER U WITH MACRON
-             , ("UnderBar"                               , Left 0x0005F               ) -- LOW LINE
-             , ("UnderBrace"                             , Left 0x023DF               ) -- BOTTOM CURLY BRACKET
-             , ("UnderBracket"                           , Left 0x023B5               ) -- BOTTOM SQUARE BRACKET
-             , ("UnderParenthesis"                       , Left 0x023DD               ) -- BOTTOM PARENTHESIS
-             , ("Union"                                  , Left 0x022C3               ) -- N-ARY UNION
-             , ("UnionPlus"                              , Left 0x0228E               ) -- MULTISET UNION
-             , ("Uogon"                                  , Left 0x00172               ) -- LATIN CAPITAL LETTER U WITH OGONEK
-             , ("Uopf"                                   , Left 0x1D54C               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL U
-             , ("UpArrow"                                , Left 0x02191               ) -- UPWARDS ARROW
-             , ("UpArrowBar"                             , Left 0x02912               ) -- UPWARDS ARROW TO BAR
-             , ("UpArrowDownArrow"                       , Left 0x021C5               ) -- UPWARDS ARROW LEFTWARDS OF DOWNWARDS ARROW
-             , ("UpDownArrow"                            , Left 0x02195               ) -- UP DOWN ARROW
-             , ("UpEquilibrium"                          , Left 0x0296E               ) -- UPWARDS HARPOON WITH BARB LEFT BESIDE DOWNWARDS HARPOON WITH BARB RIGHT
-             , ("UpTee"                                  , Left 0x022A5               ) -- UP TACK
-             , ("UpTeeArrow"                             , Left 0x021A5               ) -- UPWARDS ARROW FROM BAR
-             , ("Uparrow"                                , Left 0x021D1               ) -- UPWARDS DOUBLE ARROW
-             , ("Updownarrow"                            , Left 0x021D5               ) -- UP DOWN DOUBLE ARROW
-             , ("UpperLeftArrow"                         , Left 0x02196               ) -- NORTH WEST ARROW
-             , ("UpperRightArrow"                        , Left 0x02197               ) -- NORTH EAST ARROW
-             , ("Upsi"                                   , Left 0x003D2               ) -- GREEK UPSILON WITH HOOK SYMBOL
-             , ("Upsilon"                                , Left 0x003A5               ) -- GREEK CAPITAL LETTER UPSILON
-             , ("Uring"                                  , Left 0x0016E               ) -- LATIN CAPITAL LETTER U WITH RING ABOVE
-             , ("Uscr"                                   , Left 0x1D4B0               ) -- MATHEMATICAL SCRIPT CAPITAL U
-             , ("Utilde"                                 , Left 0x00168               ) -- LATIN CAPITAL LETTER U WITH TILDE
-             , ("Uuml"                                   , Left 0x000DC               ) -- LATIN CAPITAL LETTER U WITH DIAERESIS
-             , ("VDash"                                  , Left 0x022AB               ) -- DOUBLE VERTICAL BAR DOUBLE RIGHT TURNSTILE
-             , ("Vbar"                                   , Left 0x02AEB               ) -- DOUBLE UP TACK
-             , ("Vcy"                                    , Left 0x00412               ) -- CYRILLIC CAPITAL LETTER VE
-             , ("Vdash"                                  , Left 0x022A9               ) -- FORCES
-             , ("Vdashl"                                 , Left 0x02AE6               ) -- LONG DASH FROM LEFT MEMBER OF DOUBLE VERTICAL
-             , ("Vee"                                    , Left 0x022C1               ) -- N-ARY LOGICAL OR
-             , ("Verbar"                                 , Left 0x02016               ) -- DOUBLE VERTICAL LINE
-             , ("Vert"                                   , Left 0x02016               ) -- DOUBLE VERTICAL LINE
-             , ("VerticalBar"                            , Left 0x02223               ) -- DIVIDES
-             , ("VerticalLine"                           , Left 0x0007C               ) -- VERTICAL LINE
-             , ("VerticalSeparator"                      , Left 0x02758               ) -- LIGHT VERTICAL BAR
-             , ("VerticalTilde"                          , Left 0x02240               ) -- WREATH PRODUCT
-             , ("VeryThinSpace"                          , Left 0x0200A               ) -- HAIR SPACE
-             , ("Vfr"                                    , Left 0x1D519               ) -- MATHEMATICAL FRAKTUR CAPITAL V
-             , ("Vopf"                                   , Left 0x1D54D               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL V
-             , ("Vscr"                                   , Left 0x1D4B1               ) -- MATHEMATICAL SCRIPT CAPITAL V
-             , ("Vvdash"                                 , Left 0x022AA               ) -- TRIPLE VERTICAL BAR RIGHT TURNSTILE
-             , ("Wcirc"                                  , Left 0x00174               ) -- LATIN CAPITAL LETTER W WITH CIRCUMFLEX
-             , ("Wedge"                                  , Left 0x022C0               ) -- N-ARY LOGICAL AND
-             , ("Wfr"                                    , Left 0x1D51A               ) -- MATHEMATICAL FRAKTUR CAPITAL W
-             , ("Wopf"                                   , Left 0x1D54E               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL W
-             , ("Wscr"                                   , Left 0x1D4B2               ) -- MATHEMATICAL SCRIPT CAPITAL W
-             , ("Xfr"                                    , Left 0x1D51B               ) -- MATHEMATICAL FRAKTUR CAPITAL X
-             , ("Xgr"                                    , Left 0x0039E               ) -- GREEK CAPITAL LETTER XI
-             , ("Xi"                                     , Left 0x0039E               ) -- GREEK CAPITAL LETTER XI
-             , ("Xopf"                                   , Left 0x1D54F               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL X
-             , ("Xscr"                                   , Left 0x1D4B3               ) -- MATHEMATICAL SCRIPT CAPITAL X
-             , ("YAcy"                                   , Left 0x0042F               ) -- CYRILLIC CAPITAL LETTER YA
-             , ("YIcy"                                   , Left 0x00407               ) -- CYRILLIC CAPITAL LETTER YI
-             , ("YUcy"                                   , Left 0x0042E               ) -- CYRILLIC CAPITAL LETTER YU
-             , ("Yacute"                                 , Left 0x000DD               ) -- LATIN CAPITAL LETTER Y WITH ACUTE
-             , ("Ycirc"                                  , Left 0x00176               ) -- LATIN CAPITAL LETTER Y WITH CIRCUMFLEX
-             , ("Ycy"                                    , Left 0x0042B               ) -- CYRILLIC CAPITAL LETTER YERU
-             , ("Yfr"                                    , Left 0x1D51C               ) -- MATHEMATICAL FRAKTUR CAPITAL Y
-             , ("Yopf"                                   , Left 0x1D550               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL Y
-             , ("Yscr"                                   , Left 0x1D4B4               ) -- MATHEMATICAL SCRIPT CAPITAL Y
-             , ("Yuml"                                   , Left 0x00178               ) -- LATIN CAPITAL LETTER Y WITH DIAERESIS
-             , ("ZHcy"                                   , Left 0x00416               ) -- CYRILLIC CAPITAL LETTER ZHE
-             , ("Zacute"                                 , Left 0x00179               ) -- LATIN CAPITAL LETTER Z WITH ACUTE
-             , ("Zcaron"                                 , Left 0x0017D               ) -- LATIN CAPITAL LETTER Z WITH CARON
-             , ("Zcy"                                    , Left 0x00417               ) -- CYRILLIC CAPITAL LETTER ZE
-             , ("Zdot"                                   , Left 0x0017B               ) -- LATIN CAPITAL LETTER Z WITH DOT ABOVE
-             , ("ZeroWidthSpace"                         , Left 0x0200B               ) -- ZERO WIDTH SPACE
-             , ("Zeta"                                   , Left 0x00396               ) -- GREEK CAPITAL LETTER ZETA
-             , ("Zfr"                                    , Left 0x02128               ) -- BLACK-LETTER CAPITAL Z
-             , ("Zgr"                                    , Left 0x00396               ) -- GREEK CAPITAL LETTER ZETA
-             , ("Zopf"                                   , Left 0x02124               ) -- DOUBLE-STRUCK CAPITAL Z
-             , ("Zscr"                                   , Left 0x1D4B5               ) -- MATHEMATICAL SCRIPT CAPITAL Z
-             , ("aacgr"                                  , Left 0x003AC               ) -- GREEK SMALL LETTER ALPHA WITH TONOS
-             , ("aacute"                                 , Left 0x000E1               ) -- LATIN SMALL LETTER A WITH ACUTE
-             , ("abreve"                                 , Left 0x00103               ) -- LATIN SMALL LETTER A WITH BREVE
-             , ("ac"                                     , Left 0x0223E               ) -- INVERTED LAZY S
-             , ("acE"                                    , Right [ 0x0223E, 0x00333 ] ) -- INVERTED LAZY S with double underline
-             , ("acd"                                    , Left 0x0223F               ) -- SINE WAVE
-             , ("acirc"                                  , Left 0x000E2               ) -- LATIN SMALL LETTER A WITH CIRCUMFLEX
-             , ("acute"                                  , Left 0x000B4               ) -- ACUTE ACCENT
-             , ("acy"                                    , Left 0x00430               ) -- CYRILLIC SMALL LETTER A
-             , ("aelig"                                  , Left 0x000E6               ) -- LATIN SMALL LETTER AE
-             , ("af"                                     , Left 0x02061               ) -- FUNCTION APPLICATION
-             , ("afr"                                    , Left 0x1D51E               ) -- MATHEMATICAL FRAKTUR SMALL A
-             , ("agr"                                    , Left 0x003B1               ) -- GREEK SMALL LETTER ALPHA
-             , ("agrave"                                 , Left 0x000E0               ) -- LATIN SMALL LETTER A WITH GRAVE
-             , ("alefsym"                                , Left 0x02135               ) -- ALEF SYMBOL
-             , ("aleph"                                  , Left 0x02135               ) -- ALEF SYMBOL
-             , ("alpha"                                  , Left 0x003B1               ) -- GREEK SMALL LETTER ALPHA
-             , ("amacr"                                  , Left 0x00101               ) -- LATIN SMALL LETTER A WITH MACRON
-             , ("amalg"                                  , Left 0x02A3F               ) -- AMALGAMATION OR COPRODUCT
-             , ("amp"                                    , Left 0x00026               ) -- AMPERSAND
-             , ("and"                                    , Left 0x02227               ) -- LOGICAL AND
-             , ("andand"                                 , Left 0x02A55               ) -- TWO INTERSECTING LOGICAL AND
-             , ("andd"                                   , Left 0x02A5C               ) -- LOGICAL AND WITH HORIZONTAL DASH
-             , ("andslope"                               , Left 0x02A58               ) -- SLOPING LARGE AND
-             , ("andv"                                   , Left 0x02A5A               ) -- LOGICAL AND WITH MIDDLE STEM
-             , ("ang"                                    , Left 0x02220               ) -- ANGLE
-             , ("ange"                                   , Left 0x029A4               ) -- ANGLE WITH UNDERBAR
-             , ("angle"                                  , Left 0x02220               ) -- ANGLE
-             , ("angmsd"                                 , Left 0x02221               ) -- MEASURED ANGLE
-             , ("angmsdaa"                               , Left 0x029A8               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING UP AND RIGHT
-             , ("angmsdab"                               , Left 0x029A9               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING UP AND LEFT
-             , ("angmsdac"                               , Left 0x029AA               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING DOWN AND RIGHT
-             , ("angmsdad"                               , Left 0x029AB               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING DOWN AND LEFT
-             , ("angmsdae"                               , Left 0x029AC               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING RIGHT AND UP
-             , ("angmsdaf"                               , Left 0x029AD               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING LEFT AND UP
-             , ("angmsdag"                               , Left 0x029AE               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING RIGHT AND DOWN
-             , ("angmsdah"                               , Left 0x029AF               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING LEFT AND DOWN
-             , ("angrt"                                  , Left 0x0221F               ) -- RIGHT ANGLE
-             , ("angrtvb"                                , Left 0x022BE               ) -- RIGHT ANGLE WITH ARC
-             , ("angrtvbd"                               , Left 0x0299D               ) -- MEASURED RIGHT ANGLE WITH DOT
-             , ("angsph"                                 , Left 0x02222               ) -- SPHERICAL ANGLE
-             , ("angst"                                  , Left 0x000C5               ) -- LATIN CAPITAL LETTER A WITH RING ABOVE
-             , ("angzarr"                                , Left 0x0237C               ) -- RIGHT ANGLE WITH DOWNWARDS ZIGZAG ARROW
-             , ("aogon"                                  , Left 0x00105               ) -- LATIN SMALL LETTER A WITH OGONEK
-             , ("aopf"                                   , Left 0x1D552               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL A
-             , ("ap"                                     , Left 0x02248               ) -- ALMOST EQUAL TO
-             , ("apE"                                    , Left 0x02A70               ) -- APPROXIMATELY EQUAL OR EQUAL TO
-             , ("apacir"                                 , Left 0x02A6F               ) -- ALMOST EQUAL TO WITH CIRCUMFLEX ACCENT
-             , ("ape"                                    , Left 0x0224A               ) -- ALMOST EQUAL OR EQUAL TO
-             , ("apid"                                   , Left 0x0224B               ) -- TRIPLE TILDE
-             , ("apos"                                   , Left 0x00027               ) -- APOSTROPHE
-             , ("approx"                                 , Left 0x02248               ) -- ALMOST EQUAL TO
-             , ("approxeq"                               , Left 0x0224A               ) -- ALMOST EQUAL OR EQUAL TO
-             , ("aring"                                  , Left 0x000E5               ) -- LATIN SMALL LETTER A WITH RING ABOVE
-             , ("ascr"                                   , Left 0x1D4B6               ) -- MATHEMATICAL SCRIPT SMALL A
-             , ("ast"                                    , Left 0x0002A               ) -- ASTERISK
-             , ("asymp"                                  , Left 0x02248               ) -- ALMOST EQUAL TO
-             , ("asympeq"                                , Left 0x0224D               ) -- EQUIVALENT TO
-             , ("atilde"                                 , Left 0x000E3               ) -- LATIN SMALL LETTER A WITH TILDE
-             , ("auml"                                   , Left 0x000E4               ) -- LATIN SMALL LETTER A WITH DIAERESIS
-             , ("awconint"                               , Left 0x02233               ) -- ANTICLOCKWISE CONTOUR INTEGRAL
-             , ("awint"                                  , Left 0x02A11               ) -- ANTICLOCKWISE INTEGRATION
-             , ("b.Delta"                                , Left 0x1D6AB               ) -- MATHEMATICAL BOLD CAPITAL DELTA
-             , ("b.Gamma"                                , Left 0x1D6AA               ) -- MATHEMATICAL BOLD CAPITAL GAMMA
-             , ("b.Gammad"                               , Left 0x1D7CA               ) -- MATHEMATICAL BOLD CAPITAL DIGAMMA
-             , ("b.Lambda"                               , Left 0x1D6B2               ) -- MATHEMATICAL BOLD CAPITAL LAMDA
-             , ("b.Omega"                                , Left 0x1D6C0               ) -- MATHEMATICAL BOLD CAPITAL OMEGA
-             , ("b.Phi"                                  , Left 0x1D6BD               ) -- MATHEMATICAL BOLD CAPITAL PHI
-             , ("b.Pi"                                   , Left 0x1D6B7               ) -- MATHEMATICAL BOLD CAPITAL PI
-             , ("b.Psi"                                  , Left 0x1D6BF               ) -- MATHEMATICAL BOLD CAPITAL PSI
-             , ("b.Sigma"                                , Left 0x1D6BA               ) -- MATHEMATICAL BOLD CAPITAL SIGMA
-             , ("b.Theta"                                , Left 0x1D6AF               ) -- MATHEMATICAL BOLD CAPITAL THETA
-             , ("b.Upsi"                                 , Left 0x1D6BC               ) -- MATHEMATICAL BOLD CAPITAL UPSILON
-             , ("b.Xi"                                   , Left 0x1D6B5               ) -- MATHEMATICAL BOLD CAPITAL XI
-             , ("b.alpha"                                , Left 0x1D6C2               ) -- MATHEMATICAL BOLD SMALL ALPHA
-             , ("b.beta"                                 , Left 0x1D6C3               ) -- MATHEMATICAL BOLD SMALL BETA
-             , ("b.chi"                                  , Left 0x1D6D8               ) -- MATHEMATICAL BOLD SMALL CHI
-             , ("b.delta"                                , Left 0x1D6C5               ) -- MATHEMATICAL BOLD SMALL DELTA
-             , ("b.epsi"                                 , Left 0x1D6C6               ) -- MATHEMATICAL BOLD SMALL EPSILON
-             , ("b.epsiv"                                , Left 0x1D6DC               ) -- MATHEMATICAL BOLD EPSILON SYMBOL
-             , ("b.eta"                                  , Left 0x1D6C8               ) -- MATHEMATICAL BOLD SMALL ETA
-             , ("b.gamma"                                , Left 0x1D6C4               ) -- MATHEMATICAL BOLD SMALL GAMMA
-             , ("b.gammad"                               , Left 0x1D7CB               ) -- MATHEMATICAL BOLD SMALL DIGAMMA
-             , ("b.iota"                                 , Left 0x1D6CA               ) -- MATHEMATICAL BOLD SMALL IOTA
-             , ("b.kappa"                                , Left 0x1D6CB               ) -- MATHEMATICAL BOLD SMALL KAPPA
-             , ("b.kappav"                               , Left 0x1D6DE               ) -- MATHEMATICAL BOLD KAPPA SYMBOL
-             , ("b.lambda"                               , Left 0x1D6CC               ) -- MATHEMATICAL BOLD SMALL LAMDA
-             , ("b.mu"                                   , Left 0x1D6CD               ) -- MATHEMATICAL BOLD SMALL MU
-             , ("b.nu"                                   , Left 0x1D6CE               ) -- MATHEMATICAL BOLD SMALL NU
-             , ("b.omega"                                , Left 0x1D6DA               ) -- MATHEMATICAL BOLD SMALL OMEGA
-             , ("b.phi"                                  , Left 0x1D6D7               ) -- MATHEMATICAL BOLD SMALL PHI
-             , ("b.phiv"                                 , Left 0x1D6DF               ) -- MATHEMATICAL BOLD PHI SYMBOL
-             , ("b.pi"                                   , Left 0x1D6D1               ) -- MATHEMATICAL BOLD SMALL PI
-             , ("b.piv"                                  , Left 0x1D6E1               ) -- MATHEMATICAL BOLD PI SYMBOL
-             , ("b.psi"                                  , Left 0x1D6D9               ) -- MATHEMATICAL BOLD SMALL PSI
-             , ("b.rho"                                  , Left 0x1D6D2               ) -- MATHEMATICAL BOLD SMALL RHO
-             , ("b.rhov"                                 , Left 0x1D6E0               ) -- MATHEMATICAL BOLD RHO SYMBOL
-             , ("b.sigma"                                , Left 0x1D6D4               ) -- MATHEMATICAL BOLD SMALL SIGMA
-             , ("b.sigmav"                               , Left 0x1D6D3               ) -- MATHEMATICAL BOLD SMALL FINAL SIGMA
-             , ("b.tau"                                  , Left 0x1D6D5               ) -- MATHEMATICAL BOLD SMALL TAU
-             , ("b.thetas"                               , Left 0x1D6C9               ) -- MATHEMATICAL BOLD SMALL THETA
-             , ("b.thetav"                               , Left 0x1D6DD               ) -- MATHEMATICAL BOLD THETA SYMBOL
-             , ("b.upsi"                                 , Left 0x1D6D6               ) -- MATHEMATICAL BOLD SMALL UPSILON
-             , ("b.xi"                                   , Left 0x1D6CF               ) -- MATHEMATICAL BOLD SMALL XI
-             , ("b.zeta"                                 , Left 0x1D6C7               ) -- MATHEMATICAL BOLD SMALL ZETA
-             , ("bNot"                                   , Left 0x02AED               ) -- REVERSED DOUBLE STROKE NOT SIGN
-             , ("backcong"                               , Left 0x0224C               ) -- ALL EQUAL TO
-             , ("backepsilon"                            , Left 0x003F6               ) -- GREEK REVERSED LUNATE EPSILON SYMBOL
-             , ("backprime"                              , Left 0x02035               ) -- REVERSED PRIME
-             , ("backsim"                                , Left 0x0223D               ) -- REVERSED TILDE
-             , ("backsimeq"                              , Left 0x022CD               ) -- REVERSED TILDE EQUALS
-             , ("barvee"                                 , Left 0x022BD               ) -- NOR
-             , ("barwed"                                 , Left 0x02305               ) -- PROJECTIVE
-             , ("barwedge"                               , Left 0x02305               ) -- PROJECTIVE
-             , ("bbrk"                                   , Left 0x023B5               ) -- BOTTOM SQUARE BRACKET
-             , ("bbrktbrk"                               , Left 0x023B6               ) -- BOTTOM SQUARE BRACKET OVER TOP SQUARE BRACKET
-             , ("bcong"                                  , Left 0x0224C               ) -- ALL EQUAL TO
-             , ("bcy"                                    , Left 0x00431               ) -- CYRILLIC SMALL LETTER BE
-             , ("bdquo"                                  , Left 0x0201E               ) -- DOUBLE LOW-9 QUOTATION MARK
-             , ("becaus"                                 , Left 0x02235               ) -- BECAUSE
-             , ("because"                                , Left 0x02235               ) -- BECAUSE
-             , ("bemptyv"                                , Left 0x029B0               ) -- REVERSED EMPTY SET
-             , ("bepsi"                                  , Left 0x003F6               ) -- GREEK REVERSED LUNATE EPSILON SYMBOL
-             , ("bernou"                                 , Left 0x0212C               ) -- SCRIPT CAPITAL B
-             , ("beta"                                   , Left 0x003B2               ) -- GREEK SMALL LETTER BETA
-             , ("beth"                                   , Left 0x02136               ) -- BET SYMBOL
-             , ("between"                                , Left 0x0226C               ) -- BETWEEN
-             , ("bfr"                                    , Left 0x1D51F               ) -- MATHEMATICAL FRAKTUR SMALL B
-             , ("bgr"                                    , Left 0x003B2               ) -- GREEK SMALL LETTER BETA
-             , ("bigcap"                                 , Left 0x022C2               ) -- N-ARY INTERSECTION
-             , ("bigcirc"                                , Left 0x025EF               ) -- LARGE CIRCLE
-             , ("bigcup"                                 , Left 0x022C3               ) -- N-ARY UNION
-             , ("bigodot"                                , Left 0x02A00               ) -- N-ARY CIRCLED DOT OPERATOR
-             , ("bigoplus"                               , Left 0x02A01               ) -- N-ARY CIRCLED PLUS OPERATOR
-             , ("bigotimes"                              , Left 0x02A02               ) -- N-ARY CIRCLED TIMES OPERATOR
-             , ("bigsqcup"                               , Left 0x02A06               ) -- N-ARY SQUARE UNION OPERATOR
-             , ("bigstar"                                , Left 0x02605               ) -- BLACK STAR
-             , ("bigtriangledown"                        , Left 0x025BD               ) -- WHITE DOWN-POINTING TRIANGLE
-             , ("bigtriangleup"                          , Left 0x025B3               ) -- WHITE UP-POINTING TRIANGLE
-             , ("biguplus"                               , Left 0x02A04               ) -- N-ARY UNION OPERATOR WITH PLUS
-             , ("bigvee"                                 , Left 0x022C1               ) -- N-ARY LOGICAL OR
-             , ("bigwedge"                               , Left 0x022C0               ) -- N-ARY LOGICAL AND
-             , ("bkarow"                                 , Left 0x0290D               ) -- RIGHTWARDS DOUBLE DASH ARROW
-             , ("blacklozenge"                           , Left 0x029EB               ) -- BLACK LOZENGE
-             , ("blacksquare"                            , Left 0x025AA               ) -- BLACK SMALL SQUARE
-             , ("blacktriangle"                          , Left 0x025B4               ) -- BLACK UP-POINTING SMALL TRIANGLE
-             , ("blacktriangledown"                      , Left 0x025BE               ) -- BLACK DOWN-POINTING SMALL TRIANGLE
-             , ("blacktriangleleft"                      , Left 0x025C2               ) -- BLACK LEFT-POINTING SMALL TRIANGLE
-             , ("blacktriangleright"                     , Left 0x025B8               ) -- BLACK RIGHT-POINTING SMALL TRIANGLE
-             , ("blank"                                  , Left 0x02423               ) -- OPEN BOX
-             , ("blk12"                                  , Left 0x02592               ) -- MEDIUM SHADE
-             , ("blk14"                                  , Left 0x02591               ) -- LIGHT SHADE
-             , ("blk34"                                  , Left 0x02593               ) -- DARK SHADE
-             , ("block"                                  , Left 0x02588               ) -- FULL BLOCK
-             , ("bne"                                    , Right [ 0x0003D, 0x020E5 ] ) -- EQUALS SIGN with reverse slash
-             , ("bnequiv"                                , Right [ 0x02261, 0x020E5 ] ) -- IDENTICAL TO with reverse slash
-             , ("bnot"                                   , Left 0x02310               ) -- REVERSED NOT SIGN
-             , ("bopf"                                   , Left 0x1D553               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL B
-             , ("bot"                                    , Left 0x022A5               ) -- UP TACK
-             , ("bottom"                                 , Left 0x022A5               ) -- UP TACK
-             , ("bowtie"                                 , Left 0x022C8               ) -- BOWTIE
-             , ("boxDL"                                  , Left 0x02557               ) -- BOX DRAWINGS DOUBLE DOWN AND LEFT
-             , ("boxDR"                                  , Left 0x02554               ) -- BOX DRAWINGS DOUBLE DOWN AND RIGHT
-             , ("boxDl"                                  , Left 0x02556               ) -- BOX DRAWINGS DOWN DOUBLE AND LEFT SINGLE
-             , ("boxDr"                                  , Left 0x02553               ) -- BOX DRAWINGS DOWN DOUBLE AND RIGHT SINGLE
-             , ("boxH"                                   , Left 0x02550               ) -- BOX DRAWINGS DOUBLE HORIZONTAL
-             , ("boxHD"                                  , Left 0x02566               ) -- BOX DRAWINGS DOUBLE DOWN AND HORIZONTAL
-             , ("boxHU"                                  , Left 0x02569               ) -- BOX DRAWINGS DOUBLE UP AND HORIZONTAL
-             , ("boxHd"                                  , Left 0x02564               ) -- BOX DRAWINGS DOWN SINGLE AND HORIZONTAL DOUBLE
-             , ("boxHu"                                  , Left 0x02567               ) -- BOX DRAWINGS UP SINGLE AND HORIZONTAL DOUBLE
-             , ("boxUL"                                  , Left 0x0255D               ) -- BOX DRAWINGS DOUBLE UP AND LEFT
-             , ("boxUR"                                  , Left 0x0255A               ) -- BOX DRAWINGS DOUBLE UP AND RIGHT
-             , ("boxUl"                                  , Left 0x0255C               ) -- BOX DRAWINGS UP DOUBLE AND LEFT SINGLE
-             , ("boxUr"                                  , Left 0x02559               ) -- BOX DRAWINGS UP DOUBLE AND RIGHT SINGLE
-             , ("boxV"                                   , Left 0x02551               ) -- BOX DRAWINGS DOUBLE VERTICAL
-             , ("boxVH"                                  , Left 0x0256C               ) -- BOX DRAWINGS DOUBLE VERTICAL AND HORIZONTAL
-             , ("boxVL"                                  , Left 0x02563               ) -- BOX DRAWINGS DOUBLE VERTICAL AND LEFT
-             , ("boxVR"                                  , Left 0x02560               ) -- BOX DRAWINGS DOUBLE VERTICAL AND RIGHT
-             , ("boxVh"                                  , Left 0x0256B               ) -- BOX DRAWINGS VERTICAL DOUBLE AND HORIZONTAL SINGLE
-             , ("boxVl"                                  , Left 0x02562               ) -- BOX DRAWINGS VERTICAL DOUBLE AND LEFT SINGLE
-             , ("boxVr"                                  , Left 0x0255F               ) -- BOX DRAWINGS VERTICAL DOUBLE AND RIGHT SINGLE
-             , ("boxbox"                                 , Left 0x029C9               ) -- TWO JOINED SQUARES
-             , ("boxdL"                                  , Left 0x02555               ) -- BOX DRAWINGS DOWN SINGLE AND LEFT DOUBLE
-             , ("boxdR"                                  , Left 0x02552               ) -- BOX DRAWINGS DOWN SINGLE AND RIGHT DOUBLE
-             , ("boxdl"                                  , Left 0x02510               ) -- BOX DRAWINGS LIGHT DOWN AND LEFT
-             , ("boxdr"                                  , Left 0x0250C               ) -- BOX DRAWINGS LIGHT DOWN AND RIGHT
-             , ("boxh"                                   , Left 0x02500               ) -- BOX DRAWINGS LIGHT HORIZONTAL
-             , ("boxhD"                                  , Left 0x02565               ) -- BOX DRAWINGS DOWN DOUBLE AND HORIZONTAL SINGLE
-             , ("boxhU"                                  , Left 0x02568               ) -- BOX DRAWINGS UP DOUBLE AND HORIZONTAL SINGLE
-             , ("boxhd"                                  , Left 0x0252C               ) -- BOX DRAWINGS LIGHT DOWN AND HORIZONTAL
-             , ("boxhu"                                  , Left 0x02534               ) -- BOX DRAWINGS LIGHT UP AND HORIZONTAL
-             , ("boxminus"                               , Left 0x0229F               ) -- SQUARED MINUS
-             , ("boxplus"                                , Left 0x0229E               ) -- SQUARED PLUS
-             , ("boxtimes"                               , Left 0x022A0               ) -- SQUARED TIMES
-             , ("boxuL"                                  , Left 0x0255B               ) -- BOX DRAWINGS UP SINGLE AND LEFT DOUBLE
-             , ("boxuR"                                  , Left 0x02558               ) -- BOX DRAWINGS UP SINGLE AND RIGHT DOUBLE
-             , ("boxul"                                  , Left 0x02518               ) -- BOX DRAWINGS LIGHT UP AND LEFT
-             , ("boxur"                                  , Left 0x02514               ) -- BOX DRAWINGS LIGHT UP AND RIGHT
-             , ("boxv"                                   , Left 0x02502               ) -- BOX DRAWINGS LIGHT VERTICAL
-             , ("boxvH"                                  , Left 0x0256A               ) -- BOX DRAWINGS VERTICAL SINGLE AND HORIZONTAL DOUBLE
-             , ("boxvL"                                  , Left 0x02561               ) -- BOX DRAWINGS VERTICAL SINGLE AND LEFT DOUBLE
-             , ("boxvR"                                  , Left 0x0255E               ) -- BOX DRAWINGS VERTICAL SINGLE AND RIGHT DOUBLE
-             , ("boxvh"                                  , Left 0x0253C               ) -- BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL
-             , ("boxvl"                                  , Left 0x02524               ) -- BOX DRAWINGS LIGHT VERTICAL AND LEFT
-             , ("boxvr"                                  , Left 0x0251C               ) -- BOX DRAWINGS LIGHT VERTICAL AND RIGHT
-             , ("bprime"                                 , Left 0x02035               ) -- REVERSED PRIME
-             , ("breve"                                  , Left 0x002D8               ) -- BREVE
-             , ("brvbar"                                 , Left 0x000A6               ) -- BROKEN BAR
-             , ("bscr"                                   , Left 0x1D4B7               ) -- MATHEMATICAL SCRIPT SMALL B
-             , ("bsemi"                                  , Left 0x0204F               ) -- REVERSED SEMICOLON
-             , ("bsim"                                   , Left 0x0223D               ) -- REVERSED TILDE
-             , ("bsime"                                  , Left 0x022CD               ) -- REVERSED TILDE EQUALS
-             , ("bsol"                                   , Left 0x0005C               ) -- REVERSE SOLIDUS
-             , ("bsolb"                                  , Left 0x029C5               ) -- SQUARED FALLING DIAGONAL SLASH
-             , ("bsolhsub"                               , Left 0x027C8               ) -- REVERSE SOLIDUS PRECEDING SUBSET
-             , ("bull"                                   , Left 0x02022               ) -- BULLET
-             , ("bullet"                                 , Left 0x02022               ) -- BULLET
-             , ("bump"                                   , Left 0x0224E               ) -- GEOMETRICALLY EQUIVALENT TO
-             , ("bumpE"                                  , Left 0x02AAE               ) -- EQUALS SIGN WITH BUMPY ABOVE
-             , ("bumpe"                                  , Left 0x0224F               ) -- DIFFERENCE BETWEEN
-             , ("bumpeq"                                 , Left 0x0224F               ) -- DIFFERENCE BETWEEN
-             , ("cacute"                                 , Left 0x00107               ) -- LATIN SMALL LETTER C WITH ACUTE
-             , ("cap"                                    , Left 0x02229               ) -- INTERSECTION
-             , ("capand"                                 , Left 0x02A44               ) -- INTERSECTION WITH LOGICAL AND
-             , ("capbrcup"                               , Left 0x02A49               ) -- INTERSECTION ABOVE BAR ABOVE UNION
-             , ("capcap"                                 , Left 0x02A4B               ) -- INTERSECTION BESIDE AND JOINED WITH INTERSECTION
-             , ("capcup"                                 , Left 0x02A47               ) -- INTERSECTION ABOVE UNION
-             , ("capdot"                                 , Left 0x02A40               ) -- INTERSECTION WITH DOT
-             , ("caps"                                   , Right [ 0x02229, 0x0FE00 ] ) -- INTERSECTION with serifs
-             , ("caret"                                  , Left 0x02041               ) -- CARET INSERTION POINT
-             , ("caron"                                  , Left 0x002C7               ) -- CARON
-             , ("ccaps"                                  , Left 0x02A4D               ) -- CLOSED INTERSECTION WITH SERIFS
-             , ("ccaron"                                 , Left 0x0010D               ) -- LATIN SMALL LETTER C WITH CARON
-             , ("ccedil"                                 , Left 0x000E7               ) -- LATIN SMALL LETTER C WITH CEDILLA
-             , ("ccirc"                                  , Left 0x00109               ) -- LATIN SMALL LETTER C WITH CIRCUMFLEX
-             , ("ccups"                                  , Left 0x02A4C               ) -- CLOSED UNION WITH SERIFS
-             , ("ccupssm"                                , Left 0x02A50               ) -- CLOSED UNION WITH SERIFS AND SMASH PRODUCT
-             , ("cdot"                                   , Left 0x0010B               ) -- LATIN SMALL LETTER C WITH DOT ABOVE
-             , ("cedil"                                  , Left 0x000B8               ) -- CEDILLA
-             , ("cemptyv"                                , Left 0x029B2               ) -- EMPTY SET WITH SMALL CIRCLE ABOVE
-             , ("cent"                                   , Left 0x000A2               ) -- CENT SIGN
-             , ("centerdot"                              , Left 0x000B7               ) -- MIDDLE DOT
-             , ("cfr"                                    , Left 0x1D520               ) -- MATHEMATICAL FRAKTUR SMALL C
-             , ("chcy"                                   , Left 0x00447               ) -- CYRILLIC SMALL LETTER CHE
-             , ("check"                                  , Left 0x02713               ) -- CHECK MARK
-             , ("checkmark"                              , Left 0x02713               ) -- CHECK MARK
-             , ("chi"                                    , Left 0x003C7               ) -- GREEK SMALL LETTER CHI
-             , ("cir"                                    , Left 0x025CB               ) -- WHITE CIRCLE
-             , ("cirE"                                   , Left 0x029C3               ) -- CIRCLE WITH TWO HORIZONTAL STROKES TO THE RIGHT
-             , ("circ"                                   , Left 0x002C6               ) -- MODIFIER LETTER CIRCUMFLEX ACCENT
-             , ("circeq"                                 , Left 0x02257               ) -- RING EQUAL TO
-             , ("circlearrowleft"                        , Left 0x021BA               ) -- ANTICLOCKWISE OPEN CIRCLE ARROW
-             , ("circlearrowright"                       , Left 0x021BB               ) -- CLOCKWISE OPEN CIRCLE ARROW
-             , ("circledR"                               , Left 0x000AE               ) -- REGISTERED SIGN
-             , ("circledS"                               , Left 0x024C8               ) -- CIRCLED LATIN CAPITAL LETTER S
-             , ("circledast"                             , Left 0x0229B               ) -- CIRCLED ASTERISK OPERATOR
-             , ("circledcirc"                            , Left 0x0229A               ) -- CIRCLED RING OPERATOR
-             , ("circleddash"                            , Left 0x0229D               ) -- CIRCLED DASH
-             , ("cire"                                   , Left 0x02257               ) -- RING EQUAL TO
-             , ("cirfnint"                               , Left 0x02A10               ) -- CIRCULATION FUNCTION
-             , ("cirmid"                                 , Left 0x02AEF               ) -- VERTICAL LINE WITH CIRCLE ABOVE
-             , ("cirscir"                                , Left 0x029C2               ) -- CIRCLE WITH SMALL CIRCLE TO THE RIGHT
-             , ("clubs"                                  , Left 0x02663               ) -- BLACK CLUB SUIT
-             , ("clubsuit"                               , Left 0x02663               ) -- BLACK CLUB SUIT
-             , ("colon"                                  , Left 0x0003A               ) -- COLON
-             , ("colone"                                 , Left 0x02254               ) -- COLON EQUALS
-             , ("coloneq"                                , Left 0x02254               ) -- COLON EQUALS
-             , ("comma"                                  , Left 0x0002C               ) -- COMMA
-             , ("commat"                                 , Left 0x00040               ) -- COMMERCIAL AT
-             , ("comp"                                   , Left 0x02201               ) -- COMPLEMENT
-             , ("compfn"                                 , Left 0x02218               ) -- RING OPERATOR
-             , ("complement"                             , Left 0x02201               ) -- COMPLEMENT
-             , ("complexes"                              , Left 0x02102               ) -- DOUBLE-STRUCK CAPITAL C
-             , ("cong"                                   , Left 0x02245               ) -- APPROXIMATELY EQUAL TO
-             , ("congdot"                                , Left 0x02A6D               ) -- CONGRUENT WITH DOT ABOVE
-             , ("conint"                                 , Left 0x0222E               ) -- CONTOUR INTEGRAL
-             , ("copf"                                   , Left 0x1D554               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL C
-             , ("coprod"                                 , Left 0x02210               ) -- N-ARY COPRODUCT
-             , ("copy"                                   , Left 0x000A9               ) -- COPYRIGHT SIGN
-             , ("copysr"                                 , Left 0x02117               ) -- SOUND RECORDING COPYRIGHT
-             , ("crarr"                                  , Left 0x021B5               ) -- DOWNWARDS ARROW WITH CORNER LEFTWARDS
-             , ("cross"                                  , Left 0x02717               ) -- BALLOT X
-             , ("cscr"                                   , Left 0x1D4B8               ) -- MATHEMATICAL SCRIPT SMALL C
-             , ("csub"                                   , Left 0x02ACF               ) -- CLOSED SUBSET
-             , ("csube"                                  , Left 0x02AD1               ) -- CLOSED SUBSET OR EQUAL TO
-             , ("csup"                                   , Left 0x02AD0               ) -- CLOSED SUPERSET
-             , ("csupe"                                  , Left 0x02AD2               ) -- CLOSED SUPERSET OR EQUAL TO
-             , ("ctdot"                                  , Left 0x022EF               ) -- MIDLINE HORIZONTAL ELLIPSIS
-             , ("cudarrl"                                , Left 0x02938               ) -- RIGHT-SIDE ARC CLOCKWISE ARROW
-             , ("cudarrr"                                , Left 0x02935               ) -- ARROW POINTING RIGHTWARDS THEN CURVING DOWNWARDS
-             , ("cuepr"                                  , Left 0x022DE               ) -- EQUAL TO OR PRECEDES
-             , ("cuesc"                                  , Left 0x022DF               ) -- EQUAL TO OR SUCCEEDS
-             , ("cularr"                                 , Left 0x021B6               ) -- ANTICLOCKWISE TOP SEMICIRCLE ARROW
-             , ("cularrp"                                , Left 0x0293D               ) -- TOP ARC ANTICLOCKWISE ARROW WITH PLUS
-             , ("cup"                                    , Left 0x0222A               ) -- UNION
-             , ("cupbrcap"                               , Left 0x02A48               ) -- UNION ABOVE BAR ABOVE INTERSECTION
-             , ("cupcap"                                 , Left 0x02A46               ) -- UNION ABOVE INTERSECTION
-             , ("cupcup"                                 , Left 0x02A4A               ) -- UNION BESIDE AND JOINED WITH UNION
-             , ("cupdot"                                 , Left 0x0228D               ) -- MULTISET MULTIPLICATION
-             , ("cupor"                                  , Left 0x02A45               ) -- UNION WITH LOGICAL OR
-             , ("cups"                                   , Right [ 0x0222A, 0x0FE00 ] ) -- UNION with serifs
-             , ("curarr"                                 , Left 0x021B7               ) -- CLOCKWISE TOP SEMICIRCLE ARROW
-             , ("curarrm"                                , Left 0x0293C               ) -- TOP ARC CLOCKWISE ARROW WITH MINUS
-             , ("curlyeqprec"                            , Left 0x022DE               ) -- EQUAL TO OR PRECEDES
-             , ("curlyeqsucc"                            , Left 0x022DF               ) -- EQUAL TO OR SUCCEEDS
-             , ("curlyvee"                               , Left 0x022CE               ) -- CURLY LOGICAL OR
-             , ("curlywedge"                             , Left 0x022CF               ) -- CURLY LOGICAL AND
-             , ("curren"                                 , Left 0x000A4               ) -- CURRENCY SIGN
-             , ("curvearrowleft"                         , Left 0x021B6               ) -- ANTICLOCKWISE TOP SEMICIRCLE ARROW
-             , ("curvearrowright"                        , Left 0x021B7               ) -- CLOCKWISE TOP SEMICIRCLE ARROW
-             , ("cuvee"                                  , Left 0x022CE               ) -- CURLY LOGICAL OR
-             , ("cuwed"                                  , Left 0x022CF               ) -- CURLY LOGICAL AND
-             , ("cwconint"                               , Left 0x02232               ) -- CLOCKWISE CONTOUR INTEGRAL
-             , ("cwint"                                  , Left 0x02231               ) -- CLOCKWISE INTEGRAL
-             , ("cylcty"                                 , Left 0x0232D               ) -- CYLINDRICITY
-             , ("dArr"                                   , Left 0x021D3               ) -- DOWNWARDS DOUBLE ARROW
-             , ("dHar"                                   , Left 0x02965               ) -- DOWNWARDS HARPOON WITH BARB LEFT BESIDE DOWNWARDS HARPOON WITH BARB RIGHT
-             , ("dagger"                                 , Left 0x02020               ) -- DAGGER
-             , ("daleth"                                 , Left 0x02138               ) -- DALET SYMBOL
-             , ("darr"                                   , Left 0x02193               ) -- DOWNWARDS ARROW
-             , ("dash"                                   , Left 0x02010               ) -- HYPHEN
-             , ("dashv"                                  , Left 0x022A3               ) -- LEFT TACK
-             , ("dbkarow"                                , Left 0x0290F               ) -- RIGHTWARDS TRIPLE DASH ARROW
-             , ("dblac"                                  , Left 0x002DD               ) -- DOUBLE ACUTE ACCENT
-             , ("dcaron"                                 , Left 0x0010F               ) -- LATIN SMALL LETTER D WITH CARON
-             , ("dcy"                                    , Left 0x00434               ) -- CYRILLIC SMALL LETTER DE
-             , ("dd"                                     , Left 0x02146               ) -- DOUBLE-STRUCK ITALIC SMALL D
-             , ("ddagger"                                , Left 0x02021               ) -- DOUBLE DAGGER
-             , ("ddarr"                                  , Left 0x021CA               ) -- DOWNWARDS PAIRED ARROWS
-             , ("ddotseq"                                , Left 0x02A77               ) -- EQUALS SIGN WITH TWO DOTS ABOVE AND TWO DOTS BELOW
-             , ("deg"                                    , Left 0x000B0               ) -- DEGREE SIGN
-             , ("delta"                                  , Left 0x003B4               ) -- GREEK SMALL LETTER DELTA
-             , ("demptyv"                                , Left 0x029B1               ) -- EMPTY SET WITH OVERBAR
-             , ("dfisht"                                 , Left 0x0297F               ) -- DOWN FISH TAIL
-             , ("dfr"                                    , Left 0x1D521               ) -- MATHEMATICAL FRAKTUR SMALL D
-             , ("dgr"                                    , Left 0x003B4               ) -- GREEK SMALL LETTER DELTA
-             , ("dharl"                                  , Left 0x021C3               ) -- DOWNWARDS HARPOON WITH BARB LEFTWARDS
-             , ("dharr"                                  , Left 0x021C2               ) -- DOWNWARDS HARPOON WITH BARB RIGHTWARDS
-             , ("diam"                                   , Left 0x022C4               ) -- DIAMOND OPERATOR
-             , ("diamond"                                , Left 0x022C4               ) -- DIAMOND OPERATOR
-             , ("diamondsuit"                            , Left 0x02666               ) -- BLACK DIAMOND SUIT
-             , ("diams"                                  , Left 0x02666               ) -- BLACK DIAMOND SUIT
-             , ("die"                                    , Left 0x000A8               ) -- DIAERESIS
-             , ("digamma"                                , Left 0x003DD               ) -- GREEK SMALL LETTER DIGAMMA
-             , ("disin"                                  , Left 0x022F2               ) -- ELEMENT OF WITH LONG HORIZONTAL STROKE
-             , ("div"                                    , Left 0x000F7               ) -- DIVISION SIGN
-             , ("divide"                                 , Left 0x000F7               ) -- DIVISION SIGN
-             , ("divideontimes"                          , Left 0x022C7               ) -- DIVISION TIMES
-             , ("divonx"                                 , Left 0x022C7               ) -- DIVISION TIMES
-             , ("djcy"                                   , Left 0x00452               ) -- CYRILLIC SMALL LETTER DJE
-             , ("dlcorn"                                 , Left 0x0231E               ) -- BOTTOM LEFT CORNER
-             , ("dlcrop"                                 , Left 0x0230D               ) -- BOTTOM LEFT CROP
-             , ("dollar"                                 , Left 0x00024               ) -- DOLLAR SIGN
-             , ("dopf"                                   , Left 0x1D555               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL D
-             , ("dot"                                    , Left 0x002D9               ) -- DOT ABOVE
-             , ("doteq"                                  , Left 0x02250               ) -- APPROACHES THE LIMIT
-             , ("doteqdot"                               , Left 0x02251               ) -- GEOMETRICALLY EQUAL TO
-             , ("dotminus"                               , Left 0x02238               ) -- DOT MINUS
-             , ("dotplus"                                , Left 0x02214               ) -- DOT PLUS
-             , ("dotsquare"                              , Left 0x022A1               ) -- SQUARED DOT OPERATOR
-             , ("doublebarwedge"                         , Left 0x02306               ) -- PERSPECTIVE
-             , ("downarrow"                              , Left 0x02193               ) -- DOWNWARDS ARROW
-             , ("downdownarrows"                         , Left 0x021CA               ) -- DOWNWARDS PAIRED ARROWS
-             , ("downharpoonleft"                        , Left 0x021C3               ) -- DOWNWARDS HARPOON WITH BARB LEFTWARDS
-             , ("downharpoonright"                       , Left 0x021C2               ) -- DOWNWARDS HARPOON WITH BARB RIGHTWARDS
-             , ("drbkarow"                               , Left 0x02910               ) -- RIGHTWARDS TWO-HEADED TRIPLE DASH ARROW
-             , ("drcorn"                                 , Left 0x0231F               ) -- BOTTOM RIGHT CORNER
-             , ("drcrop"                                 , Left 0x0230C               ) -- BOTTOM RIGHT CROP
-             , ("dscr"                                   , Left 0x1D4B9               ) -- MATHEMATICAL SCRIPT SMALL D
-             , ("dscy"                                   , Left 0x00455               ) -- CYRILLIC SMALL LETTER DZE
-             , ("dsol"                                   , Left 0x029F6               ) -- SOLIDUS WITH OVERBAR
-             , ("dstrok"                                 , Left 0x00111               ) -- LATIN SMALL LETTER D WITH STROKE
-             , ("dtdot"                                  , Left 0x022F1               ) -- DOWN RIGHT DIAGONAL ELLIPSIS
-             , ("dtri"                                   , Left 0x025BF               ) -- WHITE DOWN-POINTING SMALL TRIANGLE
-             , ("dtrif"                                  , Left 0x025BE               ) -- BLACK DOWN-POINTING SMALL TRIANGLE
-             , ("duarr"                                  , Left 0x021F5               ) -- DOWNWARDS ARROW LEFTWARDS OF UPWARDS ARROW
-             , ("duhar"                                  , Left 0x0296F               ) -- DOWNWARDS HARPOON WITH BARB LEFT BESIDE UPWARDS HARPOON WITH BARB RIGHT
-             , ("dwangle"                                , Left 0x029A6               ) -- OBLIQUE ANGLE OPENING UP
-             , ("dzcy"                                   , Left 0x0045F               ) -- CYRILLIC SMALL LETTER DZHE
-             , ("dzigrarr"                               , Left 0x027FF               ) -- LONG RIGHTWARDS SQUIGGLE ARROW
-             , ("eDDot"                                  , Left 0x02A77               ) -- EQUALS SIGN WITH TWO DOTS ABOVE AND TWO DOTS BELOW
-             , ("eDot"                                   , Left 0x02251               ) -- GEOMETRICALLY EQUAL TO
-             , ("eacgr"                                  , Left 0x003AD               ) -- GREEK SMALL LETTER EPSILON WITH TONOS
-             , ("eacute"                                 , Left 0x000E9               ) -- LATIN SMALL LETTER E WITH ACUTE
-             , ("easter"                                 , Left 0x02A6E               ) -- EQUALS WITH ASTERISK
-             , ("ecaron"                                 , Left 0x0011B               ) -- LATIN SMALL LETTER E WITH CARON
-             , ("ecir"                                   , Left 0x02256               ) -- RING IN EQUAL TO
-             , ("ecirc"                                  , Left 0x000EA               ) -- LATIN SMALL LETTER E WITH CIRCUMFLEX
-             , ("ecolon"                                 , Left 0x02255               ) -- EQUALS COLON
-             , ("ecy"                                    , Left 0x0044D               ) -- CYRILLIC SMALL LETTER E
-             , ("edot"                                   , Left 0x00117               ) -- LATIN SMALL LETTER E WITH DOT ABOVE
-             , ("ee"                                     , Left 0x02147               ) -- DOUBLE-STRUCK ITALIC SMALL E
-             , ("eeacgr"                                 , Left 0x003AE               ) -- GREEK SMALL LETTER ETA WITH TONOS
-             , ("eegr"                                   , Left 0x003B7               ) -- GREEK SMALL LETTER ETA
-             , ("efDot"                                  , Left 0x02252               ) -- APPROXIMATELY EQUAL TO OR THE IMAGE OF
-             , ("efr"                                    , Left 0x1D522               ) -- MATHEMATICAL FRAKTUR SMALL E
-             , ("eg"                                     , Left 0x02A9A               ) -- DOUBLE-LINE EQUAL TO OR GREATER-THAN
-             , ("egr"                                    , Left 0x003B5               ) -- GREEK SMALL LETTER EPSILON
-             , ("egrave"                                 , Left 0x000E8               ) -- LATIN SMALL LETTER E WITH GRAVE
-             , ("egs"                                    , Left 0x02A96               ) -- SLANTED EQUAL TO OR GREATER-THAN
-             , ("egsdot"                                 , Left 0x02A98               ) -- SLANTED EQUAL TO OR GREATER-THAN WITH DOT INSIDE
-             , ("el"                                     , Left 0x02A99               ) -- DOUBLE-LINE EQUAL TO OR LESS-THAN
-             , ("elinters"                               , Left 0x023E7               ) -- ELECTRICAL INTERSECTION
-             , ("ell"                                    , Left 0x02113               ) -- SCRIPT SMALL L
-             , ("els"                                    , Left 0x02A95               ) -- SLANTED EQUAL TO OR LESS-THAN
-             , ("elsdot"                                 , Left 0x02A97               ) -- SLANTED EQUAL TO OR LESS-THAN WITH DOT INSIDE
-             , ("emacr"                                  , Left 0x00113               ) -- LATIN SMALL LETTER E WITH MACRON
-             , ("empty"                                  , Left 0x02205               ) -- EMPTY SET
-             , ("emptyset"                               , Left 0x02205               ) -- EMPTY SET
-             , ("emptyv"                                 , Left 0x02205               ) -- EMPTY SET
-             , ("emsp"                                   , Left 0x02003               ) -- EM SPACE
-             , ("emsp13"                                 , Left 0x02004               ) -- THREE-PER-EM SPACE
-             , ("emsp14"                                 , Left 0x02005               ) -- FOUR-PER-EM SPACE
-             , ("eng"                                    , Left 0x0014B               ) -- LATIN SMALL LETTER ENG
-             , ("ensp"                                   , Left 0x02002               ) -- EN SPACE
-             , ("eogon"                                  , Left 0x00119               ) -- LATIN SMALL LETTER E WITH OGONEK
-             , ("eopf"                                   , Left 0x1D556               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL E
-             , ("epar"                                   , Left 0x022D5               ) -- EQUAL AND PARALLEL TO
-             , ("eparsl"                                 , Left 0x029E3               ) -- EQUALS SIGN AND SLANTED PARALLEL
-             , ("eplus"                                  , Left 0x02A71               ) -- EQUALS SIGN ABOVE PLUS SIGN
-             , ("epsi"                                   , Left 0x003B5               ) -- GREEK SMALL LETTER EPSILON
-             , ("epsilon"                                , Left 0x003B5               ) -- GREEK SMALL LETTER EPSILON
-             , ("epsiv"                                  , Left 0x003F5               ) -- GREEK LUNATE EPSILON SYMBOL
-             , ("eqcirc"                                 , Left 0x02256               ) -- RING IN EQUAL TO
-             , ("eqcolon"                                , Left 0x02255               ) -- EQUALS COLON
-             , ("eqsim"                                  , Left 0x02242               ) -- MINUS TILDE
-             , ("eqslantgtr"                             , Left 0x02A96               ) -- SLANTED EQUAL TO OR GREATER-THAN
-             , ("eqslantless"                            , Left 0x02A95               ) -- SLANTED EQUAL TO OR LESS-THAN
-             , ("equals"                                 , Left 0x0003D               ) -- EQUALS SIGN
-             , ("equest"                                 , Left 0x0225F               ) -- QUESTIONED EQUAL TO
-             , ("equiv"                                  , Left 0x02261               ) -- IDENTICAL TO
-             , ("equivDD"                                , Left 0x02A78               ) -- EQUIVALENT WITH FOUR DOTS ABOVE
-             , ("eqvparsl"                               , Left 0x029E5               ) -- IDENTICAL TO AND SLANTED PARALLEL
-             , ("erDot"                                  , Left 0x02253               ) -- IMAGE OF OR APPROXIMATELY EQUAL TO
-             , ("erarr"                                  , Left 0x02971               ) -- EQUALS SIGN ABOVE RIGHTWARDS ARROW
-             , ("escr"                                   , Left 0x0212F               ) -- SCRIPT SMALL E
-             , ("esdot"                                  , Left 0x02250               ) -- APPROACHES THE LIMIT
-             , ("esim"                                   , Left 0x02242               ) -- MINUS TILDE
-             , ("eta"                                    , Left 0x003B7               ) -- GREEK SMALL LETTER ETA
-             , ("eth"                                    , Left 0x000F0               ) -- LATIN SMALL LETTER ETH
-             , ("euml"                                   , Left 0x000EB               ) -- LATIN SMALL LETTER E WITH DIAERESIS
-             , ("euro"                                   , Left 0x020AC               ) -- EURO SIGN
-             , ("excl"                                   , Left 0x00021               ) -- EXCLAMATION MARK
-             , ("exist"                                  , Left 0x02203               ) -- THERE EXISTS
-             , ("expectation"                            , Left 0x02130               ) -- SCRIPT CAPITAL E
-             , ("exponentiale"                           , Left 0x02147               ) -- DOUBLE-STRUCK ITALIC SMALL E
-             , ("fallingdotseq"                          , Left 0x02252               ) -- APPROXIMATELY EQUAL TO OR THE IMAGE OF
-             , ("fcy"                                    , Left 0x00444               ) -- CYRILLIC SMALL LETTER EF
-             , ("female"                                 , Left 0x02640               ) -- FEMALE SIGN
-             , ("ffilig"                                 , Left 0x0FB03               ) -- LATIN SMALL LIGATURE FFI
-             , ("fflig"                                  , Left 0x0FB00               ) -- LATIN SMALL LIGATURE FF
-             , ("ffllig"                                 , Left 0x0FB04               ) -- LATIN SMALL LIGATURE FFL
-             , ("ffr"                                    , Left 0x1D523               ) -- MATHEMATICAL FRAKTUR SMALL F
-             , ("filig"                                  , Left 0x0FB01               ) -- LATIN SMALL LIGATURE FI
-             , ("fjlig"                                  , Right [ 0x00066, 0x0006A ] ) -- fj ligature
-             , ("flat"                                   , Left 0x0266D               ) -- MUSIC FLAT SIGN
-             , ("fllig"                                  , Left 0x0FB02               ) -- LATIN SMALL LIGATURE FL
-             , ("fltns"                                  , Left 0x025B1               ) -- WHITE PARALLELOGRAM
-             , ("fnof"                                   , Left 0x00192               ) -- LATIN SMALL LETTER F WITH HOOK
-             , ("fopf"                                   , Left 0x1D557               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL F
-             , ("forall"                                 , Left 0x02200               ) -- FOR ALL
-             , ("fork"                                   , Left 0x022D4               ) -- PITCHFORK
-             , ("forkv"                                  , Left 0x02AD9               ) -- ELEMENT OF OPENING DOWNWARDS
-             , ("fpartint"                               , Left 0x02A0D               ) -- FINITE PART INTEGRAL
-             , ("frac12"                                 , Left 0x000BD               ) -- VULGAR FRACTION ONE HALF
-             , ("frac13"                                 , Left 0x02153               ) -- VULGAR FRACTION ONE THIRD
-             , ("frac14"                                 , Left 0x000BC               ) -- VULGAR FRACTION ONE QUARTER
-             , ("frac15"                                 , Left 0x02155               ) -- VULGAR FRACTION ONE FIFTH
-             , ("frac16"                                 , Left 0x02159               ) -- VULGAR FRACTION ONE SIXTH
-             , ("frac18"                                 , Left 0x0215B               ) -- VULGAR FRACTION ONE EIGHTH
-             , ("frac23"                                 , Left 0x02154               ) -- VULGAR FRACTION TWO THIRDS
-             , ("frac25"                                 , Left 0x02156               ) -- VULGAR FRACTION TWO FIFTHS
-             , ("frac34"                                 , Left 0x000BE               ) -- VULGAR FRACTION THREE QUARTERS
-             , ("frac35"                                 , Left 0x02157               ) -- VULGAR FRACTION THREE FIFTHS
-             , ("frac38"                                 , Left 0x0215C               ) -- VULGAR FRACTION THREE EIGHTHS
-             , ("frac45"                                 , Left 0x02158               ) -- VULGAR FRACTION FOUR FIFTHS
-             , ("frac56"                                 , Left 0x0215A               ) -- VULGAR FRACTION FIVE SIXTHS
-             , ("frac58"                                 , Left 0x0215D               ) -- VULGAR FRACTION FIVE EIGHTHS
-             , ("frac78"                                 , Left 0x0215E               ) -- VULGAR FRACTION SEVEN EIGHTHS
-             , ("frasl"                                  , Left 0x02044               ) -- FRACTION SLASH
-             , ("frown"                                  , Left 0x02322               ) -- FROWN
-             , ("fscr"                                   , Left 0x1D4BB               ) -- MATHEMATICAL SCRIPT SMALL F
-             , ("gE"                                     , Left 0x02267               ) -- GREATER-THAN OVER EQUAL TO
-             , ("gEl"                                    , Left 0x02A8C               ) -- GREATER-THAN ABOVE DOUBLE-LINE EQUAL ABOVE LESS-THAN
-             , ("gacute"                                 , Left 0x001F5               ) -- LATIN SMALL LETTER G WITH ACUTE
-             , ("gamma"                                  , Left 0x003B3               ) -- GREEK SMALL LETTER GAMMA
-             , ("gammad"                                 , Left 0x003DD               ) -- GREEK SMALL LETTER DIGAMMA
-             , ("gap"                                    , Left 0x02A86               ) -- GREATER-THAN OR APPROXIMATE
-             , ("gbreve"                                 , Left 0x0011F               ) -- LATIN SMALL LETTER G WITH BREVE
-             , ("gcirc"                                  , Left 0x0011D               ) -- LATIN SMALL LETTER G WITH CIRCUMFLEX
-             , ("gcy"                                    , Left 0x00433               ) -- CYRILLIC SMALL LETTER GHE
-             , ("gdot"                                   , Left 0x00121               ) -- LATIN SMALL LETTER G WITH DOT ABOVE
-             , ("ge"                                     , Left 0x02265               ) -- GREATER-THAN OR EQUAL TO
-             , ("gel"                                    , Left 0x022DB               ) -- GREATER-THAN EQUAL TO OR LESS-THAN
-             , ("geq"                                    , Left 0x02265               ) -- GREATER-THAN OR EQUAL TO
-             , ("geqq"                                   , Left 0x02267               ) -- GREATER-THAN OVER EQUAL TO
-             , ("geqslant"                               , Left 0x02A7E               ) -- GREATER-THAN OR SLANTED EQUAL TO
-             , ("ges"                                    , Left 0x02A7E               ) -- GREATER-THAN OR SLANTED EQUAL TO
-             , ("gescc"                                  , Left 0x02AA9               ) -- GREATER-THAN CLOSED BY CURVE ABOVE SLANTED EQUAL
-             , ("gesdot"                                 , Left 0x02A80               ) -- GREATER-THAN OR SLANTED EQUAL TO WITH DOT INSIDE
-             , ("gesdoto"                                , Left 0x02A82               ) -- GREATER-THAN OR SLANTED EQUAL TO WITH DOT ABOVE
-             , ("gesdotol"                               , Left 0x02A84               ) -- GREATER-THAN OR SLANTED EQUAL TO WITH DOT ABOVE LEFT
-             , ("gesl"                                   , Right [ 0x022DB, 0x0FE00 ] ) -- GREATER-THAN slanted EQUAL TO OR LESS-THAN
-             , ("gesles"                                 , Left 0x02A94               ) -- GREATER-THAN ABOVE SLANTED EQUAL ABOVE LESS-THAN ABOVE SLANTED EQUAL
-             , ("gfr"                                    , Left 0x1D524               ) -- MATHEMATICAL FRAKTUR SMALL G
-             , ("gg"                                     , Left 0x0226B               ) -- MUCH GREATER-THAN
-             , ("ggg"                                    , Left 0x022D9               ) -- VERY MUCH GREATER-THAN
-             , ("ggr"                                    , Left 0x003B3               ) -- GREEK SMALL LETTER GAMMA
-             , ("gimel"                                  , Left 0x02137               ) -- GIMEL SYMBOL
-             , ("gjcy"                                   , Left 0x00453               ) -- CYRILLIC SMALL LETTER GJE
-             , ("gl"                                     , Left 0x02277               ) -- GREATER-THAN OR LESS-THAN
-             , ("glE"                                    , Left 0x02A92               ) -- GREATER-THAN ABOVE LESS-THAN ABOVE DOUBLE-LINE EQUAL
-             , ("gla"                                    , Left 0x02AA5               ) -- GREATER-THAN BESIDE LESS-THAN
-             , ("glj"                                    , Left 0x02AA4               ) -- GREATER-THAN OVERLAPPING LESS-THAN
-             , ("gnE"                                    , Left 0x02269               ) -- GREATER-THAN BUT NOT EQUAL TO
-             , ("gnap"                                   , Left 0x02A8A               ) -- GREATER-THAN AND NOT APPROXIMATE
-             , ("gnapprox"                               , Left 0x02A8A               ) -- GREATER-THAN AND NOT APPROXIMATE
-             , ("gne"                                    , Left 0x02A88               ) -- GREATER-THAN AND SINGLE-LINE NOT EQUAL TO
-             , ("gneq"                                   , Left 0x02A88               ) -- GREATER-THAN AND SINGLE-LINE NOT EQUAL TO
-             , ("gneqq"                                  , Left 0x02269               ) -- GREATER-THAN BUT NOT EQUAL TO
-             , ("gnsim"                                  , Left 0x022E7               ) -- GREATER-THAN BUT NOT EQUIVALENT TO
-             , ("gopf"                                   , Left 0x1D558               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL G
-             , ("grave"                                  , Left 0x00060               ) -- GRAVE ACCENT
-             , ("gscr"                                   , Left 0x0210A               ) -- SCRIPT SMALL G
-             , ("gsim"                                   , Left 0x02273               ) -- GREATER-THAN OR EQUIVALENT TO
-             , ("gsime"                                  , Left 0x02A8E               ) -- GREATER-THAN ABOVE SIMILAR OR EQUAL
-             , ("gsiml"                                  , Left 0x02A90               ) -- GREATER-THAN ABOVE SIMILAR ABOVE LESS-THAN
-             , ("gt"                                     , Left 0x0003E               ) -- GREATER-THAN SIGN
-             , ("gtcc"                                   , Left 0x02AA7               ) -- GREATER-THAN CLOSED BY CURVE
-             , ("gtcir"                                  , Left 0x02A7A               ) -- GREATER-THAN WITH CIRCLE INSIDE
-             , ("gtdot"                                  , Left 0x022D7               ) -- GREATER-THAN WITH DOT
-             , ("gtlPar"                                 , Left 0x02995               ) -- DOUBLE LEFT ARC GREATER-THAN BRACKET
-             , ("gtquest"                                , Left 0x02A7C               ) -- GREATER-THAN WITH QUESTION MARK ABOVE
-             , ("gtrapprox"                              , Left 0x02A86               ) -- GREATER-THAN OR APPROXIMATE
-             , ("gtrarr"                                 , Left 0x02978               ) -- GREATER-THAN ABOVE RIGHTWARDS ARROW
-             , ("gtrdot"                                 , Left 0x022D7               ) -- GREATER-THAN WITH DOT
-             , ("gtreqless"                              , Left 0x022DB               ) -- GREATER-THAN EQUAL TO OR LESS-THAN
-             , ("gtreqqless"                             , Left 0x02A8C               ) -- GREATER-THAN ABOVE DOUBLE-LINE EQUAL ABOVE LESS-THAN
-             , ("gtrless"                                , Left 0x02277               ) -- GREATER-THAN OR LESS-THAN
-             , ("gtrsim"                                 , Left 0x02273               ) -- GREATER-THAN OR EQUIVALENT TO
-             , ("gvertneqq"                              , Right [ 0x02269, 0x0FE00 ] ) -- GREATER-THAN BUT NOT EQUAL TO - with vertical stroke
-             , ("gvnE"                                   , Right [ 0x02269, 0x0FE00 ] ) -- GREATER-THAN BUT NOT EQUAL TO - with vertical stroke
-             , ("hArr"                                   , Left 0x021D4               ) -- LEFT RIGHT DOUBLE ARROW
-             , ("hairsp"                                 , Left 0x0200A               ) -- HAIR SPACE
-             , ("half"                                   , Left 0x000BD               ) -- VULGAR FRACTION ONE HALF
-             , ("hamilt"                                 , Left 0x0210B               ) -- SCRIPT CAPITAL H
-             , ("hardcy"                                 , Left 0x0044A               ) -- CYRILLIC SMALL LETTER HARD SIGN
-             , ("harr"                                   , Left 0x02194               ) -- LEFT RIGHT ARROW
-             , ("harrcir"                                , Left 0x02948               ) -- LEFT RIGHT ARROW THROUGH SMALL CIRCLE
-             , ("harrw"                                  , Left 0x021AD               ) -- LEFT RIGHT WAVE ARROW
-             , ("hbar"                                   , Left 0x0210F               ) -- PLANCK CONSTANT OVER TWO PI
-             , ("hcirc"                                  , Left 0x00125               ) -- LATIN SMALL LETTER H WITH CIRCUMFLEX
-             , ("hearts"                                 , Left 0x02665               ) -- BLACK HEART SUIT
-             , ("heartsuit"                              , Left 0x02665               ) -- BLACK HEART SUIT
-             , ("hellip"                                 , Left 0x02026               ) -- HORIZONTAL ELLIPSIS
-             , ("hercon"                                 , Left 0x022B9               ) -- HERMITIAN CONJUGATE MATRIX
-             , ("hfr"                                    , Left 0x1D525               ) -- MATHEMATICAL FRAKTUR SMALL H
-             , ("hksearow"                               , Left 0x02925               ) -- SOUTH EAST ARROW WITH HOOK
-             , ("hkswarow"                               , Left 0x02926               ) -- SOUTH WEST ARROW WITH HOOK
-             , ("hoarr"                                  , Left 0x021FF               ) -- LEFT RIGHT OPEN-HEADED ARROW
-             , ("homtht"                                 , Left 0x0223B               ) -- HOMOTHETIC
-             , ("hookleftarrow"                          , Left 0x021A9               ) -- LEFTWARDS ARROW WITH HOOK
-             , ("hookrightarrow"                         , Left 0x021AA               ) -- RIGHTWARDS ARROW WITH HOOK
-             , ("hopf"                                   , Left 0x1D559               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL H
-             , ("horbar"                                 , Left 0x02015               ) -- HORIZONTAL BAR
-             , ("hscr"                                   , Left 0x1D4BD               ) -- MATHEMATICAL SCRIPT SMALL H
-             , ("hslash"                                 , Left 0x0210F               ) -- PLANCK CONSTANT OVER TWO PI
-             , ("hstrok"                                 , Left 0x00127               ) -- LATIN SMALL LETTER H WITH STROKE
-             , ("hybull"                                 , Left 0x02043               ) -- HYPHEN BULLET
-             , ("hyphen"                                 , Left 0x02010               ) -- HYPHEN
-             , ("iacgr"                                  , Left 0x003AF               ) -- GREEK SMALL LETTER IOTA WITH TONOS
-             , ("iacute"                                 , Left 0x000ED               ) -- LATIN SMALL LETTER I WITH ACUTE
-             , ("ic"                                     , Left 0x02063               ) -- INVISIBLE SEPARATOR
-             , ("icirc"                                  , Left 0x000EE               ) -- LATIN SMALL LETTER I WITH CIRCUMFLEX
-             , ("icy"                                    , Left 0x00438               ) -- CYRILLIC SMALL LETTER I
-             , ("idiagr"                                 , Left 0x00390               ) -- GREEK SMALL LETTER IOTA WITH DIALYTIKA AND TONOS
-             , ("idigr"                                  , Left 0x003CA               ) -- GREEK SMALL LETTER IOTA WITH DIALYTIKA
-             , ("iecy"                                   , Left 0x00435               ) -- CYRILLIC SMALL LETTER IE
-             , ("iexcl"                                  , Left 0x000A1               ) -- INVERTED EXCLAMATION MARK
-             , ("iff"                                    , Left 0x021D4               ) -- LEFT RIGHT DOUBLE ARROW
-             , ("ifr"                                    , Left 0x1D526               ) -- MATHEMATICAL FRAKTUR SMALL I
-             , ("igr"                                    , Left 0x003B9               ) -- GREEK SMALL LETTER IOTA
-             , ("igrave"                                 , Left 0x000EC               ) -- LATIN SMALL LETTER I WITH GRAVE
-             , ("ii"                                     , Left 0x02148               ) -- DOUBLE-STRUCK ITALIC SMALL I
-             , ("iiiint"                                 , Left 0x02A0C               ) -- QUADRUPLE INTEGRAL OPERATOR
-             , ("iiint"                                  , Left 0x0222D               ) -- TRIPLE INTEGRAL
-             , ("iinfin"                                 , Left 0x029DC               ) -- INCOMPLETE INFINITY
-             , ("iiota"                                  , Left 0x02129               ) -- TURNED GREEK SMALL LETTER IOTA
-             , ("ijlig"                                  , Left 0x00133               ) -- LATIN SMALL LIGATURE IJ
-             , ("imacr"                                  , Left 0x0012B               ) -- LATIN SMALL LETTER I WITH MACRON
-             , ("image"                                  , Left 0x02111               ) -- BLACK-LETTER CAPITAL I
-             , ("imagline"                               , Left 0x02110               ) -- SCRIPT CAPITAL I
-             , ("imagpart"                               , Left 0x02111               ) -- BLACK-LETTER CAPITAL I
-             , ("imath"                                  , Left 0x00131               ) -- LATIN SMALL LETTER DOTLESS I
-             , ("imof"                                   , Left 0x022B7               ) -- IMAGE OF
-             , ("imped"                                  , Left 0x001B5               ) -- LATIN CAPITAL LETTER Z WITH STROKE
-             , ("in"                                     , Left 0x02208               ) -- ELEMENT OF
-             , ("incare"                                 , Left 0x02105               ) -- CARE OF
-             , ("infin"                                  , Left 0x0221E               ) -- INFINITY
-             , ("infintie"                               , Left 0x029DD               ) -- TIE OVER INFINITY
-             , ("inodot"                                 , Left 0x00131               ) -- LATIN SMALL LETTER DOTLESS I
-             , ("int"                                    , Left 0x0222B               ) -- INTEGRAL
-             , ("intcal"                                 , Left 0x022BA               ) -- INTERCALATE
-             , ("integers"                               , Left 0x02124               ) -- DOUBLE-STRUCK CAPITAL Z
-             , ("intercal"                               , Left 0x022BA               ) -- INTERCALATE
-             , ("intlarhk"                               , Left 0x02A17               ) -- INTEGRAL WITH LEFTWARDS ARROW WITH HOOK
-             , ("intprod"                                , Left 0x02A3C               ) -- INTERIOR PRODUCT
-             , ("iocy"                                   , Left 0x00451               ) -- CYRILLIC SMALL LETTER IO
-             , ("iogon"                                  , Left 0x0012F               ) -- LATIN SMALL LETTER I WITH OGONEK
-             , ("iopf"                                   , Left 0x1D55A               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL I
-             , ("iota"                                   , Left 0x003B9               ) -- GREEK SMALL LETTER IOTA
-             , ("iprod"                                  , Left 0x02A3C               ) -- INTERIOR PRODUCT
-             , ("iquest"                                 , Left 0x000BF               ) -- INVERTED QUESTION MARK
-             , ("iscr"                                   , Left 0x1D4BE               ) -- MATHEMATICAL SCRIPT SMALL I
-             , ("isin"                                   , Left 0x02208               ) -- ELEMENT OF
-             , ("isinE"                                  , Left 0x022F9               ) -- ELEMENT OF WITH TWO HORIZONTAL STROKES
-             , ("isindot"                                , Left 0x022F5               ) -- ELEMENT OF WITH DOT ABOVE
-             , ("isins"                                  , Left 0x022F4               ) -- SMALL ELEMENT OF WITH VERTICAL BAR AT END OF HORIZONTAL STROKE
-             , ("isinsv"                                 , Left 0x022F3               ) -- ELEMENT OF WITH VERTICAL BAR AT END OF HORIZONTAL STROKE
-             , ("isinv"                                  , Left 0x02208               ) -- ELEMENT OF
-             , ("it"                                     , Left 0x02062               ) -- INVISIBLE TIMES
-             , ("itilde"                                 , Left 0x00129               ) -- LATIN SMALL LETTER I WITH TILDE
-             , ("iukcy"                                  , Left 0x00456               ) -- CYRILLIC SMALL LETTER BYELORUSSIAN-UKRAINIAN I
-             , ("iuml"                                   , Left 0x000EF               ) -- LATIN SMALL LETTER I WITH DIAERESIS
-             , ("jcirc"                                  , Left 0x00135               ) -- LATIN SMALL LETTER J WITH CIRCUMFLEX
-             , ("jcy"                                    , Left 0x00439               ) -- CYRILLIC SMALL LETTER SHORT I
-             , ("jfr"                                    , Left 0x1D527               ) -- MATHEMATICAL FRAKTUR SMALL J
-             , ("jmath"                                  , Left 0x00237               ) -- LATIN SMALL LETTER DOTLESS J
-             , ("jopf"                                   , Left 0x1D55B               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL J
-             , ("jscr"                                   , Left 0x1D4BF               ) -- MATHEMATICAL SCRIPT SMALL J
-             , ("jsercy"                                 , Left 0x00458               ) -- CYRILLIC SMALL LETTER JE
-             , ("jukcy"                                  , Left 0x00454               ) -- CYRILLIC SMALL LETTER UKRAINIAN IE
-             , ("kappa"                                  , Left 0x003BA               ) -- GREEK SMALL LETTER KAPPA
-             , ("kappav"                                 , Left 0x003F0               ) -- GREEK KAPPA SYMBOL
-             , ("kcedil"                                 , Left 0x00137               ) -- LATIN SMALL LETTER K WITH CEDILLA
-             , ("kcy"                                    , Left 0x0043A               ) -- CYRILLIC SMALL LETTER KA
-             , ("kfr"                                    , Left 0x1D528               ) -- MATHEMATICAL FRAKTUR SMALL K
-             , ("kgr"                                    , Left 0x003BA               ) -- GREEK SMALL LETTER KAPPA
-             , ("kgreen"                                 , Left 0x00138               ) -- LATIN SMALL LETTER KRA
-             , ("khcy"                                   , Left 0x00445               ) -- CYRILLIC SMALL LETTER HA
-             , ("khgr"                                   , Left 0x003C7               ) -- GREEK SMALL LETTER CHI
-             , ("kjcy"                                   , Left 0x0045C               ) -- CYRILLIC SMALL LETTER KJE
-             , ("kopf"                                   , Left 0x1D55C               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL K
-             , ("kscr"                                   , Left 0x1D4C0               ) -- MATHEMATICAL SCRIPT SMALL K
-             , ("lAarr"                                  , Left 0x021DA               ) -- LEFTWARDS TRIPLE ARROW
-             , ("lArr"                                   , Left 0x021D0               ) -- LEFTWARDS DOUBLE ARROW
-             , ("lAtail"                                 , Left 0x0291B               ) -- LEFTWARDS DOUBLE ARROW-TAIL
-             , ("lBarr"                                  , Left 0x0290E               ) -- LEFTWARDS TRIPLE DASH ARROW
-             , ("lE"                                     , Left 0x02266               ) -- LESS-THAN OVER EQUAL TO
-             , ("lEg"                                    , Left 0x02A8B               ) -- LESS-THAN ABOVE DOUBLE-LINE EQUAL ABOVE GREATER-THAN
-             , ("lHar"                                   , Left 0x02962               ) -- LEFTWARDS HARPOON WITH BARB UP ABOVE LEFTWARDS HARPOON WITH BARB DOWN
-             , ("lacute"                                 , Left 0x0013A               ) -- LATIN SMALL LETTER L WITH ACUTE
-             , ("laemptyv"                               , Left 0x029B4               ) -- EMPTY SET WITH LEFT ARROW ABOVE
-             , ("lagran"                                 , Left 0x02112               ) -- SCRIPT CAPITAL L
-             , ("lambda"                                 , Left 0x003BB               ) -- GREEK SMALL LETTER LAMDA
-             , ("lang"                                   , Left 0x027E8               ) -- MATHEMATICAL LEFT ANGLE BRACKET
-             , ("langd"                                  , Left 0x02991               ) -- LEFT ANGLE BRACKET WITH DOT
-             , ("langle"                                 , Left 0x027E8               ) -- MATHEMATICAL LEFT ANGLE BRACKET
-             , ("lap"                                    , Left 0x02A85               ) -- LESS-THAN OR APPROXIMATE
-             , ("laquo"                                  , Left 0x000AB               ) -- LEFT-POINTING DOUBLE ANGLE QUOTATION MARK
-             , ("larr"                                   , Left 0x02190               ) -- LEFTWARDS ARROW
-             , ("larrb"                                  , Left 0x021E4               ) -- LEFTWARDS ARROW TO BAR
-             , ("larrbfs"                                , Left 0x0291F               ) -- LEFTWARDS ARROW FROM BAR TO BLACK DIAMOND
-             , ("larrfs"                                 , Left 0x0291D               ) -- LEFTWARDS ARROW TO BLACK DIAMOND
-             , ("larrhk"                                 , Left 0x021A9               ) -- LEFTWARDS ARROW WITH HOOK
-             , ("larrlp"                                 , Left 0x021AB               ) -- LEFTWARDS ARROW WITH LOOP
-             , ("larrpl"                                 , Left 0x02939               ) -- LEFT-SIDE ARC ANTICLOCKWISE ARROW
-             , ("larrsim"                                , Left 0x02973               ) -- LEFTWARDS ARROW ABOVE TILDE OPERATOR
-             , ("larrtl"                                 , Left 0x021A2               ) -- LEFTWARDS ARROW WITH TAIL
-             , ("lat"                                    , Left 0x02AAB               ) -- LARGER THAN
-             , ("latail"                                 , Left 0x02919               ) -- LEFTWARDS ARROW-TAIL
-             , ("late"                                   , Left 0x02AAD               ) -- LARGER THAN OR EQUAL TO
-             , ("lates"                                  , Right [ 0x02AAD, 0x0FE00 ] ) -- LARGER THAN OR slanted EQUAL
-             , ("lbarr"                                  , Left 0x0290C               ) -- LEFTWARDS DOUBLE DASH ARROW
-             , ("lbbrk"                                  , Left 0x02772               ) -- LIGHT LEFT TORTOISE SHELL BRACKET ORNAMENT
-             , ("lbrace"                                 , Left 0x0007B               ) -- LEFT CURLY BRACKET
-             , ("lbrack"                                 , Left 0x0005B               ) -- LEFT SQUARE BRACKET
-             , ("lbrke"                                  , Left 0x0298B               ) -- LEFT SQUARE BRACKET WITH UNDERBAR
-             , ("lbrksld"                                , Left 0x0298F               ) -- LEFT SQUARE BRACKET WITH TICK IN BOTTOM CORNER
-             , ("lbrkslu"                                , Left 0x0298D               ) -- LEFT SQUARE BRACKET WITH TICK IN TOP CORNER
-             , ("lcaron"                                 , Left 0x0013E               ) -- LATIN SMALL LETTER L WITH CARON
-             , ("lcedil"                                 , Left 0x0013C               ) -- LATIN SMALL LETTER L WITH CEDILLA
-             , ("lceil"                                  , Left 0x02308               ) -- LEFT CEILING
-             , ("lcub"                                   , Left 0x0007B               ) -- LEFT CURLY BRACKET
-             , ("lcy"                                    , Left 0x0043B               ) -- CYRILLIC SMALL LETTER EL
-             , ("ldca"                                   , Left 0x02936               ) -- ARROW POINTING DOWNWARDS THEN CURVING LEFTWARDS
-             , ("ldquo"                                  , Left 0x0201C               ) -- LEFT DOUBLE QUOTATION MARK
-             , ("ldquor"                                 , Left 0x0201E               ) -- DOUBLE LOW-9 QUOTATION MARK
-             , ("ldrdhar"                                , Left 0x02967               ) -- LEFTWARDS HARPOON WITH BARB DOWN ABOVE RIGHTWARDS HARPOON WITH BARB DOWN
-             , ("ldrushar"                               , Left 0x0294B               ) -- LEFT BARB DOWN RIGHT BARB UP HARPOON
-             , ("ldsh"                                   , Left 0x021B2               ) -- DOWNWARDS ARROW WITH TIP LEFTWARDS
-             , ("le"                                     , Left 0x02264               ) -- LESS-THAN OR EQUAL TO
-             , ("leftarrow"                              , Left 0x02190               ) -- LEFTWARDS ARROW
-             , ("leftarrowtail"                          , Left 0x021A2               ) -- LEFTWARDS ARROW WITH TAIL
-             , ("leftharpoondown"                        , Left 0x021BD               ) -- LEFTWARDS HARPOON WITH BARB DOWNWARDS
-             , ("leftharpoonup"                          , Left 0x021BC               ) -- LEFTWARDS HARPOON WITH BARB UPWARDS
-             , ("leftleftarrows"                         , Left 0x021C7               ) -- LEFTWARDS PAIRED ARROWS
-             , ("leftrightarrow"                         , Left 0x02194               ) -- LEFT RIGHT ARROW
-             , ("leftrightarrows"                        , Left 0x021C6               ) -- LEFTWARDS ARROW OVER RIGHTWARDS ARROW
-             , ("leftrightharpoons"                      , Left 0x021CB               ) -- LEFTWARDS HARPOON OVER RIGHTWARDS HARPOON
-             , ("leftrightsquigarrow"                    , Left 0x021AD               ) -- LEFT RIGHT WAVE ARROW
-             , ("leftthreetimes"                         , Left 0x022CB               ) -- LEFT SEMIDIRECT PRODUCT
-             , ("leg"                                    , Left 0x022DA               ) -- LESS-THAN EQUAL TO OR GREATER-THAN
-             , ("leq"                                    , Left 0x02264               ) -- LESS-THAN OR EQUAL TO
-             , ("leqq"                                   , Left 0x02266               ) -- LESS-THAN OVER EQUAL TO
-             , ("leqslant"                               , Left 0x02A7D               ) -- LESS-THAN OR SLANTED EQUAL TO
-             , ("les"                                    , Left 0x02A7D               ) -- LESS-THAN OR SLANTED EQUAL TO
-             , ("lescc"                                  , Left 0x02AA8               ) -- LESS-THAN CLOSED BY CURVE ABOVE SLANTED EQUAL
-             , ("lesdot"                                 , Left 0x02A7F               ) -- LESS-THAN OR SLANTED EQUAL TO WITH DOT INSIDE
-             , ("lesdoto"                                , Left 0x02A81               ) -- LESS-THAN OR SLANTED EQUAL TO WITH DOT ABOVE
-             , ("lesdotor"                               , Left 0x02A83               ) -- LESS-THAN OR SLANTED EQUAL TO WITH DOT ABOVE RIGHT
-             , ("lesg"                                   , Right [ 0x022DA, 0x0FE00 ] ) -- LESS-THAN slanted EQUAL TO OR GREATER-THAN
-             , ("lesges"                                 , Left 0x02A93               ) -- LESS-THAN ABOVE SLANTED EQUAL ABOVE GREATER-THAN ABOVE SLANTED EQUAL
-             , ("lessapprox"                             , Left 0x02A85               ) -- LESS-THAN OR APPROXIMATE
-             , ("lessdot"                                , Left 0x022D6               ) -- LESS-THAN WITH DOT
-             , ("lesseqgtr"                              , Left 0x022DA               ) -- LESS-THAN EQUAL TO OR GREATER-THAN
-             , ("lesseqqgtr"                             , Left 0x02A8B               ) -- LESS-THAN ABOVE DOUBLE-LINE EQUAL ABOVE GREATER-THAN
-             , ("lessgtr"                                , Left 0x02276               ) -- LESS-THAN OR GREATER-THAN
-             , ("lesssim"                                , Left 0x02272               ) -- LESS-THAN OR EQUIVALENT TO
-             , ("lfisht"                                 , Left 0x0297C               ) -- LEFT FISH TAIL
-             , ("lfloor"                                 , Left 0x0230A               ) -- LEFT FLOOR
-             , ("lfr"                                    , Left 0x1D529               ) -- MATHEMATICAL FRAKTUR SMALL L
-             , ("lg"                                     , Left 0x02276               ) -- LESS-THAN OR GREATER-THAN
-             , ("lgE"                                    , Left 0x02A91               ) -- LESS-THAN ABOVE GREATER-THAN ABOVE DOUBLE-LINE EQUAL
-             , ("lgr"                                    , Left 0x003BB               ) -- GREEK SMALL LETTER LAMDA
-             , ("lhard"                                  , Left 0x021BD               ) -- LEFTWARDS HARPOON WITH BARB DOWNWARDS
-             , ("lharu"                                  , Left 0x021BC               ) -- LEFTWARDS HARPOON WITH BARB UPWARDS
-             , ("lharul"                                 , Left 0x0296A               ) -- LEFTWARDS HARPOON WITH BARB UP ABOVE LONG DASH
-             , ("lhblk"                                  , Left 0x02584               ) -- LOWER HALF BLOCK
-             , ("ljcy"                                   , Left 0x00459               ) -- CYRILLIC SMALL LETTER LJE
-             , ("ll"                                     , Left 0x0226A               ) -- MUCH LESS-THAN
-             , ("llarr"                                  , Left 0x021C7               ) -- LEFTWARDS PAIRED ARROWS
-             , ("llcorner"                               , Left 0x0231E               ) -- BOTTOM LEFT CORNER
-             , ("llhard"                                 , Left 0x0296B               ) -- LEFTWARDS HARPOON WITH BARB DOWN BELOW LONG DASH
-             , ("lltri"                                  , Left 0x025FA               ) -- LOWER LEFT TRIANGLE
-             , ("lmidot"                                 , Left 0x00140               ) -- LATIN SMALL LETTER L WITH MIDDLE DOT
-             , ("lmoust"                                 , Left 0x023B0               ) -- UPPER LEFT OR LOWER RIGHT CURLY BRACKET SECTION
-             , ("lmoustache"                             , Left 0x023B0               ) -- UPPER LEFT OR LOWER RIGHT CURLY BRACKET SECTION
-             , ("lnE"                                    , Left 0x02268               ) -- LESS-THAN BUT NOT EQUAL TO
-             , ("lnap"                                   , Left 0x02A89               ) -- LESS-THAN AND NOT APPROXIMATE
-             , ("lnapprox"                               , Left 0x02A89               ) -- LESS-THAN AND NOT APPROXIMATE
-             , ("lne"                                    , Left 0x02A87               ) -- LESS-THAN AND SINGLE-LINE NOT EQUAL TO
-             , ("lneq"                                   , Left 0x02A87               ) -- LESS-THAN AND SINGLE-LINE NOT EQUAL TO
-             , ("lneqq"                                  , Left 0x02268               ) -- LESS-THAN BUT NOT EQUAL TO
-             , ("lnsim"                                  , Left 0x022E6               ) -- LESS-THAN BUT NOT EQUIVALENT TO
-             , ("loang"                                  , Left 0x027EC               ) -- MATHEMATICAL LEFT WHITE TORTOISE SHELL BRACKET
-             , ("loarr"                                  , Left 0x021FD               ) -- LEFTWARDS OPEN-HEADED ARROW
-             , ("lobrk"                                  , Left 0x027E6               ) -- MATHEMATICAL LEFT WHITE SQUARE BRACKET
-             , ("longleftarrow"                          , Left 0x027F5               ) -- LONG LEFTWARDS ARROW
-             , ("longleftrightarrow"                     , Left 0x027F7               ) -- LONG LEFT RIGHT ARROW
-             , ("longmapsto"                             , Left 0x027FC               ) -- LONG RIGHTWARDS ARROW FROM BAR
-             , ("longrightarrow"                         , Left 0x027F6               ) -- LONG RIGHTWARDS ARROW
-             , ("looparrowleft"                          , Left 0x021AB               ) -- LEFTWARDS ARROW WITH LOOP
-             , ("looparrowright"                         , Left 0x021AC               ) -- RIGHTWARDS ARROW WITH LOOP
-             , ("lopar"                                  , Left 0x02985               ) -- LEFT WHITE PARENTHESIS
-             , ("lopf"                                   , Left 0x1D55D               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL L
-             , ("loplus"                                 , Left 0x02A2D               ) -- PLUS SIGN IN LEFT HALF CIRCLE
-             , ("lotimes"                                , Left 0x02A34               ) -- MULTIPLICATION SIGN IN LEFT HALF CIRCLE
-             , ("lowast"                                 , Left 0x02217               ) -- ASTERISK OPERATOR
-             , ("lowbar"                                 , Left 0x0005F               ) -- LOW LINE
-             , ("loz"                                    , Left 0x025CA               ) -- LOZENGE
-             , ("lozenge"                                , Left 0x025CA               ) -- LOZENGE
-             , ("lozf"                                   , Left 0x029EB               ) -- BLACK LOZENGE
-             , ("lpar"                                   , Left 0x00028               ) -- LEFT PARENTHESIS
-             , ("lparlt"                                 , Left 0x02993               ) -- LEFT ARC LESS-THAN BRACKET
-             , ("lrarr"                                  , Left 0x021C6               ) -- LEFTWARDS ARROW OVER RIGHTWARDS ARROW
-             , ("lrcorner"                               , Left 0x0231F               ) -- BOTTOM RIGHT CORNER
-             , ("lrhar"                                  , Left 0x021CB               ) -- LEFTWARDS HARPOON OVER RIGHTWARDS HARPOON
-             , ("lrhard"                                 , Left 0x0296D               ) -- RIGHTWARDS HARPOON WITH BARB DOWN BELOW LONG DASH
-             , ("lrm"                                    , Left 0x0200E               ) -- LEFT-TO-RIGHT MARK
-             , ("lrtri"                                  , Left 0x022BF               ) -- RIGHT TRIANGLE
-             , ("lsaquo"                                 , Left 0x02039               ) -- SINGLE LEFT-POINTING ANGLE QUOTATION MARK
-             , ("lscr"                                   , Left 0x1D4C1               ) -- MATHEMATICAL SCRIPT SMALL L
-             , ("lsh"                                    , Left 0x021B0               ) -- UPWARDS ARROW WITH TIP LEFTWARDS
-             , ("lsim"                                   , Left 0x02272               ) -- LESS-THAN OR EQUIVALENT TO
-             , ("lsime"                                  , Left 0x02A8D               ) -- LESS-THAN ABOVE SIMILAR OR EQUAL
-             , ("lsimg"                                  , Left 0x02A8F               ) -- LESS-THAN ABOVE SIMILAR ABOVE GREATER-THAN
-             , ("lsqb"                                   , Left 0x0005B               ) -- LEFT SQUARE BRACKET
-             , ("lsquo"                                  , Left 0x02018               ) -- LEFT SINGLE QUOTATION MARK
-             , ("lsquor"                                 , Left 0x0201A               ) -- SINGLE LOW-9 QUOTATION MARK
-             , ("lstrok"                                 , Left 0x00142               ) -- LATIN SMALL LETTER L WITH STROKE
-             , ("lt"                                     , Left 0x0003C               ) -- LESS-THAN SIGN
-             , ("ltcc"                                   , Left 0x02AA6               ) -- LESS-THAN CLOSED BY CURVE
-             , ("ltcir"                                  , Left 0x02A79               ) -- LESS-THAN WITH CIRCLE INSIDE
-             , ("ltdot"                                  , Left 0x022D6               ) -- LESS-THAN WITH DOT
-             , ("lthree"                                 , Left 0x022CB               ) -- LEFT SEMIDIRECT PRODUCT
-             , ("ltimes"                                 , Left 0x022C9               ) -- LEFT NORMAL FACTOR SEMIDIRECT PRODUCT
-             , ("ltlarr"                                 , Left 0x02976               ) -- LESS-THAN ABOVE LEFTWARDS ARROW
-             , ("ltquest"                                , Left 0x02A7B               ) -- LESS-THAN WITH QUESTION MARK ABOVE
-             , ("ltrPar"                                 , Left 0x02996               ) -- DOUBLE RIGHT ARC LESS-THAN BRACKET
-             , ("ltri"                                   , Left 0x025C3               ) -- WHITE LEFT-POINTING SMALL TRIANGLE
-             , ("ltrie"                                  , Left 0x022B4               ) -- NORMAL SUBGROUP OF OR EQUAL TO
-             , ("ltrif"                                  , Left 0x025C2               ) -- BLACK LEFT-POINTING SMALL TRIANGLE
-             , ("lurdshar"                               , Left 0x0294A               ) -- LEFT BARB UP RIGHT BARB DOWN HARPOON
-             , ("luruhar"                                , Left 0x02966               ) -- LEFTWARDS HARPOON WITH BARB UP ABOVE RIGHTWARDS HARPOON WITH BARB UP
-             , ("lvertneqq"                              , Right [ 0x02268, 0x0FE00 ] ) -- LESS-THAN BUT NOT EQUAL TO - with vertical stroke
-             , ("lvnE"                                   , Right [ 0x02268, 0x0FE00 ] ) -- LESS-THAN BUT NOT EQUAL TO - with vertical stroke
-             , ("mDDot"                                  , Left 0x0223A               ) -- GEOMETRIC PROPORTION
-             , ("macr"                                   , Left 0x000AF               ) -- MACRON
-             , ("male"                                   , Left 0x02642               ) -- MALE SIGN
-             , ("malt"                                   , Left 0x02720               ) -- MALTESE CROSS
-             , ("maltese"                                , Left 0x02720               ) -- MALTESE CROSS
-             , ("map"                                    , Left 0x021A6               ) -- RIGHTWARDS ARROW FROM BAR
-             , ("mapsto"                                 , Left 0x021A6               ) -- RIGHTWARDS ARROW FROM BAR
-             , ("mapstodown"                             , Left 0x021A7               ) -- DOWNWARDS ARROW FROM BAR
-             , ("mapstoleft"                             , Left 0x021A4               ) -- LEFTWARDS ARROW FROM BAR
-             , ("mapstoup"                               , Left 0x021A5               ) -- UPWARDS ARROW FROM BAR
-             , ("marker"                                 , Left 0x025AE               ) -- BLACK VERTICAL RECTANGLE
-             , ("mcomma"                                 , Left 0x02A29               ) -- MINUS SIGN WITH COMMA ABOVE
-             , ("mcy"                                    , Left 0x0043C               ) -- CYRILLIC SMALL LETTER EM
-             , ("mdash"                                  , Left 0x02014               ) -- EM DASH
-             , ("measuredangle"                          , Left 0x02221               ) -- MEASURED ANGLE
-             , ("mfr"                                    , Left 0x1D52A               ) -- MATHEMATICAL FRAKTUR SMALL M
-             , ("mgr"                                    , Left 0x003BC               ) -- GREEK SMALL LETTER MU
-             , ("mho"                                    , Left 0x02127               ) -- INVERTED OHM SIGN
-             , ("micro"                                  , Left 0x000B5               ) -- MICRO SIGN
-             , ("mid"                                    , Left 0x02223               ) -- DIVIDES
-             , ("midast"                                 , Left 0x0002A               ) -- ASTERISK
-             , ("midcir"                                 , Left 0x02AF0               ) -- VERTICAL LINE WITH CIRCLE BELOW
-             , ("middot"                                 , Left 0x000B7               ) -- MIDDLE DOT
-             , ("minus"                                  , Left 0x02212               ) -- MINUS SIGN
-             , ("minusb"                                 , Left 0x0229F               ) -- SQUARED MINUS
-             , ("minusd"                                 , Left 0x02238               ) -- DOT MINUS
-             , ("minusdu"                                , Left 0x02A2A               ) -- MINUS SIGN WITH DOT BELOW
-             , ("mlcp"                                   , Left 0x02ADB               ) -- TRANSVERSAL INTERSECTION
-             , ("mldr"                                   , Left 0x02026               ) -- HORIZONTAL ELLIPSIS
-             , ("mnplus"                                 , Left 0x02213               ) -- MINUS-OR-PLUS SIGN
-             , ("models"                                 , Left 0x022A7               ) -- MODELS
-             , ("mopf"                                   , Left 0x1D55E               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL M
-             , ("mp"                                     , Left 0x02213               ) -- MINUS-OR-PLUS SIGN
-             , ("mscr"                                   , Left 0x1D4C2               ) -- MATHEMATICAL SCRIPT SMALL M
-             , ("mstpos"                                 , Left 0x0223E               ) -- INVERTED LAZY S
-             , ("mu"                                     , Left 0x003BC               ) -- GREEK SMALL LETTER MU
-             , ("multimap"                               , Left 0x022B8               ) -- MULTIMAP
-             , ("mumap"                                  , Left 0x022B8               ) -- MULTIMAP
-             , ("nGg"                                    , Right [ 0x022D9, 0x00338 ] ) -- VERY MUCH GREATER-THAN with slash
-             , ("nGt"                                    , Right [ 0x0226B, 0x020D2 ] ) -- MUCH GREATER THAN with vertical line
-             , ("nGtv"                                   , Right [ 0x0226B, 0x00338 ] ) -- MUCH GREATER THAN with slash
-             , ("nLeftarrow"                             , Left 0x021CD               ) -- LEFTWARDS DOUBLE ARROW WITH STROKE
-             , ("nLeftrightarrow"                        , Left 0x021CE               ) -- LEFT RIGHT DOUBLE ARROW WITH STROKE
-             , ("nLl"                                    , Right [ 0x022D8, 0x00338 ] ) -- VERY MUCH LESS-THAN with slash
-             , ("nLt"                                    , Right [ 0x0226A, 0x020D2 ] ) -- MUCH LESS THAN with vertical line
-             , ("nLtv"                                   , Right [ 0x0226A, 0x00338 ] ) -- MUCH LESS THAN with slash
-             , ("nRightarrow"                            , Left 0x021CF               ) -- RIGHTWARDS DOUBLE ARROW WITH STROKE
-             , ("nVDash"                                 , Left 0x022AF               ) -- NEGATED DOUBLE VERTICAL BAR DOUBLE RIGHT TURNSTILE
-             , ("nVdash"                                 , Left 0x022AE               ) -- DOES NOT FORCE
-             , ("nabla"                                  , Left 0x02207               ) -- NABLA
-             , ("nacute"                                 , Left 0x00144               ) -- LATIN SMALL LETTER N WITH ACUTE
-             , ("nang"                                   , Right [ 0x02220, 0x020D2 ] ) -- ANGLE with vertical line
-             , ("nap"                                    , Left 0x02249               ) -- NOT ALMOST EQUAL TO
-             , ("napE"                                   , Right [ 0x02A70, 0x00338 ] ) -- APPROXIMATELY EQUAL OR EQUAL TO with slash
-             , ("napid"                                  , Right [ 0x0224B, 0x00338 ] ) -- TRIPLE TILDE with slash
-             , ("napos"                                  , Left 0x00149               ) -- LATIN SMALL LETTER N PRECEDED BY APOSTROPHE
-             , ("napprox"                                , Left 0x02249               ) -- NOT ALMOST EQUAL TO
-             , ("natur"                                  , Left 0x0266E               ) -- MUSIC NATURAL SIGN
-             , ("natural"                                , Left 0x0266E               ) -- MUSIC NATURAL SIGN
-             , ("naturals"                               , Left 0x02115               ) -- DOUBLE-STRUCK CAPITAL N
-             , ("nbsp"                                   , Left 0x000A0               ) -- NO-BREAK SPACE
-             , ("nbump"                                  , Right [ 0x0224E, 0x00338 ] ) -- GEOMETRICALLY EQUIVALENT TO with slash
-             , ("nbumpe"                                 , Right [ 0x0224F, 0x00338 ] ) -- DIFFERENCE BETWEEN with slash
-             , ("ncap"                                   , Left 0x02A43               ) -- INTERSECTION WITH OVERBAR
-             , ("ncaron"                                 , Left 0x00148               ) -- LATIN SMALL LETTER N WITH CARON
-             , ("ncedil"                                 , Left 0x00146               ) -- LATIN SMALL LETTER N WITH CEDILLA
-             , ("ncong"                                  , Left 0x02247               ) -- NEITHER APPROXIMATELY NOR ACTUALLY EQUAL TO
-             , ("ncongdot"                               , Right [ 0x02A6D, 0x00338 ] ) -- CONGRUENT WITH DOT ABOVE with slash
-             , ("ncup"                                   , Left 0x02A42               ) -- UNION WITH OVERBAR
-             , ("ncy"                                    , Left 0x0043D               ) -- CYRILLIC SMALL LETTER EN
-             , ("ndash"                                  , Left 0x02013               ) -- EN DASH
-             , ("ne"                                     , Left 0x02260               ) -- NOT EQUAL TO
-             , ("neArr"                                  , Left 0x021D7               ) -- NORTH EAST DOUBLE ARROW
-             , ("nearhk"                                 , Left 0x02924               ) -- NORTH EAST ARROW WITH HOOK
-             , ("nearr"                                  , Left 0x02197               ) -- NORTH EAST ARROW
-             , ("nearrow"                                , Left 0x02197               ) -- NORTH EAST ARROW
-             , ("nedot"                                  , Right [ 0x02250, 0x00338 ] ) -- APPROACHES THE LIMIT with slash
-             , ("nequiv"                                 , Left 0x02262               ) -- NOT IDENTICAL TO
-             , ("nesear"                                 , Left 0x02928               ) -- NORTH EAST ARROW AND SOUTH EAST ARROW
-             , ("nesim"                                  , Right [ 0x02242, 0x00338 ] ) -- MINUS TILDE with slash
-             , ("nexist"                                 , Left 0x02204               ) -- THERE DOES NOT EXIST
-             , ("nexists"                                , Left 0x02204               ) -- THERE DOES NOT EXIST
-             , ("nfr"                                    , Left 0x1D52B               ) -- MATHEMATICAL FRAKTUR SMALL N
-             , ("ngE"                                    , Right [ 0x02267, 0x00338 ] ) -- GREATER-THAN OVER EQUAL TO with slash
-             , ("nge"                                    , Left 0x02271               ) -- NEITHER GREATER-THAN NOR EQUAL TO
-             , ("ngeq"                                   , Left 0x02271               ) -- NEITHER GREATER-THAN NOR EQUAL TO
-             , ("ngeqq"                                  , Right [ 0x02267, 0x00338 ] ) -- GREATER-THAN OVER EQUAL TO with slash
-             , ("ngeqslant"                              , Right [ 0x02A7E, 0x00338 ] ) -- GREATER-THAN OR SLANTED EQUAL TO with slash
-             , ("nges"                                   , Right [ 0x02A7E, 0x00338 ] ) -- GREATER-THAN OR SLANTED EQUAL TO with slash
-             , ("ngr"                                    , Left 0x003BD               ) -- GREEK SMALL LETTER NU
-             , ("ngsim"                                  , Left 0x02275               ) -- NEITHER GREATER-THAN NOR EQUIVALENT TO
-             , ("ngt"                                    , Left 0x0226F               ) -- NOT GREATER-THAN
-             , ("ngtr"                                   , Left 0x0226F               ) -- NOT GREATER-THAN
-             , ("nhArr"                                  , Left 0x021CE               ) -- LEFT RIGHT DOUBLE ARROW WITH STROKE
-             , ("nharr"                                  , Left 0x021AE               ) -- LEFT RIGHT ARROW WITH STROKE
-             , ("nhpar"                                  , Left 0x02AF2               ) -- PARALLEL WITH HORIZONTAL STROKE
-             , ("ni"                                     , Left 0x0220B               ) -- CONTAINS AS MEMBER
-             , ("nis"                                    , Left 0x022FC               ) -- SMALL CONTAINS WITH VERTICAL BAR AT END OF HORIZONTAL STROKE
-             , ("nisd"                                   , Left 0x022FA               ) -- CONTAINS WITH LONG HORIZONTAL STROKE
-             , ("niv"                                    , Left 0x0220B               ) -- CONTAINS AS MEMBER
-             , ("njcy"                                   , Left 0x0045A               ) -- CYRILLIC SMALL LETTER NJE
-             , ("nlArr"                                  , Left 0x021CD               ) -- LEFTWARDS DOUBLE ARROW WITH STROKE
-             , ("nlE"                                    , Right [ 0x02266, 0x00338 ] ) -- LESS-THAN OVER EQUAL TO with slash
-             , ("nlarr"                                  , Left 0x0219A               ) -- LEFTWARDS ARROW WITH STROKE
-             , ("nldr"                                   , Left 0x02025               ) -- TWO DOT LEADER
-             , ("nle"                                    , Left 0x02270               ) -- NEITHER LESS-THAN NOR EQUAL TO
-             , ("nleftarrow"                             , Left 0x0219A               ) -- LEFTWARDS ARROW WITH STROKE
-             , ("nleftrightarrow"                        , Left 0x021AE               ) -- LEFT RIGHT ARROW WITH STROKE
-             , ("nleq"                                   , Left 0x02270               ) -- NEITHER LESS-THAN NOR EQUAL TO
-             , ("nleqq"                                  , Right [ 0x02266, 0x00338 ] ) -- LESS-THAN OVER EQUAL TO with slash
-             , ("nleqslant"                              , Right [ 0x02A7D, 0x00338 ] ) -- LESS-THAN OR SLANTED EQUAL TO with slash
-             , ("nles"                                   , Right [ 0x02A7D, 0x00338 ] ) -- LESS-THAN OR SLANTED EQUAL TO with slash
-             , ("nless"                                  , Left 0x0226E               ) -- NOT LESS-THAN
-             , ("nlsim"                                  , Left 0x02274               ) -- NEITHER LESS-THAN NOR EQUIVALENT TO
-             , ("nlt"                                    , Left 0x0226E               ) -- NOT LESS-THAN
-             , ("nltri"                                  , Left 0x022EA               ) -- NOT NORMAL SUBGROUP OF
-             , ("nltrie"                                 , Left 0x022EC               ) -- NOT NORMAL SUBGROUP OF OR EQUAL TO
-             , ("nmid"                                   , Left 0x02224               ) -- DOES NOT DIVIDE
-             , ("nopf"                                   , Left 0x1D55F               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL N
-             , ("not"                                    , Left 0x000AC               ) -- NOT SIGN
-             , ("notin"                                  , Left 0x02209               ) -- NOT AN ELEMENT OF
-             , ("notinE"                                 , Right [ 0x022F9, 0x00338 ] ) -- ELEMENT OF WITH TWO HORIZONTAL STROKES with slash
-             , ("notindot"                               , Right [ 0x022F5, 0x00338 ] ) -- ELEMENT OF WITH DOT ABOVE with slash
-             , ("notinva"                                , Left 0x02209               ) -- NOT AN ELEMENT OF
-             , ("notinvb"                                , Left 0x022F7               ) -- SMALL ELEMENT OF WITH OVERBAR
-             , ("notinvc"                                , Left 0x022F6               ) -- ELEMENT OF WITH OVERBAR
-             , ("notni"                                  , Left 0x0220C               ) -- DOES NOT CONTAIN AS MEMBER
-             , ("notniva"                                , Left 0x0220C               ) -- DOES NOT CONTAIN AS MEMBER
-             , ("notnivb"                                , Left 0x022FE               ) -- SMALL CONTAINS WITH OVERBAR
-             , ("notnivc"                                , Left 0x022FD               ) -- CONTAINS WITH OVERBAR
-             , ("npar"                                   , Left 0x02226               ) -- NOT PARALLEL TO
-             , ("nparallel"                              , Left 0x02226               ) -- NOT PARALLEL TO
-             , ("nparsl"                                 , Right [ 0x02AFD, 0x020E5 ] ) -- DOUBLE SOLIDUS OPERATOR with reverse slash
-             , ("npart"                                  , Right [ 0x02202, 0x00338 ] ) -- PARTIAL DIFFERENTIAL with slash
-             , ("npolint"                                , Left 0x02A14               ) -- LINE INTEGRATION NOT INCLUDING THE POLE
-             , ("npr"                                    , Left 0x02280               ) -- DOES NOT PRECEDE
-             , ("nprcue"                                 , Left 0x022E0               ) -- DOES NOT PRECEDE OR EQUAL
-             , ("npre"                                   , Right [ 0x02AAF, 0x00338 ] ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN with slash
-             , ("nprec"                                  , Left 0x02280               ) -- DOES NOT PRECEDE
-             , ("npreceq"                                , Right [ 0x02AAF, 0x00338 ] ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN with slash
-             , ("nrArr"                                  , Left 0x021CF               ) -- RIGHTWARDS DOUBLE ARROW WITH STROKE
-             , ("nrarr"                                  , Left 0x0219B               ) -- RIGHTWARDS ARROW WITH STROKE
-             , ("nrarrc"                                 , Right [ 0x02933, 0x00338 ] ) -- WAVE ARROW POINTING DIRECTLY RIGHT with slash
-             , ("nrarrw"                                 , Right [ 0x0219D, 0x00338 ] ) -- RIGHTWARDS WAVE ARROW with slash
-             , ("nrightarrow"                            , Left 0x0219B               ) -- RIGHTWARDS ARROW WITH STROKE
-             , ("nrtri"                                  , Left 0x022EB               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP
-             , ("nrtrie"                                 , Left 0x022ED               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP OR EQUAL
-             , ("nsc"                                    , Left 0x02281               ) -- DOES NOT SUCCEED
-             , ("nsccue"                                 , Left 0x022E1               ) -- DOES NOT SUCCEED OR EQUAL
-             , ("nsce"                                   , Right [ 0x02AB0, 0x00338 ] ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN with slash
-             , ("nscr"                                   , Left 0x1D4C3               ) -- MATHEMATICAL SCRIPT SMALL N
-             , ("nshortmid"                              , Left 0x02224               ) -- DOES NOT DIVIDE
-             , ("nshortparallel"                         , Left 0x02226               ) -- NOT PARALLEL TO
-             , ("nsim"                                   , Left 0x02241               ) -- NOT TILDE
-             , ("nsime"                                  , Left 0x02244               ) -- NOT ASYMPTOTICALLY EQUAL TO
-             , ("nsimeq"                                 , Left 0x02244               ) -- NOT ASYMPTOTICALLY EQUAL TO
-             , ("nsmid"                                  , Left 0x02224               ) -- DOES NOT DIVIDE
-             , ("nspar"                                  , Left 0x02226               ) -- NOT PARALLEL TO
-             , ("nsqsube"                                , Left 0x022E2               ) -- NOT SQUARE IMAGE OF OR EQUAL TO
-             , ("nsqsupe"                                , Left 0x022E3               ) -- NOT SQUARE ORIGINAL OF OR EQUAL TO
-             , ("nsub"                                   , Left 0x02284               ) -- NOT A SUBSET OF
-             , ("nsubE"                                  , Right [ 0x02AC5, 0x00338 ] ) -- SUBSET OF ABOVE EQUALS SIGN with slash
-             , ("nsube"                                  , Left 0x02288               ) -- NEITHER A SUBSET OF NOR EQUAL TO
-             , ("nsubset"                                , Right [ 0x02282, 0x020D2 ] ) -- SUBSET OF with vertical line
-             , ("nsubseteq"                              , Left 0x02288               ) -- NEITHER A SUBSET OF NOR EQUAL TO
-             , ("nsubseteqq"                             , Right [ 0x02AC5, 0x00338 ] ) -- SUBSET OF ABOVE EQUALS SIGN with slash
-             , ("nsucc"                                  , Left 0x02281               ) -- DOES NOT SUCCEED
-             , ("nsucceq"                                , Right [ 0x02AB0, 0x00338 ] ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN with slash
-             , ("nsup"                                   , Left 0x02285               ) -- NOT A SUPERSET OF
-             , ("nsupE"                                  , Right [ 0x02AC6, 0x00338 ] ) -- SUPERSET OF ABOVE EQUALS SIGN with slash
-             , ("nsupe"                                  , Left 0x02289               ) -- NEITHER A SUPERSET OF NOR EQUAL TO
-             , ("nsupset"                                , Right [ 0x02283, 0x020D2 ] ) -- SUPERSET OF with vertical line
-             , ("nsupseteq"                              , Left 0x02289               ) -- NEITHER A SUPERSET OF NOR EQUAL TO
-             , ("nsupseteqq"                             , Right [ 0x02AC6, 0x00338 ] ) -- SUPERSET OF ABOVE EQUALS SIGN with slash
-             , ("ntgl"                                   , Left 0x02279               ) -- NEITHER GREATER-THAN NOR LESS-THAN
-             , ("ntilde"                                 , Left 0x000F1               ) -- LATIN SMALL LETTER N WITH TILDE
-             , ("ntlg"                                   , Left 0x02278               ) -- NEITHER LESS-THAN NOR GREATER-THAN
-             , ("ntriangleleft"                          , Left 0x022EA               ) -- NOT NORMAL SUBGROUP OF
-             , ("ntrianglelefteq"                        , Left 0x022EC               ) -- NOT NORMAL SUBGROUP OF OR EQUAL TO
-             , ("ntriangleright"                         , Left 0x022EB               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP
-             , ("ntrianglerighteq"                       , Left 0x022ED               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP OR EQUAL
-             , ("nu"                                     , Left 0x003BD               ) -- GREEK SMALL LETTER NU
-             , ("num"                                    , Left 0x00023               ) -- NUMBER SIGN
-             , ("numero"                                 , Left 0x02116               ) -- NUMERO SIGN
-             , ("numsp"                                  , Left 0x02007               ) -- FIGURE SPACE
-             , ("nvDash"                                 , Left 0x022AD               ) -- NOT TRUE
-             , ("nvHarr"                                 , Left 0x02904               ) -- LEFT RIGHT DOUBLE ARROW WITH VERTICAL STROKE
-             , ("nvap"                                   , Right [ 0x0224D, 0x020D2 ] ) -- EQUIVALENT TO with vertical line
-             , ("nvdash"                                 , Left 0x022AC               ) -- DOES NOT PROVE
-             , ("nvge"                                   , Right [ 0x02265, 0x020D2 ] ) -- GREATER-THAN OR EQUAL TO with vertical line
-             , ("nvgt"                                   , Right [ 0x0003E, 0x020D2 ] ) -- GREATER-THAN SIGN with vertical line
-             , ("nvinfin"                                , Left 0x029DE               ) -- INFINITY NEGATED WITH VERTICAL BAR
-             , ("nvlArr"                                 , Left 0x02902               ) -- LEFTWARDS DOUBLE ARROW WITH VERTICAL STROKE
-             , ("nvle"                                   , Right [ 0x02264, 0x020D2 ] ) -- LESS-THAN OR EQUAL TO with vertical line
-             , ("nvlt"                                   , Right [ 0x0003C, 0x020D2 ] ) -- LESS-THAN SIGN with vertical line
-             , ("nvltrie"                                , Right [ 0x022B4, 0x020D2 ] ) -- NORMAL SUBGROUP OF OR EQUAL TO with vertical line
-             , ("nvrArr"                                 , Left 0x02903               ) -- RIGHTWARDS DOUBLE ARROW WITH VERTICAL STROKE
-             , ("nvrtrie"                                , Right [ 0x022B5, 0x020D2 ] ) -- CONTAINS AS NORMAL SUBGROUP OR EQUAL TO with vertical line
-             , ("nvsim"                                  , Right [ 0x0223C, 0x020D2 ] ) -- TILDE OPERATOR with vertical line
-             , ("nwArr"                                  , Left 0x021D6               ) -- NORTH WEST DOUBLE ARROW
-             , ("nwarhk"                                 , Left 0x02923               ) -- NORTH WEST ARROW WITH HOOK
-             , ("nwarr"                                  , Left 0x02196               ) -- NORTH WEST ARROW
-             , ("nwarrow"                                , Left 0x02196               ) -- NORTH WEST ARROW
-             , ("nwnear"                                 , Left 0x02927               ) -- NORTH WEST ARROW AND NORTH EAST ARROW
-             , ("oS"                                     , Left 0x024C8               ) -- CIRCLED LATIN CAPITAL LETTER S
-             , ("oacgr"                                  , Left 0x003CC               ) -- GREEK SMALL LETTER OMICRON WITH TONOS
-             , ("oacute"                                 , Left 0x000F3               ) -- LATIN SMALL LETTER O WITH ACUTE
-             , ("oast"                                   , Left 0x0229B               ) -- CIRCLED ASTERISK OPERATOR
-             , ("ocir"                                   , Left 0x0229A               ) -- CIRCLED RING OPERATOR
-             , ("ocirc"                                  , Left 0x000F4               ) -- LATIN SMALL LETTER O WITH CIRCUMFLEX
-             , ("ocy"                                    , Left 0x0043E               ) -- CYRILLIC SMALL LETTER O
-             , ("odash"                                  , Left 0x0229D               ) -- CIRCLED DASH
-             , ("odblac"                                 , Left 0x00151               ) -- LATIN SMALL LETTER O WITH DOUBLE ACUTE
-             , ("odiv"                                   , Left 0x02A38               ) -- CIRCLED DIVISION SIGN
-             , ("odot"                                   , Left 0x02299               ) -- CIRCLED DOT OPERATOR
-             , ("odsold"                                 , Left 0x029BC               ) -- CIRCLED ANTICLOCKWISE-ROTATED DIVISION SIGN
-             , ("oelig"                                  , Left 0x00153               ) -- LATIN SMALL LIGATURE OE
-             , ("ofcir"                                  , Left 0x029BF               ) -- CIRCLED BULLET
-             , ("ofr"                                    , Left 0x1D52C               ) -- MATHEMATICAL FRAKTUR SMALL O
-             , ("ogon"                                   , Left 0x002DB               ) -- OGONEK
-             , ("ogr"                                    , Left 0x003BF               ) -- GREEK SMALL LETTER OMICRON
-             , ("ograve"                                 , Left 0x000F2               ) -- LATIN SMALL LETTER O WITH GRAVE
-             , ("ogt"                                    , Left 0x029C1               ) -- CIRCLED GREATER-THAN
-             , ("ohacgr"                                 , Left 0x003CE               ) -- GREEK SMALL LETTER OMEGA WITH TONOS
-             , ("ohbar"                                  , Left 0x029B5               ) -- CIRCLE WITH HORIZONTAL BAR
-             , ("ohgr"                                   , Left 0x003C9               ) -- GREEK SMALL LETTER OMEGA
-             , ("ohm"                                    , Left 0x003A9               ) -- GREEK CAPITAL LETTER OMEGA
-             , ("oint"                                   , Left 0x0222E               ) -- CONTOUR INTEGRAL
-             , ("olarr"                                  , Left 0x021BA               ) -- ANTICLOCKWISE OPEN CIRCLE ARROW
-             , ("olcir"                                  , Left 0x029BE               ) -- CIRCLED WHITE BULLET
-             , ("olcross"                                , Left 0x029BB               ) -- CIRCLE WITH SUPERIMPOSED X
-             , ("oline"                                  , Left 0x0203E               ) -- OVERLINE
-             , ("olt"                                    , Left 0x029C0               ) -- CIRCLED LESS-THAN
-             , ("omacr"                                  , Left 0x0014D               ) -- LATIN SMALL LETTER O WITH MACRON
-             , ("omega"                                  , Left 0x003C9               ) -- GREEK SMALL LETTER OMEGA
-             , ("omicron"                                , Left 0x003BF               ) -- GREEK SMALL LETTER OMICRON
-             , ("omid"                                   , Left 0x029B6               ) -- CIRCLED VERTICAL BAR
-             , ("ominus"                                 , Left 0x02296               ) -- CIRCLED MINUS
-             , ("oopf"                                   , Left 0x1D560               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL O
-             , ("opar"                                   , Left 0x029B7               ) -- CIRCLED PARALLEL
-             , ("operp"                                  , Left 0x029B9               ) -- CIRCLED PERPENDICULAR
-             , ("oplus"                                  , Left 0x02295               ) -- CIRCLED PLUS
-             , ("or"                                     , Left 0x02228               ) -- LOGICAL OR
-             , ("orarr"                                  , Left 0x021BB               ) -- CLOCKWISE OPEN CIRCLE ARROW
-             , ("ord"                                    , Left 0x02A5D               ) -- LOGICAL OR WITH HORIZONTAL DASH
-             , ("order"                                  , Left 0x02134               ) -- SCRIPT SMALL O
-             , ("orderof"                                , Left 0x02134               ) -- SCRIPT SMALL O
-             , ("ordf"                                   , Left 0x000AA               ) -- FEMININE ORDINAL INDICATOR
-             , ("ordm"                                   , Left 0x000BA               ) -- MASCULINE ORDINAL INDICATOR
-             , ("origof"                                 , Left 0x022B6               ) -- ORIGINAL OF
-             , ("oror"                                   , Left 0x02A56               ) -- TWO INTERSECTING LOGICAL OR
-             , ("orslope"                                , Left 0x02A57               ) -- SLOPING LARGE OR
-             , ("orv"                                    , Left 0x02A5B               ) -- LOGICAL OR WITH MIDDLE STEM
-             , ("oscr"                                   , Left 0x02134               ) -- SCRIPT SMALL O
-             , ("oslash"                                 , Left 0x000F8               ) -- LATIN SMALL LETTER O WITH STROKE
-             , ("osol"                                   , Left 0x02298               ) -- CIRCLED DIVISION SLASH
-             , ("otilde"                                 , Left 0x000F5               ) -- LATIN SMALL LETTER O WITH TILDE
-             , ("otimes"                                 , Left 0x02297               ) -- CIRCLED TIMES
-             , ("otimesas"                               , Left 0x02A36               ) -- CIRCLED MULTIPLICATION SIGN WITH CIRCUMFLEX ACCENT
-             , ("ouml"                                   , Left 0x000F6               ) -- LATIN SMALL LETTER O WITH DIAERESIS
-             , ("ovbar"                                  , Left 0x0233D               ) -- APL FUNCTIONAL SYMBOL CIRCLE STILE
-             , ("par"                                    , Left 0x02225               ) -- PARALLEL TO
-             , ("para"                                   , Left 0x000B6               ) -- PILCROW SIGN
-             , ("parallel"                               , Left 0x02225               ) -- PARALLEL TO
-             , ("parsim"                                 , Left 0x02AF3               ) -- PARALLEL WITH TILDE OPERATOR
-             , ("parsl"                                  , Left 0x02AFD               ) -- DOUBLE SOLIDUS OPERATOR
-             , ("part"                                   , Left 0x02202               ) -- PARTIAL DIFFERENTIAL
-             , ("pcy"                                    , Left 0x0043F               ) -- CYRILLIC SMALL LETTER PE
-             , ("percnt"                                 , Left 0x00025               ) -- PERCENT SIGN
-             , ("period"                                 , Left 0x0002E               ) -- FULL STOP
-             , ("permil"                                 , Left 0x02030               ) -- PER MILLE SIGN
-             , ("perp"                                   , Left 0x022A5               ) -- UP TACK
-             , ("pertenk"                                , Left 0x02031               ) -- PER TEN THOUSAND SIGN
-             , ("pfr"                                    , Left 0x1D52D               ) -- MATHEMATICAL FRAKTUR SMALL P
-             , ("pgr"                                    , Left 0x003C0               ) -- GREEK SMALL LETTER PI
-             , ("phgr"                                   , Left 0x003C6               ) -- GREEK SMALL LETTER PHI
-             , ("phi"                                    , Left 0x003C6               ) -- GREEK SMALL LETTER PHI
-             , ("phiv"                                   , Left 0x003D5               ) -- GREEK PHI SYMBOL
-             , ("phmmat"                                 , Left 0x02133               ) -- SCRIPT CAPITAL M
-             , ("phone"                                  , Left 0x0260E               ) -- BLACK TELEPHONE
-             , ("pi"                                     , Left 0x003C0               ) -- GREEK SMALL LETTER PI
-             , ("pitchfork"                              , Left 0x022D4               ) -- PITCHFORK
-             , ("piv"                                    , Left 0x003D6               ) -- GREEK PI SYMBOL
-             , ("planck"                                 , Left 0x0210F               ) -- PLANCK CONSTANT OVER TWO PI
-             , ("planckh"                                , Left 0x0210E               ) -- PLANCK CONSTANT
-             , ("plankv"                                 , Left 0x0210F               ) -- PLANCK CONSTANT OVER TWO PI
-             , ("plus"                                   , Left 0x0002B               ) -- PLUS SIGN
-             , ("plusacir"                               , Left 0x02A23               ) -- PLUS SIGN WITH CIRCUMFLEX ACCENT ABOVE
-             , ("plusb"                                  , Left 0x0229E               ) -- SQUARED PLUS
-             , ("pluscir"                                , Left 0x02A22               ) -- PLUS SIGN WITH SMALL CIRCLE ABOVE
-             , ("plusdo"                                 , Left 0x02214               ) -- DOT PLUS
-             , ("plusdu"                                 , Left 0x02A25               ) -- PLUS SIGN WITH DOT BELOW
-             , ("pluse"                                  , Left 0x02A72               ) -- PLUS SIGN ABOVE EQUALS SIGN
-             , ("plusmn"                                 , Left 0x000B1               ) -- PLUS-MINUS SIGN
-             , ("plussim"                                , Left 0x02A26               ) -- PLUS SIGN WITH TILDE BELOW
-             , ("plustwo"                                , Left 0x02A27               ) -- PLUS SIGN WITH SUBSCRIPT TWO
-             , ("pm"                                     , Left 0x000B1               ) -- PLUS-MINUS SIGN
-             , ("pointint"                               , Left 0x02A15               ) -- INTEGRAL AROUND A POINT OPERATOR
-             , ("popf"                                   , Left 0x1D561               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL P
-             , ("pound"                                  , Left 0x000A3               ) -- POUND SIGN
-             , ("pr"                                     , Left 0x0227A               ) -- PRECEDES
-             , ("prE"                                    , Left 0x02AB3               ) -- PRECEDES ABOVE EQUALS SIGN
-             , ("prap"                                   , Left 0x02AB7               ) -- PRECEDES ABOVE ALMOST EQUAL TO
-             , ("prcue"                                  , Left 0x0227C               ) -- PRECEDES OR EQUAL TO
-             , ("pre"                                    , Left 0x02AAF               ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN
-             , ("prec"                                   , Left 0x0227A               ) -- PRECEDES
-             , ("precapprox"                             , Left 0x02AB7               ) -- PRECEDES ABOVE ALMOST EQUAL TO
-             , ("preccurlyeq"                            , Left 0x0227C               ) -- PRECEDES OR EQUAL TO
-             , ("preceq"                                 , Left 0x02AAF               ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN
-             , ("precnapprox"                            , Left 0x02AB9               ) -- PRECEDES ABOVE NOT ALMOST EQUAL TO
-             , ("precneqq"                               , Left 0x02AB5               ) -- PRECEDES ABOVE NOT EQUAL TO
-             , ("precnsim"                               , Left 0x022E8               ) -- PRECEDES BUT NOT EQUIVALENT TO
-             , ("precsim"                                , Left 0x0227E               ) -- PRECEDES OR EQUIVALENT TO
-             , ("prime"                                  , Left 0x02032               ) -- PRIME
-             , ("primes"                                 , Left 0x02119               ) -- DOUBLE-STRUCK CAPITAL P
-             , ("prnE"                                   , Left 0x02AB5               ) -- PRECEDES ABOVE NOT EQUAL TO
-             , ("prnap"                                  , Left 0x02AB9               ) -- PRECEDES ABOVE NOT ALMOST EQUAL TO
-             , ("prnsim"                                 , Left 0x022E8               ) -- PRECEDES BUT NOT EQUIVALENT TO
-             , ("prod"                                   , Left 0x0220F               ) -- N-ARY PRODUCT
-             , ("profalar"                               , Left 0x0232E               ) -- ALL AROUND-PROFILE
-             , ("profline"                               , Left 0x02312               ) -- ARC
-             , ("profsurf"                               , Left 0x02313               ) -- SEGMENT
-             , ("prop"                                   , Left 0x0221D               ) -- PROPORTIONAL TO
-             , ("propto"                                 , Left 0x0221D               ) -- PROPORTIONAL TO
-             , ("prsim"                                  , Left 0x0227E               ) -- PRECEDES OR EQUIVALENT TO
-             , ("prurel"                                 , Left 0x022B0               ) -- PRECEDES UNDER RELATION
-             , ("pscr"                                   , Left 0x1D4C5               ) -- MATHEMATICAL SCRIPT SMALL P
-             , ("psgr"                                   , Left 0x003C8               ) -- GREEK SMALL LETTER PSI
-             , ("psi"                                    , Left 0x003C8               ) -- GREEK SMALL LETTER PSI
-             , ("puncsp"                                 , Left 0x02008               ) -- PUNCTUATION SPACE
-             , ("qfr"                                    , Left 0x1D52E               ) -- MATHEMATICAL FRAKTUR SMALL Q
-             , ("qint"                                   , Left 0x02A0C               ) -- QUADRUPLE INTEGRAL OPERATOR
-             , ("qopf"                                   , Left 0x1D562               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL Q
-             , ("qprime"                                 , Left 0x02057               ) -- QUADRUPLE PRIME
-             , ("qscr"                                   , Left 0x1D4C6               ) -- MATHEMATICAL SCRIPT SMALL Q
-             , ("quaternions"                            , Left 0x0210D               ) -- DOUBLE-STRUCK CAPITAL H
-             , ("quatint"                                , Left 0x02A16               ) -- QUATERNION INTEGRAL OPERATOR
-             , ("quest"                                  , Left 0x0003F               ) -- QUESTION MARK
-             , ("questeq"                                , Left 0x0225F               ) -- QUESTIONED EQUAL TO
-             , ("quot"                                   , Left 0x00022               ) -- QUOTATION MARK
-             , ("rAarr"                                  , Left 0x021DB               ) -- RIGHTWARDS TRIPLE ARROW
-             , ("rArr"                                   , Left 0x021D2               ) -- RIGHTWARDS DOUBLE ARROW
-             , ("rAtail"                                 , Left 0x0291C               ) -- RIGHTWARDS DOUBLE ARROW-TAIL
-             , ("rBarr"                                  , Left 0x0290F               ) -- RIGHTWARDS TRIPLE DASH ARROW
-             , ("rHar"                                   , Left 0x02964               ) -- RIGHTWARDS HARPOON WITH BARB UP ABOVE RIGHTWARDS HARPOON WITH BARB DOWN
-             , ("race"                                   , Right [ 0x0223D, 0x00331 ] ) -- REVERSED TILDE with underline
-             , ("racute"                                 , Left 0x00155               ) -- LATIN SMALL LETTER R WITH ACUTE
-             , ("radic"                                  , Left 0x0221A               ) -- SQUARE ROOT
-             , ("raemptyv"                               , Left 0x029B3               ) -- EMPTY SET WITH RIGHT ARROW ABOVE
-             , ("rang"                                   , Left 0x027E9               ) -- MATHEMATICAL RIGHT ANGLE BRACKET
-             , ("rangd"                                  , Left 0x02992               ) -- RIGHT ANGLE BRACKET WITH DOT
-             , ("range"                                  , Left 0x029A5               ) -- REVERSED ANGLE WITH UNDERBAR
-             , ("rangle"                                 , Left 0x027E9               ) -- MATHEMATICAL RIGHT ANGLE BRACKET
-             , ("raquo"                                  , Left 0x000BB               ) -- RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK
-             , ("rarr"                                   , Left 0x02192               ) -- RIGHTWARDS ARROW
-             , ("rarrap"                                 , Left 0x02975               ) -- RIGHTWARDS ARROW ABOVE ALMOST EQUAL TO
-             , ("rarrb"                                  , Left 0x021E5               ) -- RIGHTWARDS ARROW TO BAR
-             , ("rarrbfs"                                , Left 0x02920               ) -- RIGHTWARDS ARROW FROM BAR TO BLACK DIAMOND
-             , ("rarrc"                                  , Left 0x02933               ) -- WAVE ARROW POINTING DIRECTLY RIGHT
-             , ("rarrfs"                                 , Left 0x0291E               ) -- RIGHTWARDS ARROW TO BLACK DIAMOND
-             , ("rarrhk"                                 , Left 0x021AA               ) -- RIGHTWARDS ARROW WITH HOOK
-             , ("rarrlp"                                 , Left 0x021AC               ) -- RIGHTWARDS ARROW WITH LOOP
-             , ("rarrpl"                                 , Left 0x02945               ) -- RIGHTWARDS ARROW WITH PLUS BELOW
-             , ("rarrsim"                                , Left 0x02974               ) -- RIGHTWARDS ARROW ABOVE TILDE OPERATOR
-             , ("rarrtl"                                 , Left 0x021A3               ) -- RIGHTWARDS ARROW WITH TAIL
-             , ("rarrw"                                  , Left 0x0219D               ) -- RIGHTWARDS WAVE ARROW
-             , ("ratail"                                 , Left 0x0291A               ) -- RIGHTWARDS ARROW-TAIL
-             , ("ratio"                                  , Left 0x02236               ) -- RATIO
-             , ("rationals"                              , Left 0x0211A               ) -- DOUBLE-STRUCK CAPITAL Q
-             , ("rbarr"                                  , Left 0x0290D               ) -- RIGHTWARDS DOUBLE DASH ARROW
-             , ("rbbrk"                                  , Left 0x02773               ) -- LIGHT RIGHT TORTOISE SHELL BRACKET ORNAMENT
-             , ("rbrace"                                 , Left 0x0007D               ) -- RIGHT CURLY BRACKET
-             , ("rbrack"                                 , Left 0x0005D               ) -- RIGHT SQUARE BRACKET
-             , ("rbrke"                                  , Left 0x0298C               ) -- RIGHT SQUARE BRACKET WITH UNDERBAR
-             , ("rbrksld"                                , Left 0x0298E               ) -- RIGHT SQUARE BRACKET WITH TICK IN BOTTOM CORNER
-             , ("rbrkslu"                                , Left 0x02990               ) -- RIGHT SQUARE BRACKET WITH TICK IN TOP CORNER
-             , ("rcaron"                                 , Left 0x00159               ) -- LATIN SMALL LETTER R WITH CARON
-             , ("rcedil"                                 , Left 0x00157               ) -- LATIN SMALL LETTER R WITH CEDILLA
-             , ("rceil"                                  , Left 0x02309               ) -- RIGHT CEILING
-             , ("rcub"                                   , Left 0x0007D               ) -- RIGHT CURLY BRACKET
-             , ("rcy"                                    , Left 0x00440               ) -- CYRILLIC SMALL LETTER ER
-             , ("rdca"                                   , Left 0x02937               ) -- ARROW POINTING DOWNWARDS THEN CURVING RIGHTWARDS
-             , ("rdldhar"                                , Left 0x02969               ) -- RIGHTWARDS HARPOON WITH BARB DOWN ABOVE LEFTWARDS HARPOON WITH BARB DOWN
-             , ("rdquo"                                  , Left 0x0201D               ) -- RIGHT DOUBLE QUOTATION MARK
-             , ("rdquor"                                 , Left 0x0201D               ) -- RIGHT DOUBLE QUOTATION MARK
-             , ("rdsh"                                   , Left 0x021B3               ) -- DOWNWARDS ARROW WITH TIP RIGHTWARDS
-             , ("real"                                   , Left 0x0211C               ) -- BLACK-LETTER CAPITAL R
-             , ("realine"                                , Left 0x0211B               ) -- SCRIPT CAPITAL R
-             , ("realpart"                               , Left 0x0211C               ) -- BLACK-LETTER CAPITAL R
-             , ("reals"                                  , Left 0x0211D               ) -- DOUBLE-STRUCK CAPITAL R
-             , ("rect"                                   , Left 0x025AD               ) -- WHITE RECTANGLE
-             , ("reg"                                    , Left 0x000AE               ) -- REGISTERED SIGN
-             , ("rfisht"                                 , Left 0x0297D               ) -- RIGHT FISH TAIL
-             , ("rfloor"                                 , Left 0x0230B               ) -- RIGHT FLOOR
-             , ("rfr"                                    , Left 0x1D52F               ) -- MATHEMATICAL FRAKTUR SMALL R
-             , ("rgr"                                    , Left 0x003C1               ) -- GREEK SMALL LETTER RHO
-             , ("rhard"                                  , Left 0x021C1               ) -- RIGHTWARDS HARPOON WITH BARB DOWNWARDS
-             , ("rharu"                                  , Left 0x021C0               ) -- RIGHTWARDS HARPOON WITH BARB UPWARDS
-             , ("rharul"                                 , Left 0x0296C               ) -- RIGHTWARDS HARPOON WITH BARB UP ABOVE LONG DASH
-             , ("rho"                                    , Left 0x003C1               ) -- GREEK SMALL LETTER RHO
-             , ("rhov"                                   , Left 0x003F1               ) -- GREEK RHO SYMBOL
-             , ("rightarrow"                             , Left 0x02192               ) -- RIGHTWARDS ARROW
-             , ("rightarrowtail"                         , Left 0x021A3               ) -- RIGHTWARDS ARROW WITH TAIL
-             , ("rightharpoondown"                       , Left 0x021C1               ) -- RIGHTWARDS HARPOON WITH BARB DOWNWARDS
-             , ("rightharpoonup"                         , Left 0x021C0               ) -- RIGHTWARDS HARPOON WITH BARB UPWARDS
-             , ("rightleftarrows"                        , Left 0x021C4               ) -- RIGHTWARDS ARROW OVER LEFTWARDS ARROW
-             , ("rightleftharpoons"                      , Left 0x021CC               ) -- RIGHTWARDS HARPOON OVER LEFTWARDS HARPOON
-             , ("rightrightarrows"                       , Left 0x021C9               ) -- RIGHTWARDS PAIRED ARROWS
-             , ("rightsquigarrow"                        , Left 0x0219D               ) -- RIGHTWARDS WAVE ARROW
-             , ("rightthreetimes"                        , Left 0x022CC               ) -- RIGHT SEMIDIRECT PRODUCT
-             , ("ring"                                   , Left 0x002DA               ) -- RING ABOVE
-             , ("risingdotseq"                           , Left 0x02253               ) -- IMAGE OF OR APPROXIMATELY EQUAL TO
-             , ("rlarr"                                  , Left 0x021C4               ) -- RIGHTWARDS ARROW OVER LEFTWARDS ARROW
-             , ("rlhar"                                  , Left 0x021CC               ) -- RIGHTWARDS HARPOON OVER LEFTWARDS HARPOON
-             , ("rlm"                                    , Left 0x0200F               ) -- RIGHT-TO-LEFT MARK
-             , ("rmoust"                                 , Left 0x023B1               ) -- UPPER RIGHT OR LOWER LEFT CURLY BRACKET SECTION
-             , ("rmoustache"                             , Left 0x023B1               ) -- UPPER RIGHT OR LOWER LEFT CURLY BRACKET SECTION
-             , ("rnmid"                                  , Left 0x02AEE               ) -- DOES NOT DIVIDE WITH REVERSED NEGATION SLASH
-             , ("roang"                                  , Left 0x027ED               ) -- MATHEMATICAL RIGHT WHITE TORTOISE SHELL BRACKET
-             , ("roarr"                                  , Left 0x021FE               ) -- RIGHTWARDS OPEN-HEADED ARROW
-             , ("robrk"                                  , Left 0x027E7               ) -- MATHEMATICAL RIGHT WHITE SQUARE BRACKET
-             , ("ropar"                                  , Left 0x02986               ) -- RIGHT WHITE PARENTHESIS
-             , ("ropf"                                   , Left 0x1D563               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL R
-             , ("roplus"                                 , Left 0x02A2E               ) -- PLUS SIGN IN RIGHT HALF CIRCLE
-             , ("rotimes"                                , Left 0x02A35               ) -- MULTIPLICATION SIGN IN RIGHT HALF CIRCLE
-             , ("rpar"                                   , Left 0x00029               ) -- RIGHT PARENTHESIS
-             , ("rpargt"                                 , Left 0x02994               ) -- RIGHT ARC GREATER-THAN BRACKET
-             , ("rppolint"                               , Left 0x02A12               ) -- LINE INTEGRATION WITH RECTANGULAR PATH AROUND POLE
-             , ("rrarr"                                  , Left 0x021C9               ) -- RIGHTWARDS PAIRED ARROWS
-             , ("rsaquo"                                 , Left 0x0203A               ) -- SINGLE RIGHT-POINTING ANGLE QUOTATION MARK
-             , ("rscr"                                   , Left 0x1D4C7               ) -- MATHEMATICAL SCRIPT SMALL R
-             , ("rsh"                                    , Left 0x021B1               ) -- UPWARDS ARROW WITH TIP RIGHTWARDS
-             , ("rsqb"                                   , Left 0x0005D               ) -- RIGHT SQUARE BRACKET
-             , ("rsquo"                                  , Left 0x02019               ) -- RIGHT SINGLE QUOTATION MARK
-             , ("rsquor"                                 , Left 0x02019               ) -- RIGHT SINGLE QUOTATION MARK
-             , ("rthree"                                 , Left 0x022CC               ) -- RIGHT SEMIDIRECT PRODUCT
-             , ("rtimes"                                 , Left 0x022CA               ) -- RIGHT NORMAL FACTOR SEMIDIRECT PRODUCT
-             , ("rtri"                                   , Left 0x025B9               ) -- WHITE RIGHT-POINTING SMALL TRIANGLE
-             , ("rtrie"                                  , Left 0x022B5               ) -- CONTAINS AS NORMAL SUBGROUP OR EQUAL TO
-             , ("rtrif"                                  , Left 0x025B8               ) -- BLACK RIGHT-POINTING SMALL TRIANGLE
-             , ("rtriltri"                               , Left 0x029CE               ) -- RIGHT TRIANGLE ABOVE LEFT TRIANGLE
-             , ("ruluhar"                                , Left 0x02968               ) -- RIGHTWARDS HARPOON WITH BARB UP ABOVE LEFTWARDS HARPOON WITH BARB UP
-             , ("rx"                                     , Left 0x0211E               ) -- PRESCRIPTION TAKE
-             , ("sacute"                                 , Left 0x0015B               ) -- LATIN SMALL LETTER S WITH ACUTE
-             , ("sbquo"                                  , Left 0x0201A               ) -- SINGLE LOW-9 QUOTATION MARK
-             , ("sc"                                     , Left 0x0227B               ) -- SUCCEEDS
-             , ("scE"                                    , Left 0x02AB4               ) -- SUCCEEDS ABOVE EQUALS SIGN
-             , ("scap"                                   , Left 0x02AB8               ) -- SUCCEEDS ABOVE ALMOST EQUAL TO
-             , ("scaron"                                 , Left 0x00161               ) -- LATIN SMALL LETTER S WITH CARON
-             , ("sccue"                                  , Left 0x0227D               ) -- SUCCEEDS OR EQUAL TO
-             , ("sce"                                    , Left 0x02AB0               ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN
-             , ("scedil"                                 , Left 0x0015F               ) -- LATIN SMALL LETTER S WITH CEDILLA
-             , ("scirc"                                  , Left 0x0015D               ) -- LATIN SMALL LETTER S WITH CIRCUMFLEX
-             , ("scnE"                                   , Left 0x02AB6               ) -- SUCCEEDS ABOVE NOT EQUAL TO
-             , ("scnap"                                  , Left 0x02ABA               ) -- SUCCEEDS ABOVE NOT ALMOST EQUAL TO
-             , ("scnsim"                                 , Left 0x022E9               ) -- SUCCEEDS BUT NOT EQUIVALENT TO
-             , ("scpolint"                               , Left 0x02A13               ) -- LINE INTEGRATION WITH SEMICIRCULAR PATH AROUND POLE
-             , ("scsim"                                  , Left 0x0227F               ) -- SUCCEEDS OR EQUIVALENT TO
-             , ("scy"                                    , Left 0x00441               ) -- CYRILLIC SMALL LETTER ES
-             , ("sdot"                                   , Left 0x022C5               ) -- DOT OPERATOR
-             , ("sdotb"                                  , Left 0x022A1               ) -- SQUARED DOT OPERATOR
-             , ("sdote"                                  , Left 0x02A66               ) -- EQUALS SIGN WITH DOT BELOW
-             , ("seArr"                                  , Left 0x021D8               ) -- SOUTH EAST DOUBLE ARROW
-             , ("searhk"                                 , Left 0x02925               ) -- SOUTH EAST ARROW WITH HOOK
-             , ("searr"                                  , Left 0x02198               ) -- SOUTH EAST ARROW
-             , ("searrow"                                , Left 0x02198               ) -- SOUTH EAST ARROW
-             , ("sect"                                   , Left 0x000A7               ) -- SECTION SIGN
-             , ("semi"                                   , Left 0x0003B               ) -- SEMICOLON
-             , ("seswar"                                 , Left 0x02929               ) -- SOUTH EAST ARROW AND SOUTH WEST ARROW
-             , ("setminus"                               , Left 0x02216               ) -- SET MINUS
-             , ("setmn"                                  , Left 0x02216               ) -- SET MINUS
-             , ("sext"                                   , Left 0x02736               ) -- SIX POINTED BLACK STAR
-             , ("sfgr"                                   , Left 0x003C2               ) -- GREEK SMALL LETTER FINAL SIGMA
-             , ("sfr"                                    , Left 0x1D530               ) -- MATHEMATICAL FRAKTUR SMALL S
-             , ("sfrown"                                 , Left 0x02322               ) -- FROWN
-             , ("sgr"                                    , Left 0x003C3               ) -- GREEK SMALL LETTER SIGMA
-             , ("sharp"                                  , Left 0x0266F               ) -- MUSIC SHARP SIGN
-             , ("shchcy"                                 , Left 0x00449               ) -- CYRILLIC SMALL LETTER SHCHA
-             , ("shcy"                                   , Left 0x00448               ) -- CYRILLIC SMALL LETTER SHA
-             , ("shortmid"                               , Left 0x02223               ) -- DIVIDES
-             , ("shortparallel"                          , Left 0x02225               ) -- PARALLEL TO
-             , ("shy"                                    , Left 0x000AD               ) -- SOFT HYPHEN
-             , ("sigma"                                  , Left 0x003C3               ) -- GREEK SMALL LETTER SIGMA
-             , ("sigmaf"                                 , Left 0x003C2               ) -- GREEK SMALL LETTER FINAL SIGMA
-             , ("sigmav"                                 , Left 0x003C2               ) -- GREEK SMALL LETTER FINAL SIGMA
-             , ("sim"                                    , Left 0x0223C               ) -- TILDE OPERATOR
-             , ("simdot"                                 , Left 0x02A6A               ) -- TILDE OPERATOR WITH DOT ABOVE
-             , ("sime"                                   , Left 0x02243               ) -- ASYMPTOTICALLY EQUAL TO
-             , ("simeq"                                  , Left 0x02243               ) -- ASYMPTOTICALLY EQUAL TO
-             , ("simg"                                   , Left 0x02A9E               ) -- SIMILAR OR GREATER-THAN
-             , ("simgE"                                  , Left 0x02AA0               ) -- SIMILAR ABOVE GREATER-THAN ABOVE EQUALS SIGN
-             , ("siml"                                   , Left 0x02A9D               ) -- SIMILAR OR LESS-THAN
-             , ("simlE"                                  , Left 0x02A9F               ) -- SIMILAR ABOVE LESS-THAN ABOVE EQUALS SIGN
-             , ("simne"                                  , Left 0x02246               ) -- APPROXIMATELY BUT NOT ACTUALLY EQUAL TO
-             , ("simplus"                                , Left 0x02A24               ) -- PLUS SIGN WITH TILDE ABOVE
-             , ("simrarr"                                , Left 0x02972               ) -- TILDE OPERATOR ABOVE RIGHTWARDS ARROW
-             , ("slarr"                                  , Left 0x02190               ) -- LEFTWARDS ARROW
-             , ("smallsetminus"                          , Left 0x02216               ) -- SET MINUS
-             , ("smashp"                                 , Left 0x02A33               ) -- SMASH PRODUCT
-             , ("smeparsl"                               , Left 0x029E4               ) -- EQUALS SIGN AND SLANTED PARALLEL WITH TILDE ABOVE
-             , ("smid"                                   , Left 0x02223               ) -- DIVIDES
-             , ("smile"                                  , Left 0x02323               ) -- SMILE
-             , ("smt"                                    , Left 0x02AAA               ) -- SMALLER THAN
-             , ("smte"                                   , Left 0x02AAC               ) -- SMALLER THAN OR EQUAL TO
-             , ("smtes"                                  , Right [ 0x02AAC, 0x0FE00 ] ) -- SMALLER THAN OR slanted EQUAL
-             , ("softcy"                                 , Left 0x0044C               ) -- CYRILLIC SMALL LETTER SOFT SIGN
-             , ("sol"                                    , Left 0x0002F               ) -- SOLIDUS
-             , ("solb"                                   , Left 0x029C4               ) -- SQUARED RISING DIAGONAL SLASH
-             , ("solbar"                                 , Left 0x0233F               ) -- APL FUNCTIONAL SYMBOL SLASH BAR
-             , ("sopf"                                   , Left 0x1D564               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL S
-             , ("spades"                                 , Left 0x02660               ) -- BLACK SPADE SUIT
-             , ("spadesuit"                              , Left 0x02660               ) -- BLACK SPADE SUIT
-             , ("spar"                                   , Left 0x02225               ) -- PARALLEL TO
-             , ("sqcap"                                  , Left 0x02293               ) -- SQUARE CAP
-             , ("sqcaps"                                 , Right [ 0x02293, 0x0FE00 ] ) -- SQUARE CAP with serifs
-             , ("sqcup"                                  , Left 0x02294               ) -- SQUARE CUP
-             , ("sqcups"                                 , Right [ 0x02294, 0x0FE00 ] ) -- SQUARE CUP with serifs
-             , ("sqsub"                                  , Left 0x0228F               ) -- SQUARE IMAGE OF
-             , ("sqsube"                                 , Left 0x02291               ) -- SQUARE IMAGE OF OR EQUAL TO
-             , ("sqsubset"                               , Left 0x0228F               ) -- SQUARE IMAGE OF
-             , ("sqsubseteq"                             , Left 0x02291               ) -- SQUARE IMAGE OF OR EQUAL TO
-             , ("sqsup"                                  , Left 0x02290               ) -- SQUARE ORIGINAL OF
-             , ("sqsupe"                                 , Left 0x02292               ) -- SQUARE ORIGINAL OF OR EQUAL TO
-             , ("sqsupset"                               , Left 0x02290               ) -- SQUARE ORIGINAL OF
-             , ("sqsupseteq"                             , Left 0x02292               ) -- SQUARE ORIGINAL OF OR EQUAL TO
-             , ("squ"                                    , Left 0x025A1               ) -- WHITE SQUARE
-             , ("square"                                 , Left 0x025A1               ) -- WHITE SQUARE
-             , ("squarf"                                 , Left 0x025AA               ) -- BLACK SMALL SQUARE
-             , ("squf"                                   , Left 0x025AA               ) -- BLACK SMALL SQUARE
-             , ("srarr"                                  , Left 0x02192               ) -- RIGHTWARDS ARROW
-             , ("sscr"                                   , Left 0x1D4C8               ) -- MATHEMATICAL SCRIPT SMALL S
-             , ("ssetmn"                                 , Left 0x02216               ) -- SET MINUS
-             , ("ssmile"                                 , Left 0x02323               ) -- SMILE
-             , ("sstarf"                                 , Left 0x022C6               ) -- STAR OPERATOR
-             , ("star"                                   , Left 0x02606               ) -- WHITE STAR
-             , ("starf"                                  , Left 0x02605               ) -- BLACK STAR
-             , ("straightepsilon"                        , Left 0x003F5               ) -- GREEK LUNATE EPSILON SYMBOL
-             , ("straightphi"                            , Left 0x003D5               ) -- GREEK PHI SYMBOL
-             , ("strns"                                  , Left 0x000AF               ) -- MACRON
-             , ("sub"                                    , Left 0x02282               ) -- SUBSET OF
-             , ("subE"                                   , Left 0x02AC5               ) -- SUBSET OF ABOVE EQUALS SIGN
-             , ("subdot"                                 , Left 0x02ABD               ) -- SUBSET WITH DOT
-             , ("sube"                                   , Left 0x02286               ) -- SUBSET OF OR EQUAL TO
-             , ("subedot"                                , Left 0x02AC3               ) -- SUBSET OF OR EQUAL TO WITH DOT ABOVE
-             , ("submult"                                , Left 0x02AC1               ) -- SUBSET WITH MULTIPLICATION SIGN BELOW
-             , ("subnE"                                  , Left 0x02ACB               ) -- SUBSET OF ABOVE NOT EQUAL TO
-             , ("subne"                                  , Left 0x0228A               ) -- SUBSET OF WITH NOT EQUAL TO
-             , ("subplus"                                , Left 0x02ABF               ) -- SUBSET WITH PLUS SIGN BELOW
-             , ("subrarr"                                , Left 0x02979               ) -- SUBSET ABOVE RIGHTWARDS ARROW
-             , ("subset"                                 , Left 0x02282               ) -- SUBSET OF
-             , ("subseteq"                               , Left 0x02286               ) -- SUBSET OF OR EQUAL TO
-             , ("subseteqq"                              , Left 0x02AC5               ) -- SUBSET OF ABOVE EQUALS SIGN
-             , ("subsetneq"                              , Left 0x0228A               ) -- SUBSET OF WITH NOT EQUAL TO
-             , ("subsetneqq"                             , Left 0x02ACB               ) -- SUBSET OF ABOVE NOT EQUAL TO
-             , ("subsim"                                 , Left 0x02AC7               ) -- SUBSET OF ABOVE TILDE OPERATOR
-             , ("subsub"                                 , Left 0x02AD5               ) -- SUBSET ABOVE SUBSET
-             , ("subsup"                                 , Left 0x02AD3               ) -- SUBSET ABOVE SUPERSET
-             , ("succ"                                   , Left 0x0227B               ) -- SUCCEEDS
-             , ("succapprox"                             , Left 0x02AB8               ) -- SUCCEEDS ABOVE ALMOST EQUAL TO
-             , ("succcurlyeq"                            , Left 0x0227D               ) -- SUCCEEDS OR EQUAL TO
-             , ("succeq"                                 , Left 0x02AB0               ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN
-             , ("succnapprox"                            , Left 0x02ABA               ) -- SUCCEEDS ABOVE NOT ALMOST EQUAL TO
-             , ("succneqq"                               , Left 0x02AB6               ) -- SUCCEEDS ABOVE NOT EQUAL TO
-             , ("succnsim"                               , Left 0x022E9               ) -- SUCCEEDS BUT NOT EQUIVALENT TO
-             , ("succsim"                                , Left 0x0227F               ) -- SUCCEEDS OR EQUIVALENT TO
-             , ("sum"                                    , Left 0x02211               ) -- N-ARY SUMMATION
-             , ("sung"                                   , Left 0x0266A               ) -- EIGHTH NOTE
-             , ("sup"                                    , Left 0x02283               ) -- SUPERSET OF
-             , ("sup1"                                   , Left 0x000B9               ) -- SUPERSCRIPT ONE
-             , ("sup2"                                   , Left 0x000B2               ) -- SUPERSCRIPT TWO
-             , ("sup3"                                   , Left 0x000B3               ) -- SUPERSCRIPT THREE
-             , ("supE"                                   , Left 0x02AC6               ) -- SUPERSET OF ABOVE EQUALS SIGN
-             , ("supdot"                                 , Left 0x02ABE               ) -- SUPERSET WITH DOT
-             , ("supdsub"                                , Left 0x02AD8               ) -- SUPERSET BESIDE AND JOINED BY DASH WITH SUBSET
-             , ("supe"                                   , Left 0x02287               ) -- SUPERSET OF OR EQUAL TO
-             , ("supedot"                                , Left 0x02AC4               ) -- SUPERSET OF OR EQUAL TO WITH DOT ABOVE
-             , ("suphsol"                                , Left 0x027C9               ) -- SUPERSET PRECEDING SOLIDUS
-             , ("suphsub"                                , Left 0x02AD7               ) -- SUPERSET BESIDE SUBSET
-             , ("suplarr"                                , Left 0x0297B               ) -- SUPERSET ABOVE LEFTWARDS ARROW
-             , ("supmult"                                , Left 0x02AC2               ) -- SUPERSET WITH MULTIPLICATION SIGN BELOW
-             , ("supnE"                                  , Left 0x02ACC               ) -- SUPERSET OF ABOVE NOT EQUAL TO
-             , ("supne"                                  , Left 0x0228B               ) -- SUPERSET OF WITH NOT EQUAL TO
-             , ("supplus"                                , Left 0x02AC0               ) -- SUPERSET WITH PLUS SIGN BELOW
-             , ("supset"                                 , Left 0x02283               ) -- SUPERSET OF
-             , ("supseteq"                               , Left 0x02287               ) -- SUPERSET OF OR EQUAL TO
-             , ("supseteqq"                              , Left 0x02AC6               ) -- SUPERSET OF ABOVE EQUALS SIGN
-             , ("supsetneq"                              , Left 0x0228B               ) -- SUPERSET OF WITH NOT EQUAL TO
-             , ("supsetneqq"                             , Left 0x02ACC               ) -- SUPERSET OF ABOVE NOT EQUAL TO
-             , ("supsim"                                 , Left 0x02AC8               ) -- SUPERSET OF ABOVE TILDE OPERATOR
-             , ("supsub"                                 , Left 0x02AD4               ) -- SUPERSET ABOVE SUBSET
-             , ("supsup"                                 , Left 0x02AD6               ) -- SUPERSET ABOVE SUPERSET
-             , ("swArr"                                  , Left 0x021D9               ) -- SOUTH WEST DOUBLE ARROW
-             , ("swarhk"                                 , Left 0x02926               ) -- SOUTH WEST ARROW WITH HOOK
-             , ("swarr"                                  , Left 0x02199               ) -- SOUTH WEST ARROW
-             , ("swarrow"                                , Left 0x02199               ) -- SOUTH WEST ARROW
-             , ("swnwar"                                 , Left 0x0292A               ) -- SOUTH WEST ARROW AND NORTH WEST ARROW
-             , ("szlig"                                  , Left 0x000DF               ) -- LATIN SMALL LETTER SHARP S
-             , ("target"                                 , Left 0x02316               ) -- POSITION INDICATOR
-             , ("tau"                                    , Left 0x003C4               ) -- GREEK SMALL LETTER TAU
-             , ("tbrk"                                   , Left 0x023B4               ) -- TOP SQUARE BRACKET
-             , ("tcaron"                                 , Left 0x00165               ) -- LATIN SMALL LETTER T WITH CARON
-             , ("tcedil"                                 , Left 0x00163               ) -- LATIN SMALL LETTER T WITH CEDILLA
-             , ("tcy"                                    , Left 0x00442               ) -- CYRILLIC SMALL LETTER TE
-             , ("tdot"                                   , Left 0x020DB               ) -- COMBINING THREE DOTS ABOVE
-             , ("telrec"                                 , Left 0x02315               ) -- TELEPHONE RECORDER
-             , ("tfr"                                    , Left 0x1D531               ) -- MATHEMATICAL FRAKTUR SMALL T
-             , ("tgr"                                    , Left 0x003C4               ) -- GREEK SMALL LETTER TAU
-             , ("there4"                                 , Left 0x02234               ) -- THEREFORE
-             , ("therefore"                              , Left 0x02234               ) -- THEREFORE
-             , ("theta"                                  , Left 0x003B8               ) -- GREEK SMALL LETTER THETA
-             , ("thetasym"                               , Left 0x003D1               ) -- GREEK THETA SYMBOL
-             , ("thetav"                                 , Left 0x003D1               ) -- GREEK THETA SYMBOL
-             , ("thgr"                                   , Left 0x003B8               ) -- GREEK SMALL LETTER THETA
-             , ("thickapprox"                            , Left 0x02248               ) -- ALMOST EQUAL TO
-             , ("thicksim"                               , Left 0x0223C               ) -- TILDE OPERATOR
-             , ("thinsp"                                 , Left 0x02009               ) -- THIN SPACE
-             , ("thkap"                                  , Left 0x02248               ) -- ALMOST EQUAL TO
-             , ("thksim"                                 , Left 0x0223C               ) -- TILDE OPERATOR
-             , ("thorn"                                  , Left 0x000FE               ) -- LATIN SMALL LETTER THORN
-             , ("tilde"                                  , Left 0x002DC               ) -- SMALL TILDE
-             , ("times"                                  , Left 0x000D7               ) -- MULTIPLICATION SIGN
-             , ("timesb"                                 , Left 0x022A0               ) -- SQUARED TIMES
-             , ("timesbar"                               , Left 0x02A31               ) -- MULTIPLICATION SIGN WITH UNDERBAR
-             , ("timesd"                                 , Left 0x02A30               ) -- MULTIPLICATION SIGN WITH DOT ABOVE
-             , ("tint"                                   , Left 0x0222D               ) -- TRIPLE INTEGRAL
-             , ("toea"                                   , Left 0x02928               ) -- NORTH EAST ARROW AND SOUTH EAST ARROW
-             , ("top"                                    , Left 0x022A4               ) -- DOWN TACK
-             , ("topbot"                                 , Left 0x02336               ) -- APL FUNCTIONAL SYMBOL I-BEAM
-             , ("topcir"                                 , Left 0x02AF1               ) -- DOWN TACK WITH CIRCLE BELOW
-             , ("topf"                                   , Left 0x1D565               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL T
-             , ("topfork"                                , Left 0x02ADA               ) -- PITCHFORK WITH TEE TOP
-             , ("tosa"                                   , Left 0x02929               ) -- SOUTH EAST ARROW AND SOUTH WEST ARROW
-             , ("tprime"                                 , Left 0x02034               ) -- TRIPLE PRIME
-             , ("trade"                                  , Left 0x02122               ) -- TRADE MARK SIGN
-             , ("triangle"                               , Left 0x025B5               ) -- WHITE UP-POINTING SMALL TRIANGLE
-             , ("triangledown"                           , Left 0x025BF               ) -- WHITE DOWN-POINTING SMALL TRIANGLE
-             , ("triangleleft"                           , Left 0x025C3               ) -- WHITE LEFT-POINTING SMALL TRIANGLE
-             , ("trianglelefteq"                         , Left 0x022B4               ) -- NORMAL SUBGROUP OF OR EQUAL TO
-             , ("triangleq"                              , Left 0x0225C               ) -- DELTA EQUAL TO
-             , ("triangleright"                          , Left 0x025B9               ) -- WHITE RIGHT-POINTING SMALL TRIANGLE
-             , ("trianglerighteq"                        , Left 0x022B5               ) -- CONTAINS AS NORMAL SUBGROUP OR EQUAL TO
-             , ("tridot"                                 , Left 0x025EC               ) -- WHITE UP-POINTING TRIANGLE WITH DOT
-             , ("trie"                                   , Left 0x0225C               ) -- DELTA EQUAL TO
-             , ("triminus"                               , Left 0x02A3A               ) -- MINUS SIGN IN TRIANGLE
-             , ("triplus"                                , Left 0x02A39               ) -- PLUS SIGN IN TRIANGLE
-             , ("trisb"                                  , Left 0x029CD               ) -- TRIANGLE WITH SERIFS AT BOTTOM
-             , ("tritime"                                , Left 0x02A3B               ) -- MULTIPLICATION SIGN IN TRIANGLE
-             , ("trpezium"                               , Left 0x023E2               ) -- WHITE TRAPEZIUM
-             , ("tscr"                                   , Left 0x1D4C9               ) -- MATHEMATICAL SCRIPT SMALL T
-             , ("tscy"                                   , Left 0x00446               ) -- CYRILLIC SMALL LETTER TSE
-             , ("tshcy"                                  , Left 0x0045B               ) -- CYRILLIC SMALL LETTER TSHE
-             , ("tstrok"                                 , Left 0x00167               ) -- LATIN SMALL LETTER T WITH STROKE
-             , ("twixt"                                  , Left 0x0226C               ) -- BETWEEN
-             , ("twoheadleftarrow"                       , Left 0x0219E               ) -- LEFTWARDS TWO HEADED ARROW
-             , ("twoheadrightarrow"                      , Left 0x021A0               ) -- RIGHTWARDS TWO HEADED ARROW
-             , ("uArr"                                   , Left 0x021D1               ) -- UPWARDS DOUBLE ARROW
-             , ("uHar"                                   , Left 0x02963               ) -- UPWARDS HARPOON WITH BARB LEFT BESIDE UPWARDS HARPOON WITH BARB RIGHT
-             , ("uacgr"                                  , Left 0x003CD               ) -- GREEK SMALL LETTER UPSILON WITH TONOS
-             , ("uacute"                                 , Left 0x000FA               ) -- LATIN SMALL LETTER U WITH ACUTE
-             , ("uarr"                                   , Left 0x02191               ) -- UPWARDS ARROW
-             , ("ubrcy"                                  , Left 0x0045E               ) -- CYRILLIC SMALL LETTER SHORT U
-             , ("ubreve"                                 , Left 0x0016D               ) -- LATIN SMALL LETTER U WITH BREVE
-             , ("ucirc"                                  , Left 0x000FB               ) -- LATIN SMALL LETTER U WITH CIRCUMFLEX
-             , ("ucy"                                    , Left 0x00443               ) -- CYRILLIC SMALL LETTER U
-             , ("udarr"                                  , Left 0x021C5               ) -- UPWARDS ARROW LEFTWARDS OF DOWNWARDS ARROW
-             , ("udblac"                                 , Left 0x00171               ) -- LATIN SMALL LETTER U WITH DOUBLE ACUTE
-             , ("udhar"                                  , Left 0x0296E               ) -- UPWARDS HARPOON WITH BARB LEFT BESIDE DOWNWARDS HARPOON WITH BARB RIGHT
-             , ("udiagr"                                 , Left 0x003B0               ) -- GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND TONOS
-             , ("udigr"                                  , Left 0x003CB               ) -- GREEK SMALL LETTER UPSILON WITH DIALYTIKA
-             , ("ufisht"                                 , Left 0x0297E               ) -- UP FISH TAIL
-             , ("ufr"                                    , Left 0x1D532               ) -- MATHEMATICAL FRAKTUR SMALL U
-             , ("ugr"                                    , Left 0x003C5               ) -- GREEK SMALL LETTER UPSILON
-             , ("ugrave"                                 , Left 0x000F9               ) -- LATIN SMALL LETTER U WITH GRAVE
-             , ("uharl"                                  , Left 0x021BF               ) -- UPWARDS HARPOON WITH BARB LEFTWARDS
-             , ("uharr"                                  , Left 0x021BE               ) -- UPWARDS HARPOON WITH BARB RIGHTWARDS
-             , ("uhblk"                                  , Left 0x02580               ) -- UPPER HALF BLOCK
-             , ("ulcorn"                                 , Left 0x0231C               ) -- TOP LEFT CORNER
-             , ("ulcorner"                               , Left 0x0231C               ) -- TOP LEFT CORNER
-             , ("ulcrop"                                 , Left 0x0230F               ) -- TOP LEFT CROP
-             , ("ultri"                                  , Left 0x025F8               ) -- UPPER LEFT TRIANGLE
-             , ("umacr"                                  , Left 0x0016B               ) -- LATIN SMALL LETTER U WITH MACRON
-             , ("uml"                                    , Left 0x000A8               ) -- DIAERESIS
-             , ("uogon"                                  , Left 0x00173               ) -- LATIN SMALL LETTER U WITH OGONEK
-             , ("uopf"                                   , Left 0x1D566               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL U
-             , ("uparrow"                                , Left 0x02191               ) -- UPWARDS ARROW
-             , ("updownarrow"                            , Left 0x02195               ) -- UP DOWN ARROW
-             , ("upharpoonleft"                          , Left 0x021BF               ) -- UPWARDS HARPOON WITH BARB LEFTWARDS
-             , ("upharpoonright"                         , Left 0x021BE               ) -- UPWARDS HARPOON WITH BARB RIGHTWARDS
-             , ("uplus"                                  , Left 0x0228E               ) -- MULTISET UNION
-             , ("upsi"                                   , Left 0x003C5               ) -- GREEK SMALL LETTER UPSILON
-             , ("upsih"                                  , Left 0x003D2               ) -- GREEK UPSILON WITH HOOK SYMBOL
-             , ("upsilon"                                , Left 0x003C5               ) -- GREEK SMALL LETTER UPSILON
-             , ("upuparrows"                             , Left 0x021C8               ) -- UPWARDS PAIRED ARROWS
-             , ("urcorn"                                 , Left 0x0231D               ) -- TOP RIGHT CORNER
-             , ("urcorner"                               , Left 0x0231D               ) -- TOP RIGHT CORNER
-             , ("urcrop"                                 , Left 0x0230E               ) -- TOP RIGHT CROP
-             , ("uring"                                  , Left 0x0016F               ) -- LATIN SMALL LETTER U WITH RING ABOVE
-             , ("urtri"                                  , Left 0x025F9               ) -- UPPER RIGHT TRIANGLE
-             , ("uscr"                                   , Left 0x1D4CA               ) -- MATHEMATICAL SCRIPT SMALL U
-             , ("utdot"                                  , Left 0x022F0               ) -- UP RIGHT DIAGONAL ELLIPSIS
-             , ("utilde"                                 , Left 0x00169               ) -- LATIN SMALL LETTER U WITH TILDE
-             , ("utri"                                   , Left 0x025B5               ) -- WHITE UP-POINTING SMALL TRIANGLE
-             , ("utrif"                                  , Left 0x025B4               ) -- BLACK UP-POINTING SMALL TRIANGLE
-             , ("uuarr"                                  , Left 0x021C8               ) -- UPWARDS PAIRED ARROWS
-             , ("uuml"                                   , Left 0x000FC               ) -- LATIN SMALL LETTER U WITH DIAERESIS
-             , ("uwangle"                                , Left 0x029A7               ) -- OBLIQUE ANGLE OPENING DOWN
-             , ("vArr"                                   , Left 0x021D5               ) -- UP DOWN DOUBLE ARROW
-             , ("vBar"                                   , Left 0x02AE8               ) -- SHORT UP TACK WITH UNDERBAR
-             , ("vBarv"                                  , Left 0x02AE9               ) -- SHORT UP TACK ABOVE SHORT DOWN TACK
-             , ("vDash"                                  , Left 0x022A8               ) -- TRUE
-             , ("vangrt"                                 , Left 0x0299C               ) -- RIGHT ANGLE VARIANT WITH SQUARE
-             , ("varepsilon"                             , Left 0x003F5               ) -- GREEK LUNATE EPSILON SYMBOL
-             , ("varkappa"                               , Left 0x003F0               ) -- GREEK KAPPA SYMBOL
-             , ("varnothing"                             , Left 0x02205               ) -- EMPTY SET
-             , ("varphi"                                 , Left 0x003D5               ) -- GREEK PHI SYMBOL
-             , ("varpi"                                  , Left 0x003D6               ) -- GREEK PI SYMBOL
-             , ("varpropto"                              , Left 0x0221D               ) -- PROPORTIONAL TO
-             , ("varr"                                   , Left 0x02195               ) -- UP DOWN ARROW
-             , ("varrho"                                 , Left 0x003F1               ) -- GREEK RHO SYMBOL
-             , ("varsigma"                               , Left 0x003C2               ) -- GREEK SMALL LETTER FINAL SIGMA
-             , ("varsubsetneq"                           , Right [ 0x0228A, 0x0FE00 ] ) -- SUBSET OF WITH NOT EQUAL TO - variant with stroke through bottom members
-             , ("varsubsetneqq"                          , Right [ 0x02ACB, 0x0FE00 ] ) -- SUBSET OF ABOVE NOT EQUAL TO - variant with stroke through bottom members
-             , ("varsupsetneq"                           , Right [ 0x0228B, 0x0FE00 ] ) -- SUPERSET OF WITH NOT EQUAL TO - variant with stroke through bottom members
-             , ("varsupsetneqq"                          , Right [ 0x02ACC, 0x0FE00 ] ) -- SUPERSET OF ABOVE NOT EQUAL TO - variant with stroke through bottom members
-             , ("vartheta"                               , Left 0x003D1               ) -- GREEK THETA SYMBOL
-             , ("vartriangleleft"                        , Left 0x022B2               ) -- NORMAL SUBGROUP OF
-             , ("vartriangleright"                       , Left 0x022B3               ) -- CONTAINS AS NORMAL SUBGROUP
-             , ("vcy"                                    , Left 0x00432               ) -- CYRILLIC SMALL LETTER VE
-             , ("vdash"                                  , Left 0x022A2               ) -- RIGHT TACK
-             , ("vee"                                    , Left 0x02228               ) -- LOGICAL OR
-             , ("veebar"                                 , Left 0x022BB               ) -- XOR
-             , ("veeeq"                                  , Left 0x0225A               ) -- EQUIANGULAR TO
-             , ("vellip"                                 , Left 0x022EE               ) -- VERTICAL ELLIPSIS
-             , ("verbar"                                 , Left 0x0007C               ) -- VERTICAL LINE
-             , ("vert"                                   , Left 0x0007C               ) -- VERTICAL LINE
-             , ("vfr"                                    , Left 0x1D533               ) -- MATHEMATICAL FRAKTUR SMALL V
-             , ("vltri"                                  , Left 0x022B2               ) -- NORMAL SUBGROUP OF
-             , ("vnsub"                                  , Right [ 0x02282, 0x020D2 ] ) -- SUBSET OF with vertical line
-             , ("vnsup"                                  , Right [ 0x02283, 0x020D2 ] ) -- SUPERSET OF with vertical line
-             , ("vopf"                                   , Left 0x1D567               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL V
-             , ("vprop"                                  , Left 0x0221D               ) -- PROPORTIONAL TO
-             , ("vrtri"                                  , Left 0x022B3               ) -- CONTAINS AS NORMAL SUBGROUP
-             , ("vscr"                                   , Left 0x1D4CB               ) -- MATHEMATICAL SCRIPT SMALL V
-             , ("vsubnE"                                 , Right [ 0x02ACB, 0x0FE00 ] ) -- SUBSET OF ABOVE NOT EQUAL TO - variant with stroke through bottom members
-             , ("vsubne"                                 , Right [ 0x0228A, 0x0FE00 ] ) -- SUBSET OF WITH NOT EQUAL TO - variant with stroke through bottom members
-             , ("vsupnE"                                 , Right [ 0x02ACC, 0x0FE00 ] ) -- SUPERSET OF ABOVE NOT EQUAL TO - variant with stroke through bottom members
-             , ("vsupne"                                 , Right [ 0x0228B, 0x0FE00 ] ) -- SUPERSET OF WITH NOT EQUAL TO - variant with stroke through bottom members
-             , ("vzigzag"                                , Left 0x0299A               ) -- VERTICAL ZIGZAG LINE
-             , ("wcirc"                                  , Left 0x00175               ) -- LATIN SMALL LETTER W WITH CIRCUMFLEX
-             , ("wedbar"                                 , Left 0x02A5F               ) -- LOGICAL AND WITH UNDERBAR
-             , ("wedge"                                  , Left 0x02227               ) -- LOGICAL AND
-             , ("wedgeq"                                 , Left 0x02259               ) -- ESTIMATES
-             , ("weierp"                                 , Left 0x02118               ) -- SCRIPT CAPITAL P
-             , ("wfr"                                    , Left 0x1D534               ) -- MATHEMATICAL FRAKTUR SMALL W
-             , ("wopf"                                   , Left 0x1D568               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL W
-             , ("wp"                                     , Left 0x02118               ) -- SCRIPT CAPITAL P
-             , ("wr"                                     , Left 0x02240               ) -- WREATH PRODUCT
-             , ("wreath"                                 , Left 0x02240               ) -- WREATH PRODUCT
-             , ("wscr"                                   , Left 0x1D4CC               ) -- MATHEMATICAL SCRIPT SMALL W
-             , ("xcap"                                   , Left 0x022C2               ) -- N-ARY INTERSECTION
-             , ("xcirc"                                  , Left 0x025EF               ) -- LARGE CIRCLE
-             , ("xcup"                                   , Left 0x022C3               ) -- N-ARY UNION
-             , ("xdtri"                                  , Left 0x025BD               ) -- WHITE DOWN-POINTING TRIANGLE
-             , ("xfr"                                    , Left 0x1D535               ) -- MATHEMATICAL FRAKTUR SMALL X
-             , ("xgr"                                    , Left 0x003BE               ) -- GREEK SMALL LETTER XI
-             , ("xhArr"                                  , Left 0x027FA               ) -- LONG LEFT RIGHT DOUBLE ARROW
-             , ("xharr"                                  , Left 0x027F7               ) -- LONG LEFT RIGHT ARROW
-             , ("xi"                                     , Left 0x003BE               ) -- GREEK SMALL LETTER XI
-             , ("xlArr"                                  , Left 0x027F8               ) -- LONG LEFTWARDS DOUBLE ARROW
-             , ("xlarr"                                  , Left 0x027F5               ) -- LONG LEFTWARDS ARROW
-             , ("xmap"                                   , Left 0x027FC               ) -- LONG RIGHTWARDS ARROW FROM BAR
-             , ("xnis"                                   , Left 0x022FB               ) -- CONTAINS WITH VERTICAL BAR AT END OF HORIZONTAL STROKE
-             , ("xodot"                                  , Left 0x02A00               ) -- N-ARY CIRCLED DOT OPERATOR
-             , ("xopf"                                   , Left 0x1D569               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL X
-             , ("xoplus"                                 , Left 0x02A01               ) -- N-ARY CIRCLED PLUS OPERATOR
-             , ("xotime"                                 , Left 0x02A02               ) -- N-ARY CIRCLED TIMES OPERATOR
-             , ("xrArr"                                  , Left 0x027F9               ) -- LONG RIGHTWARDS DOUBLE ARROW
-             , ("xrarr"                                  , Left 0x027F6               ) -- LONG RIGHTWARDS ARROW
-             , ("xscr"                                   , Left 0x1D4CD               ) -- MATHEMATICAL SCRIPT SMALL X
-             , ("xsqcup"                                 , Left 0x02A06               ) -- N-ARY SQUARE UNION OPERATOR
-             , ("xuplus"                                 , Left 0x02A04               ) -- N-ARY UNION OPERATOR WITH PLUS
-             , ("xutri"                                  , Left 0x025B3               ) -- WHITE UP-POINTING TRIANGLE
-             , ("xvee"                                   , Left 0x022C1               ) -- N-ARY LOGICAL OR
-             , ("xwedge"                                 , Left 0x022C0               ) -- N-ARY LOGICAL AND
-             , ("yacute"                                 , Left 0x000FD               ) -- LATIN SMALL LETTER Y WITH ACUTE
-             , ("yacy"                                   , Left 0x0044F               ) -- CYRILLIC SMALL LETTER YA
-             , ("ycirc"                                  , Left 0x00177               ) -- LATIN SMALL LETTER Y WITH CIRCUMFLEX
-             , ("ycy"                                    , Left 0x0044B               ) -- CYRILLIC SMALL LETTER YERU
-             , ("yen"                                    , Left 0x000A5               ) -- YEN SIGN
-             , ("yfr"                                    , Left 0x1D536               ) -- MATHEMATICAL FRAKTUR SMALL Y
-             , ("yicy"                                   , Left 0x00457               ) -- CYRILLIC SMALL LETTER YI
-             , ("yopf"                                   , Left 0x1D56A               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL Y
-             , ("yscr"                                   , Left 0x1D4CE               ) -- MATHEMATICAL SCRIPT SMALL Y
-             , ("yucy"                                   , Left 0x0044E               ) -- CYRILLIC SMALL LETTER YU
-             , ("yuml"                                   , Left 0x000FF               ) -- LATIN SMALL LETTER Y WITH DIAERESIS
-             , ("zacute"                                 , Left 0x0017A               ) -- LATIN SMALL LETTER Z WITH ACUTE
-             , ("zcaron"                                 , Left 0x0017E               ) -- LATIN SMALL LETTER Z WITH CARON
-             , ("zcy"                                    , Left 0x00437               ) -- CYRILLIC SMALL LETTER ZE
-             , ("zdot"                                   , Left 0x0017C               ) -- LATIN SMALL LETTER Z WITH DOT ABOVE
-             , ("zeetrf"                                 , Left 0x02128               ) -- BLACK-LETTER CAPITAL Z
-             , ("zeta"                                   , Left 0x003B6               ) -- GREEK SMALL LETTER ZETA
-             , ("zfr"                                    , Left 0x1D537               ) -- MATHEMATICAL FRAKTUR SMALL Z
-             , ("zgr"                                    , Left 0x003B6               ) -- GREEK SMALL LETTER ZETA
-             , ("zhcy"                                   , Left 0x00436               ) -- CYRILLIC SMALL LETTER ZHE
-             , ("zigrarr"                                , Left 0x021DD               ) -- RIGHTWARDS SQUIGGLE ARROW
-             , ("zopf"                                   , Left 0x1D56B               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL Z
-             , ("zscr"                                   , Left 0x1D4CF               ) -- MATHEMATICAL SCRIPT SMALL Z
-             , ("zwj"                                    , Left 0x0200D               ) -- ZERO WIDTH JOINER
-             , ("zwnj"                                   , Left 0x0200C               ) -- ZERO WIDTH NON-JOINER
-             ]
-
-
-
-
-
+entityENum =
+  [ ("AElig"                                  , Left 0x000C6               ) -- LATIN CAPITAL LETTER AE
+  , ("AMP"                                    , Left 0x00026               ) -- AMPERSAND
+  , ("Aacgr"                                  , Left 0x00386               ) -- GREEK CAPITAL LETTER ALPHA WITH TONOS
+  , ("Aacute"                                 , Left 0x000C1               ) -- LATIN CAPITAL LETTER A WITH ACUTE
+  , ("Abreve"                                 , Left 0x00102               ) -- LATIN CAPITAL LETTER A WITH BREVE
+  , ("Acirc"                                  , Left 0x000C2               ) -- LATIN CAPITAL LETTER A WITH CIRCUMFLEX
+  , ("Acy"                                    , Left 0x00410               ) -- CYRILLIC CAPITAL LETTER A
+  , ("Afr"                                    , Left 0x1D504               ) -- MATHEMATICAL FRAKTUR CAPITAL A
+  , ("Agr"                                    , Left 0x00391               ) -- GREEK CAPITAL LETTER ALPHA
+  , ("Agrave"                                 , Left 0x000C0               ) -- LATIN CAPITAL LETTER A WITH GRAVE
+  , ("Alpha"                                  , Left 0x00391               ) -- GREEK CAPITAL LETTER ALPHA
+  , ("Amacr"                                  , Left 0x00100               ) -- LATIN CAPITAL LETTER A WITH MACRON
+  , ("And"                                    , Left 0x02A53               ) -- DOUBLE LOGICAL AND
+  , ("Aogon"                                  , Left 0x00104               ) -- LATIN CAPITAL LETTER A WITH OGONEK
+  , ("Aopf"                                   , Left 0x1D538               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL A
+  , ("ApplyFunction"                          , Left 0x02061               ) -- FUNCTION APPLICATION
+  , ("Aring"                                  , Left 0x000C5               ) -- LATIN CAPITAL LETTER A WITH RING ABOVE
+  , ("Ascr"                                   , Left 0x1D49C               ) -- MATHEMATICAL SCRIPT CAPITAL A
+  , ("Assign"                                 , Left 0x02254               ) -- COLON EQUALS
+  , ("Atilde"                                 , Left 0x000C3               ) -- LATIN CAPITAL LETTER A WITH TILDE
+  , ("Auml"                                   , Left 0x000C4               ) -- LATIN CAPITAL LETTER A WITH DIAERESIS
+  , ("Backslash"                              , Left 0x02216               ) -- SET MINUS
+  , ("Barv"                                   , Left 0x02AE7               ) -- SHORT DOWN TACK WITH OVERBAR
+  , ("Barwed"                                 , Left 0x02306               ) -- PERSPECTIVE
+  , ("Bcy"                                    , Left 0x00411               ) -- CYRILLIC CAPITAL LETTER BE
+  , ("Because"                                , Left 0x02235               ) -- BECAUSE
+  , ("Bernoullis"                             , Left 0x0212C               ) -- SCRIPT CAPITAL B
+  , ("Beta"                                   , Left 0x00392               ) -- GREEK CAPITAL LETTER BETA
+  , ("Bfr"                                    , Left 0x1D505               ) -- MATHEMATICAL FRAKTUR CAPITAL B
+  , ("Bgr"                                    , Left 0x00392               ) -- GREEK CAPITAL LETTER BETA
+  , ("Bopf"                                   , Left 0x1D539               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL B
+  , ("Breve"                                  , Left 0x002D8               ) -- BREVE
+  , ("Bscr"                                   , Left 0x0212C               ) -- SCRIPT CAPITAL B
+  , ("Bumpeq"                                 , Left 0x0224E               ) -- GEOMETRICALLY EQUIVALENT TO
+  , ("CHcy"                                   , Left 0x00427               ) -- CYRILLIC CAPITAL LETTER CHE
+  , ("COPY"                                   , Left 0x000A9               ) -- COPYRIGHT SIGN
+  , ("Cacute"                                 , Left 0x00106               ) -- LATIN CAPITAL LETTER C WITH ACUTE
+  , ("Cap"                                    , Left 0x022D2               ) -- DOUBLE INTERSECTION
+  , ("CapitalDifferentialD"                   , Left 0x02145               ) -- DOUBLE-STRUCK ITALIC CAPITAL D
+  , ("Cayleys"                                , Left 0x0212D               ) -- BLACK-LETTER CAPITAL C
+  , ("Ccaron"                                 , Left 0x0010C               ) -- LATIN CAPITAL LETTER C WITH CARON
+  , ("Ccedil"                                 , Left 0x000C7               ) -- LATIN CAPITAL LETTER C WITH CEDILLA
+  , ("Ccirc"                                  , Left 0x00108               ) -- LATIN CAPITAL LETTER C WITH CIRCUMFLEX
+  , ("Cconint"                                , Left 0x02230               ) -- VOLUME INTEGRAL
+  , ("Cdot"                                   , Left 0x0010A               ) -- LATIN CAPITAL LETTER C WITH DOT ABOVE
+  , ("Cedilla"                                , Left 0x000B8               ) -- CEDILLA
+  , ("CenterDot"                              , Left 0x000B7               ) -- MIDDLE DOT
+  , ("Cfr"                                    , Left 0x0212D               ) -- BLACK-LETTER CAPITAL C
+  , ("Chi"                                    , Left 0x003A7               ) -- GREEK CAPITAL LETTER CHI
+  , ("CircleDot"                              , Left 0x02299               ) -- CIRCLED DOT OPERATOR
+  , ("CircleMinus"                            , Left 0x02296               ) -- CIRCLED MINUS
+  , ("CirclePlus"                             , Left 0x02295               ) -- CIRCLED PLUS
+  , ("CircleTimes"                            , Left 0x02297               ) -- CIRCLED TIMES
+  , ("ClockwiseContourIntegral"               , Left 0x02232               ) -- CLOCKWISE CONTOUR INTEGRAL
+  , ("CloseCurlyDoubleQuote"                  , Left 0x0201D               ) -- RIGHT DOUBLE QUOTATION MARK
+  , ("CloseCurlyQuote"                        , Left 0x02019               ) -- RIGHT SINGLE QUOTATION MARK
+  , ("Colon"                                  , Left 0x02237               ) -- PROPORTION
+  , ("Colone"                                 , Left 0x02A74               ) -- DOUBLE COLON EQUAL
+  , ("Congruent"                              , Left 0x02261               ) -- IDENTICAL TO
+  , ("Conint"                                 , Left 0x0222F               ) -- SURFACE INTEGRAL
+  , ("ContourIntegral"                        , Left 0x0222E               ) -- CONTOUR INTEGRAL
+  , ("Copf"                                   , Left 0x02102               ) -- DOUBLE-STRUCK CAPITAL C
+  , ("Coproduct"                              , Left 0x02210               ) -- N-ARY COPRODUCT
+  , ("CounterClockwiseContourIntegral"        , Left 0x02233               ) -- ANTICLOCKWISE CONTOUR INTEGRAL
+  , ("Cross"                                  , Left 0x02A2F               ) -- VECTOR OR CROSS PRODUCT
+  , ("Cscr"                                   , Left 0x1D49E               ) -- MATHEMATICAL SCRIPT CAPITAL C
+  , ("Cup"                                    , Left 0x022D3               ) -- DOUBLE UNION
+  , ("CupCap"                                 , Left 0x0224D               ) -- EQUIVALENT TO
+  , ("DD"                                     , Left 0x02145               ) -- DOUBLE-STRUCK ITALIC CAPITAL D
+  , ("DDotrahd"                               , Left 0x02911               ) -- RIGHTWARDS ARROW WITH DOTTED STEM
+  , ("DJcy"                                   , Left 0x00402               ) -- CYRILLIC CAPITAL LETTER DJE
+  , ("DScy"                                   , Left 0x00405               ) -- CYRILLIC CAPITAL LETTER DZE
+  , ("DZcy"                                   , Left 0x0040F               ) -- CYRILLIC CAPITAL LETTER DZHE
+  , ("Dagger"                                 , Left 0x02021               ) -- DOUBLE DAGGER
+  , ("Darr"                                   , Left 0x021A1               ) -- DOWNWARDS TWO HEADED ARROW
+  , ("Dashv"                                  , Left 0x02AE4               ) -- VERTICAL BAR DOUBLE LEFT TURNSTILE
+  , ("Dcaron"                                 , Left 0x0010E               ) -- LATIN CAPITAL LETTER D WITH CARON
+  , ("Dcy"                                    , Left 0x00414               ) -- CYRILLIC CAPITAL LETTER DE
+  , ("Del"                                    , Left 0x02207               ) -- NABLA
+  , ("Delta"                                  , Left 0x00394               ) -- GREEK CAPITAL LETTER DELTA
+  , ("Dfr"                                    , Left 0x1D507               ) -- MATHEMATICAL FRAKTUR CAPITAL D
+  , ("Dgr"                                    , Left 0x00394               ) -- GREEK CAPITAL LETTER DELTA
+  , ("DiacriticalAcute"                       , Left 0x000B4               ) -- ACUTE ACCENT
+  , ("DiacriticalDot"                         , Left 0x002D9               ) -- DOT ABOVE
+  , ("DiacriticalDoubleAcute"                 , Left 0x002DD               ) -- DOUBLE ACUTE ACCENT
+  , ("DiacriticalGrave"                       , Left 0x00060               ) -- GRAVE ACCENT
+  , ("DiacriticalTilde"                       , Left 0x002DC               ) -- SMALL TILDE
+  , ("Diamond"                                , Left 0x022C4               ) -- DIAMOND OPERATOR
+  , ("DifferentialD"                          , Left 0x02146               ) -- DOUBLE-STRUCK ITALIC SMALL D
+  , ("Dopf"                                   , Left 0x1D53B               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL D
+  , ("Dot"                                    , Left 0x000A8               ) -- DIAERESIS
+  , ("DotDot"                                 , Left 0x020DC               ) -- COMBINING FOUR DOTS ABOVE
+  , ("DotEqual"                               , Left 0x02250               ) -- APPROACHES THE LIMIT
+  , ("DoubleContourIntegral"                  , Left 0x0222F               ) -- SURFACE INTEGRAL
+  , ("DoubleDot"                              , Left 0x000A8               ) -- DIAERESIS
+  , ("DoubleDownArrow"                        , Left 0x021D3               ) -- DOWNWARDS DOUBLE ARROW
+  , ("DoubleLeftArrow"                        , Left 0x021D0               ) -- LEFTWARDS DOUBLE ARROW
+  , ("DoubleLeftRightArrow"                   , Left 0x021D4               ) -- LEFT RIGHT DOUBLE ARROW
+  , ("DoubleLeftTee"                          , Left 0x02AE4               ) -- VERTICAL BAR DOUBLE LEFT TURNSTILE
+  , ("DoubleLongLeftArrow"                    , Left 0x027F8               ) -- LONG LEFTWARDS DOUBLE ARROW
+  , ("DoubleLongLeftRightArrow"               , Left 0x027FA               ) -- LONG LEFT RIGHT DOUBLE ARROW
+  , ("DoubleLongRightArrow"                   , Left 0x027F9               ) -- LONG RIGHTWARDS DOUBLE ARROW
+  , ("DoubleRightArrow"                       , Left 0x021D2               ) -- RIGHTWARDS DOUBLE ARROW
+  , ("DoubleRightTee"                         , Left 0x022A8               ) -- TRUE
+  , ("DoubleUpArrow"                          , Left 0x021D1               ) -- UPWARDS DOUBLE ARROW
+  , ("DoubleUpDownArrow"                      , Left 0x021D5               ) -- UP DOWN DOUBLE ARROW
+  , ("DoubleVerticalBar"                      , Left 0x02225               ) -- PARALLEL TO
+  , ("DownArrow"                              , Left 0x02193               ) -- DOWNWARDS ARROW
+  , ("DownArrowBar"                           , Left 0x02913               ) -- DOWNWARDS ARROW TO BAR
+  , ("DownArrowUpArrow"                       , Left 0x021F5               ) -- DOWNWARDS ARROW LEFTWARDS OF UPWARDS ARROW
+  , ("DownBreve"                              , Left 0x00311               ) -- COMBINING INVERTED BREVE
+  , ("DownLeftRightVector"                    , Left 0x02950               ) -- LEFT BARB DOWN RIGHT BARB DOWN HARPOON
+  , ("DownLeftTeeVector"                      , Left 0x0295E               ) -- LEFTWARDS HARPOON WITH BARB DOWN FROM BAR
+  , ("DownLeftVector"                         , Left 0x021BD               ) -- LEFTWARDS HARPOON WITH BARB DOWNWARDS
+  , ("DownLeftVectorBar"                      , Left 0x02956               ) -- LEFTWARDS HARPOON WITH BARB DOWN TO BAR
+  , ("DownRightTeeVector"                     , Left 0x0295F               ) -- RIGHTWARDS HARPOON WITH BARB DOWN FROM BAR
+  , ("DownRightVector"                        , Left 0x021C1               ) -- RIGHTWARDS HARPOON WITH BARB DOWNWARDS
+  , ("DownRightVectorBar"                     , Left 0x02957               ) -- RIGHTWARDS HARPOON WITH BARB DOWN TO BAR
+  , ("DownTee"                                , Left 0x022A4               ) -- DOWN TACK
+  , ("DownTeeArrow"                           , Left 0x021A7               ) -- DOWNWARDS ARROW FROM BAR
+  , ("Downarrow"                              , Left 0x021D3               ) -- DOWNWARDS DOUBLE ARROW
+  , ("Dscr"                                   , Left 0x1D49F               ) -- MATHEMATICAL SCRIPT CAPITAL D
+  , ("Dstrok"                                 , Left 0x00110               ) -- LATIN CAPITAL LETTER D WITH STROKE
+  , ("EEacgr"                                 , Left 0x00389               ) -- GREEK CAPITAL LETTER ETA WITH TONOS
+  , ("EEgr"                                   , Left 0x00397               ) -- GREEK CAPITAL LETTER ETA
+  , ("ENG"                                    , Left 0x0014A               ) -- LATIN CAPITAL LETTER ENG
+  , ("ETH"                                    , Left 0x000D0               ) -- LATIN CAPITAL LETTER ETH
+  , ("Eacgr"                                  , Left 0x00388               ) -- GREEK CAPITAL LETTER EPSILON WITH TONOS
+  , ("Eacute"                                 , Left 0x000C9               ) -- LATIN CAPITAL LETTER E WITH ACUTE
+  , ("Ecaron"                                 , Left 0x0011A               ) -- LATIN CAPITAL LETTER E WITH CARON
+  , ("Ecirc"                                  , Left 0x000CA               ) -- LATIN CAPITAL LETTER E WITH CIRCUMFLEX
+  , ("Ecy"                                    , Left 0x0042D               ) -- CYRILLIC CAPITAL LETTER E
+  , ("Edot"                                   , Left 0x00116               ) -- LATIN CAPITAL LETTER E WITH DOT ABOVE
+  , ("Efr"                                    , Left 0x1D508               ) -- MATHEMATICAL FRAKTUR CAPITAL E
+  , ("Egr"                                    , Left 0x00395               ) -- GREEK CAPITAL LETTER EPSILON
+  , ("Egrave"                                 , Left 0x000C8               ) -- LATIN CAPITAL LETTER E WITH GRAVE
+  , ("Element"                                , Left 0x02208               ) -- ELEMENT OF
+  , ("Emacr"                                  , Left 0x00112               ) -- LATIN CAPITAL LETTER E WITH MACRON
+  , ("EmptySmallSquare"                       , Left 0x025FB               ) -- WHITE MEDIUM SQUARE
+  , ("EmptyVerySmallSquare"                   , Left 0x025AB               ) -- WHITE SMALL SQUARE
+  , ("Eogon"                                  , Left 0x00118               ) -- LATIN CAPITAL LETTER E WITH OGONEK
+  , ("Eopf"                                   , Left 0x1D53C               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL E
+  , ("Epsilon"                                , Left 0x00395               ) -- GREEK CAPITAL LETTER EPSILON
+  , ("Equal"                                  , Left 0x02A75               ) -- TWO CONSECUTIVE EQUALS SIGNS
+  , ("EqualTilde"                             , Left 0x02242               ) -- MINUS TILDE
+  , ("Equilibrium"                            , Left 0x021CC               ) -- RIGHTWARDS HARPOON OVER LEFTWARDS HARPOON
+  , ("Escr"                                   , Left 0x02130               ) -- SCRIPT CAPITAL E
+  , ("Esim"                                   , Left 0x02A73               ) -- EQUALS SIGN ABOVE TILDE OPERATOR
+  , ("Eta"                                    , Left 0x00397               ) -- GREEK CAPITAL LETTER ETA
+  , ("Euml"                                   , Left 0x000CB               ) -- LATIN CAPITAL LETTER E WITH DIAERESIS
+  , ("Exists"                                 , Left 0x02203               ) -- THERE EXISTS
+  , ("ExponentialE"                           , Left 0x02147               ) -- DOUBLE-STRUCK ITALIC SMALL E
+  , ("Fcy"                                    , Left 0x00424               ) -- CYRILLIC CAPITAL LETTER EF
+  , ("Ffr"                                    , Left 0x1D509               ) -- MATHEMATICAL FRAKTUR CAPITAL F
+  , ("FilledSmallSquare"                      , Left 0x025FC               ) -- BLACK MEDIUM SQUARE
+  , ("FilledVerySmallSquare"                  , Left 0x025AA               ) -- BLACK SMALL SQUARE
+  , ("Fopf"                                   , Left 0x1D53D               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL F
+  , ("ForAll"                                 , Left 0x02200               ) -- FOR ALL
+  , ("Fouriertrf"                             , Left 0x02131               ) -- SCRIPT CAPITAL F
+  , ("Fscr"                                   , Left 0x02131               ) -- SCRIPT CAPITAL F
+  , ("GJcy"                                   , Left 0x00403               ) -- CYRILLIC CAPITAL LETTER GJE
+  , ("GT"                                     , Left 0x0003E               ) -- GREATER-THAN SIGN
+  , ("Gamma"                                  , Left 0x00393               ) -- GREEK CAPITAL LETTER GAMMA
+  , ("Gammad"                                 , Left 0x003DC               ) -- GREEK LETTER DIGAMMA
+  , ("Gbreve"                                 , Left 0x0011E               ) -- LATIN CAPITAL LETTER G WITH BREVE
+  , ("Gcedil"                                 , Left 0x00122               ) -- LATIN CAPITAL LETTER G WITH CEDILLA
+  , ("Gcirc"                                  , Left 0x0011C               ) -- LATIN CAPITAL LETTER G WITH CIRCUMFLEX
+  , ("Gcy"                                    , Left 0x00413               ) -- CYRILLIC CAPITAL LETTER GHE
+  , ("Gdot"                                   , Left 0x00120               ) -- LATIN CAPITAL LETTER G WITH DOT ABOVE
+  , ("Gfr"                                    , Left 0x1D50A               ) -- MATHEMATICAL FRAKTUR CAPITAL G
+  , ("Gg"                                     , Left 0x022D9               ) -- VERY MUCH GREATER-THAN
+  , ("Ggr"                                    , Left 0x00393               ) -- GREEK CAPITAL LETTER GAMMA
+  , ("Gopf"                                   , Left 0x1D53E               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL G
+  , ("GreaterEqual"                           , Left 0x02265               ) -- GREATER-THAN OR EQUAL TO
+  , ("GreaterEqualLess"                       , Left 0x022DB               ) -- GREATER-THAN EQUAL TO OR LESS-THAN
+  , ("GreaterFullEqual"                       , Left 0x02267               ) -- GREATER-THAN OVER EQUAL TO
+  , ("GreaterGreater"                         , Left 0x02AA2               ) -- DOUBLE NESTED GREATER-THAN
+  , ("GreaterLess"                            , Left 0x02277               ) -- GREATER-THAN OR LESS-THAN
+  , ("GreaterSlantEqual"                      , Left 0x02A7E               ) -- GREATER-THAN OR SLANTED EQUAL TO
+  , ("GreaterTilde"                           , Left 0x02273               ) -- GREATER-THAN OR EQUIVALENT TO
+  , ("Gscr"                                   , Left 0x1D4A2               ) -- MATHEMATICAL SCRIPT CAPITAL G
+  , ("Gt"                                     , Left 0x0226B               ) -- MUCH GREATER-THAN
+  , ("HARDcy"                                 , Left 0x0042A               ) -- CYRILLIC CAPITAL LETTER HARD SIGN
+  , ("Hacek"                                  , Left 0x002C7               ) -- CARON
+  , ("Hat"                                    , Left 0x0005E               ) -- CIRCUMFLEX ACCENT
+  , ("Hcirc"                                  , Left 0x00124               ) -- LATIN CAPITAL LETTER H WITH CIRCUMFLEX
+  , ("Hfr"                                    , Left 0x0210C               ) -- BLACK-LETTER CAPITAL H
+  , ("HilbertSpace"                           , Left 0x0210B               ) -- SCRIPT CAPITAL H
+  , ("Hopf"                                   , Left 0x0210D               ) -- DOUBLE-STRUCK CAPITAL H
+  , ("HorizontalLine"                         , Left 0x02500               ) -- BOX DRAWINGS LIGHT HORIZONTAL
+  , ("Hscr"                                   , Left 0x0210B               ) -- SCRIPT CAPITAL H
+  , ("Hstrok"                                 , Left 0x00126               ) -- LATIN CAPITAL LETTER H WITH STROKE
+  , ("HumpDownHump"                           , Left 0x0224E               ) -- GEOMETRICALLY EQUIVALENT TO
+  , ("HumpEqual"                              , Left 0x0224F               ) -- DIFFERENCE BETWEEN
+  , ("IEcy"                                   , Left 0x00415               ) -- CYRILLIC CAPITAL LETTER IE
+  , ("IJlig"                                  , Left 0x00132               ) -- LATIN CAPITAL LIGATURE IJ
+  , ("IOcy"                                   , Left 0x00401               ) -- CYRILLIC CAPITAL LETTER IO
+  , ("Iacgr"                                  , Left 0x0038A               ) -- GREEK CAPITAL LETTER IOTA WITH TONOS
+  , ("Iacute"                                 , Left 0x000CD               ) -- LATIN CAPITAL LETTER I WITH ACUTE
+  , ("Icirc"                                  , Left 0x000CE               ) -- LATIN CAPITAL LETTER I WITH CIRCUMFLEX
+  , ("Icy"                                    , Left 0x00418               ) -- CYRILLIC CAPITAL LETTER I
+  , ("Idigr"                                  , Left 0x003AA               ) -- GREEK CAPITAL LETTER IOTA WITH DIALYTIKA
+  , ("Idot"                                   , Left 0x00130               ) -- LATIN CAPITAL LETTER I WITH DOT ABOVE
+  , ("Ifr"                                    , Left 0x02111               ) -- BLACK-LETTER CAPITAL I
+  , ("Igr"                                    , Left 0x00399               ) -- GREEK CAPITAL LETTER IOTA
+  , ("Igrave"                                 , Left 0x000CC               ) -- LATIN CAPITAL LETTER I WITH GRAVE
+  , ("Im"                                     , Left 0x02111               ) -- BLACK-LETTER CAPITAL I
+  , ("Imacr"                                  , Left 0x0012A               ) -- LATIN CAPITAL LETTER I WITH MACRON
+  , ("ImaginaryI"                             , Left 0x02148               ) -- DOUBLE-STRUCK ITALIC SMALL I
+  , ("Implies"                                , Left 0x021D2               ) -- RIGHTWARDS DOUBLE ARROW
+  , ("Int"                                    , Left 0x0222C               ) -- DOUBLE INTEGRAL
+  , ("Integral"                               , Left 0x0222B               ) -- INTEGRAL
+  , ("Intersection"                           , Left 0x022C2               ) -- N-ARY INTERSECTION
+  , ("InvisibleComma"                         , Left 0x02063               ) -- INVISIBLE SEPARATOR
+  , ("InvisibleTimes"                         , Left 0x02062               ) -- INVISIBLE TIMES
+  , ("Iogon"                                  , Left 0x0012E               ) -- LATIN CAPITAL LETTER I WITH OGONEK
+  , ("Iopf"                                   , Left 0x1D540               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL I
+  , ("Iota"                                   , Left 0x00399               ) -- GREEK CAPITAL LETTER IOTA
+  , ("Iscr"                                   , Left 0x02110               ) -- SCRIPT CAPITAL I
+  , ("Itilde"                                 , Left 0x00128               ) -- LATIN CAPITAL LETTER I WITH TILDE
+  , ("Iukcy"                                  , Left 0x00406               ) -- CYRILLIC CAPITAL LETTER BYELORUSSIAN-UKRAINIAN I
+  , ("Iuml"                                   , Left 0x000CF               ) -- LATIN CAPITAL LETTER I WITH DIAERESIS
+  , ("Jcirc"                                  , Left 0x00134               ) -- LATIN CAPITAL LETTER J WITH CIRCUMFLEX
+  , ("Jcy"                                    , Left 0x00419               ) -- CYRILLIC CAPITAL LETTER SHORT I
+  , ("Jfr"                                    , Left 0x1D50D               ) -- MATHEMATICAL FRAKTUR CAPITAL J
+  , ("Jopf"                                   , Left 0x1D541               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL J
+  , ("Jscr"                                   , Left 0x1D4A5               ) -- MATHEMATICAL SCRIPT CAPITAL J
+  , ("Jsercy"                                 , Left 0x00408               ) -- CYRILLIC CAPITAL LETTER JE
+  , ("Jukcy"                                  , Left 0x00404               ) -- CYRILLIC CAPITAL LETTER UKRAINIAN IE
+  , ("KHcy"                                   , Left 0x00425               ) -- CYRILLIC CAPITAL LETTER HA
+  , ("KHgr"                                   , Left 0x003A7               ) -- GREEK CAPITAL LETTER CHI
+  , ("KJcy"                                   , Left 0x0040C               ) -- CYRILLIC CAPITAL LETTER KJE
+  , ("Kappa"                                  , Left 0x0039A               ) -- GREEK CAPITAL LETTER KAPPA
+  , ("Kcedil"                                 , Left 0x00136               ) -- LATIN CAPITAL LETTER K WITH CEDILLA
+  , ("Kcy"                                    , Left 0x0041A               ) -- CYRILLIC CAPITAL LETTER KA
+  , ("Kfr"                                    , Left 0x1D50E               ) -- MATHEMATICAL FRAKTUR CAPITAL K
+  , ("Kgr"                                    , Left 0x0039A               ) -- GREEK CAPITAL LETTER KAPPA
+  , ("Kopf"                                   , Left 0x1D542               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL K
+  , ("Kscr"                                   , Left 0x1D4A6               ) -- MATHEMATICAL SCRIPT CAPITAL K
+  , ("LJcy"                                   , Left 0x00409               ) -- CYRILLIC CAPITAL LETTER LJE
+  , ("LT"                                     , Left 0x0003C               ) -- LESS-THAN SIGN
+  , ("Lacute"                                 , Left 0x00139               ) -- LATIN CAPITAL LETTER L WITH ACUTE
+  , ("Lambda"                                 , Left 0x0039B               ) -- GREEK CAPITAL LETTER LAMDA
+  , ("Lang"                                   , Left 0x027EA               ) -- MATHEMATICAL LEFT DOUBLE ANGLE BRACKET
+  , ("Laplacetrf"                             , Left 0x02112               ) -- SCRIPT CAPITAL L
+  , ("Larr"                                   , Left 0x0219E               ) -- LEFTWARDS TWO HEADED ARROW
+  , ("Lcaron"                                 , Left 0x0013D               ) -- LATIN CAPITAL LETTER L WITH CARON
+  , ("Lcedil"                                 , Left 0x0013B               ) -- LATIN CAPITAL LETTER L WITH CEDILLA
+  , ("Lcy"                                    , Left 0x0041B               ) -- CYRILLIC CAPITAL LETTER EL
+  , ("LeftAngleBracket"                       , Left 0x027E8               ) -- MATHEMATICAL LEFT ANGLE BRACKET
+  , ("LeftArrow"                              , Left 0x02190               ) -- LEFTWARDS ARROW
+  , ("LeftArrowBar"                           , Left 0x021E4               ) -- LEFTWARDS ARROW TO BAR
+  , ("LeftArrowRightArrow"                    , Left 0x021C6               ) -- LEFTWARDS ARROW OVER RIGHTWARDS ARROW
+  , ("LeftCeiling"                            , Left 0x02308               ) -- LEFT CEILING
+  , ("LeftDoubleBracket"                      , Left 0x027E6               ) -- MATHEMATICAL LEFT WHITE SQUARE BRACKET
+  , ("LeftDownTeeVector"                      , Left 0x02961               ) -- DOWNWARDS HARPOON WITH BARB LEFT FROM BAR
+  , ("LeftDownVector"                         , Left 0x021C3               ) -- DOWNWARDS HARPOON WITH BARB LEFTWARDS
+  , ("LeftDownVectorBar"                      , Left 0x02959               ) -- DOWNWARDS HARPOON WITH BARB LEFT TO BAR
+  , ("LeftFloor"                              , Left 0x0230A               ) -- LEFT FLOOR
+  , ("LeftRightArrow"                         , Left 0x02194               ) -- LEFT RIGHT ARROW
+  , ("LeftRightVector"                        , Left 0x0294E               ) -- LEFT BARB UP RIGHT BARB UP HARPOON
+  , ("LeftTee"                                , Left 0x022A3               ) -- LEFT TACK
+  , ("LeftTeeArrow"                           , Left 0x021A4               ) -- LEFTWARDS ARROW FROM BAR
+  , ("LeftTeeVector"                          , Left 0x0295A               ) -- LEFTWARDS HARPOON WITH BARB UP FROM BAR
+  , ("LeftTriangle"                           , Left 0x022B2               ) -- NORMAL SUBGROUP OF
+  , ("LeftTriangleBar"                        , Left 0x029CF               ) -- LEFT TRIANGLE BESIDE VERTICAL BAR
+  , ("LeftTriangleEqual"                      , Left 0x022B4               ) -- NORMAL SUBGROUP OF OR EQUAL TO
+  , ("LeftUpDownVector"                       , Left 0x02951               ) -- UP BARB LEFT DOWN BARB LEFT HARPOON
+  , ("LeftUpTeeVector"                        , Left 0x02960               ) -- UPWARDS HARPOON WITH BARB LEFT FROM BAR
+  , ("LeftUpVector"                           , Left 0x021BF               ) -- UPWARDS HARPOON WITH BARB LEFTWARDS
+  , ("LeftUpVectorBar"                        , Left 0x02958               ) -- UPWARDS HARPOON WITH BARB LEFT TO BAR
+  , ("LeftVector"                             , Left 0x021BC               ) -- LEFTWARDS HARPOON WITH BARB UPWARDS
+  , ("LeftVectorBar"                          , Left 0x02952               ) -- LEFTWARDS HARPOON WITH BARB UP TO BAR
+  , ("Leftarrow"                              , Left 0x021D0               ) -- LEFTWARDS DOUBLE ARROW
+  , ("Leftrightarrow"                         , Left 0x021D4               ) -- LEFT RIGHT DOUBLE ARROW
+  , ("LessEqualGreater"                       , Left 0x022DA               ) -- LESS-THAN EQUAL TO OR GREATER-THAN
+  , ("LessFullEqual"                          , Left 0x02266               ) -- LESS-THAN OVER EQUAL TO
+  , ("LessGreater"                            , Left 0x02276               ) -- LESS-THAN OR GREATER-THAN
+  , ("LessLess"                               , Left 0x02AA1               ) -- DOUBLE NESTED LESS-THAN
+  , ("LessSlantEqual"                         , Left 0x02A7D               ) -- LESS-THAN OR SLANTED EQUAL TO
+  , ("LessTilde"                              , Left 0x02272               ) -- LESS-THAN OR EQUIVALENT TO
+  , ("Lfr"                                    , Left 0x1D50F               ) -- MATHEMATICAL FRAKTUR CAPITAL L
+  , ("Lgr"                                    , Left 0x0039B               ) -- GREEK CAPITAL LETTER LAMDA
+  , ("Ll"                                     , Left 0x022D8               ) -- VERY MUCH LESS-THAN
+  , ("Lleftarrow"                             , Left 0x021DA               ) -- LEFTWARDS TRIPLE ARROW
+  , ("Lmidot"                                 , Left 0x0013F               ) -- LATIN CAPITAL LETTER L WITH MIDDLE DOT
+  , ("LongLeftArrow"                          , Left 0x027F5               ) -- LONG LEFTWARDS ARROW
+  , ("LongLeftRightArrow"                     , Left 0x027F7               ) -- LONG LEFT RIGHT ARROW
+  , ("LongRightArrow"                         , Left 0x027F6               ) -- LONG RIGHTWARDS ARROW
+  , ("Longleftarrow"                          , Left 0x027F8               ) -- LONG LEFTWARDS DOUBLE ARROW
+  , ("Longleftrightarrow"                     , Left 0x027FA               ) -- LONG LEFT RIGHT DOUBLE ARROW
+  , ("Longrightarrow"                         , Left 0x027F9               ) -- LONG RIGHTWARDS DOUBLE ARROW
+  , ("Lopf"                                   , Left 0x1D543               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL L
+  , ("LowerLeftArrow"                         , Left 0x02199               ) -- SOUTH WEST ARROW
+  , ("LowerRightArrow"                        , Left 0x02198               ) -- SOUTH EAST ARROW
+  , ("Lscr"                                   , Left 0x02112               ) -- SCRIPT CAPITAL L
+  , ("Lsh"                                    , Left 0x021B0               ) -- UPWARDS ARROW WITH TIP LEFTWARDS
+  , ("Lstrok"                                 , Left 0x00141               ) -- LATIN CAPITAL LETTER L WITH STROKE
+  , ("Lt"                                     , Left 0x0226A               ) -- MUCH LESS-THAN
+  , ("Map"                                    , Left 0x02905               ) -- RIGHTWARDS TWO-HEADED ARROW FROM BAR
+  , ("Mcy"                                    , Left 0x0041C               ) -- CYRILLIC CAPITAL LETTER EM
+  , ("MediumSpace"                            , Left 0x0205F               ) -- MEDIUM MATHEMATICAL SPACE
+  , ("Mellintrf"                              , Left 0x02133               ) -- SCRIPT CAPITAL M
+  , ("Mfr"                                    , Left 0x1D510               ) -- MATHEMATICAL FRAKTUR CAPITAL M
+  , ("Mgr"                                    , Left 0x0039C               ) -- GREEK CAPITAL LETTER MU
+  , ("MinusPlus"                              , Left 0x02213               ) -- MINUS-OR-PLUS SIGN
+  , ("Mopf"                                   , Left 0x1D544               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL M
+  , ("Mscr"                                   , Left 0x02133               ) -- SCRIPT CAPITAL M
+  , ("Mu"                                     , Left 0x0039C               ) -- GREEK CAPITAL LETTER MU
+  , ("NJcy"                                   , Left 0x0040A               ) -- CYRILLIC CAPITAL LETTER NJE
+  , ("Nacute"                                 , Left 0x00143               ) -- LATIN CAPITAL LETTER N WITH ACUTE
+  , ("Ncaron"                                 , Left 0x00147               ) -- LATIN CAPITAL LETTER N WITH CARON
+  , ("Ncedil"                                 , Left 0x00145               ) -- LATIN CAPITAL LETTER N WITH CEDILLA
+  , ("Ncy"                                    , Left 0x0041D               ) -- CYRILLIC CAPITAL LETTER EN
+  , ("NegativeMediumSpace"                    , Left 0x0200B               ) -- ZERO WIDTH SPACE
+  , ("NegativeThickSpace"                     , Left 0x0200B               ) -- ZERO WIDTH SPACE
+  , ("NegativeThinSpace"                      , Left 0x0200B               ) -- ZERO WIDTH SPACE
+  , ("NegativeVeryThinSpace"                  , Left 0x0200B               ) -- ZERO WIDTH SPACE
+  , ("NestedGreaterGreater"                   , Left 0x0226B               ) -- MUCH GREATER-THAN
+  , ("NestedLessLess"                         , Left 0x0226A               ) -- MUCH LESS-THAN
+  , ("NewLine"                                , Left 0x0000A               ) -- LINE FEED (LF)
+  , ("Nfr"                                    , Left 0x1D511               ) -- MATHEMATICAL FRAKTUR CAPITAL N
+  , ("Ngr"                                    , Left 0x0039D               ) -- GREEK CAPITAL LETTER NU
+  , ("NoBreak"                                , Left 0x02060               ) -- WORD JOINER
+  , ("NonBreakingSpace"                       , Left 0x000A0               ) -- NO-BREAK SPACE
+  , ("Nopf"                                   , Left 0x02115               ) -- DOUBLE-STRUCK CAPITAL N
+  , ("Not"                                    , Left 0x02AEC               ) -- DOUBLE STROKE NOT SIGN
+  , ("NotCongruent"                           , Left 0x02262               ) -- NOT IDENTICAL TO
+  , ("NotCupCap"                              , Left 0x0226D               ) -- NOT EQUIVALENT TO
+  , ("NotDoubleVerticalBar"                   , Left 0x02226               ) -- NOT PARALLEL TO
+  , ("NotElement"                             , Left 0x02209               ) -- NOT AN ELEMENT OF
+  , ("NotEqual"                               , Left 0x02260               ) -- NOT EQUAL TO
+  , ("NotEqualTilde"                          , Right [ 0x02242, 0x00338 ] ) -- MINUS TILDE with slash
+  , ("NotExists"                              , Left 0x02204               ) -- THERE DOES NOT EXIST
+  , ("NotGreater"                             , Left 0x0226F               ) -- NOT GREATER-THAN
+  , ("NotGreaterEqual"                        , Left 0x02271               ) -- NEITHER GREATER-THAN NOR EQUAL TO
+  , ("NotGreaterFullEqual"                    , Right [ 0x02267, 0x00338 ] ) -- GREATER-THAN OVER EQUAL TO with slash
+  , ("NotGreaterGreater"                      , Right [ 0x0226B, 0x00338 ] ) -- MUCH GREATER THAN with slash
+  , ("NotGreaterLess"                         , Left 0x02279               ) -- NEITHER GREATER-THAN NOR LESS-THAN
+  , ("NotGreaterSlantEqual"                   , Right [ 0x02A7E, 0x00338 ] ) -- GREATER-THAN OR SLANTED EQUAL TO with slash
+  , ("NotGreaterTilde"                        , Left 0x02275               ) -- NEITHER GREATER-THAN NOR EQUIVALENT TO
+  , ("NotHumpDownHump"                        , Right [ 0x0224E, 0x00338 ] ) -- GEOMETRICALLY EQUIVALENT TO with slash
+  , ("NotHumpEqual"                           , Right [ 0x0224F, 0x00338 ] ) -- DIFFERENCE BETWEEN with slash
+  , ("NotLeftTriangle"                        , Left 0x022EA               ) -- NOT NORMAL SUBGROUP OF
+  , ("NotLeftTriangleBar"                     , Right [ 0x029CF, 0x00338 ] ) -- LEFT TRIANGLE BESIDE VERTICAL BAR with slash
+  , ("NotLeftTriangleEqual"                   , Left 0x022EC               ) -- NOT NORMAL SUBGROUP OF OR EQUAL TO
+  , ("NotLess"                                , Left 0x0226E               ) -- NOT LESS-THAN
+  , ("NotLessEqual"                           , Left 0x02270               ) -- NEITHER LESS-THAN NOR EQUAL TO
+  , ("NotLessGreater"                         , Left 0x02278               ) -- NEITHER LESS-THAN NOR GREATER-THAN
+  , ("NotLessLess"                            , Right [ 0x0226A, 0x00338 ] ) -- MUCH LESS THAN with slash
+  , ("NotLessSlantEqual"                      , Right [ 0x02A7D, 0x00338 ] ) -- LESS-THAN OR SLANTED EQUAL TO with slash
+  , ("NotLessTilde"                           , Left 0x02274               ) -- NEITHER LESS-THAN NOR EQUIVALENT TO
+  , ("NotNestedGreaterGreater"                , Right [ 0x02AA2, 0x00338 ] ) -- DOUBLE NESTED GREATER-THAN with slash
+  , ("NotNestedLessLess"                      , Right [ 0x02AA1, 0x00338 ] ) -- DOUBLE NESTED LESS-THAN with slash
+  , ("NotPrecedes"                            , Left 0x02280               ) -- DOES NOT PRECEDE
+  , ("NotPrecedesEqual"                       , Right [ 0x02AAF, 0x00338 ] ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN with slash
+  , ("NotPrecedesSlantEqual"                  , Left 0x022E0               ) -- DOES NOT PRECEDE OR EQUAL
+  , ("NotReverseElement"                      , Left 0x0220C               ) -- DOES NOT CONTAIN AS MEMBER
+  , ("NotRightTriangle"                       , Left 0x022EB               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP
+  , ("NotRightTriangleBar"                    , Right [ 0x029D0, 0x00338 ] ) -- VERTICAL BAR BESIDE RIGHT TRIANGLE with slash
+  , ("NotRightTriangleEqual"                  , Left 0x022ED               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP OR EQUAL
+  , ("NotSquareSubset"                        , Right [ 0x0228F, 0x00338 ] ) -- SQUARE IMAGE OF with slash
+  , ("NotSquareSubsetEqual"                   , Left 0x022E2               ) -- NOT SQUARE IMAGE OF OR EQUAL TO
+  , ("NotSquareSuperset"                      , Right [ 0x02290, 0x00338 ] ) -- SQUARE ORIGINAL OF with slash
+  , ("NotSquareSupersetEqual"                 , Left 0x022E3               ) -- NOT SQUARE ORIGINAL OF OR EQUAL TO
+  , ("NotSubset"                              , Right [ 0x02282, 0x020D2 ] ) -- SUBSET OF with vertical line
+  , ("NotSubsetEqual"                         , Left 0x02288               ) -- NEITHER A SUBSET OF NOR EQUAL TO
+  , ("NotSucceeds"                            , Left 0x02281               ) -- DOES NOT SUCCEED
+  , ("NotSucceedsEqual"                       , Right [ 0x02AB0, 0x00338 ] ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN with slash
+  , ("NotSucceedsSlantEqual"                  , Left 0x022E1               ) -- DOES NOT SUCCEED OR EQUAL
+  , ("NotSucceedsTilde"                       , Right [ 0x0227F, 0x00338 ] ) -- SUCCEEDS OR EQUIVALENT TO with slash
+  , ("NotSuperset"                            , Right [ 0x02283, 0x020D2 ] ) -- SUPERSET OF with vertical line
+  , ("NotSupersetEqual"                       , Left 0x02289               ) -- NEITHER A SUPERSET OF NOR EQUAL TO
+  , ("NotTilde"                               , Left 0x02241               ) -- NOT TILDE
+  , ("NotTildeEqual"                          , Left 0x02244               ) -- NOT ASYMPTOTICALLY EQUAL TO
+  , ("NotTildeFullEqual"                      , Left 0x02247               ) -- NEITHER APPROXIMATELY NOR ACTUALLY EQUAL TO
+  , ("NotTildeTilde"                          , Left 0x02249               ) -- NOT ALMOST EQUAL TO
+  , ("NotVerticalBar"                         , Left 0x02224               ) -- DOES NOT DIVIDE
+  , ("Nscr"                                   , Left 0x1D4A9               ) -- MATHEMATICAL SCRIPT CAPITAL N
+  , ("Ntilde"                                 , Left 0x000D1               ) -- LATIN CAPITAL LETTER N WITH TILDE
+  , ("Nu"                                     , Left 0x0039D               ) -- GREEK CAPITAL LETTER NU
+  , ("OElig"                                  , Left 0x00152               ) -- LATIN CAPITAL LIGATURE OE
+  , ("OHacgr"                                 , Left 0x0038F               ) -- GREEK CAPITAL LETTER OMEGA WITH TONOS
+  , ("OHgr"                                   , Left 0x003A9               ) -- GREEK CAPITAL LETTER OMEGA
+  , ("Oacgr"                                  , Left 0x0038C               ) -- GREEK CAPITAL LETTER OMICRON WITH TONOS
+  , ("Oacute"                                 , Left 0x000D3               ) -- LATIN CAPITAL LETTER O WITH ACUTE
+  , ("Ocirc"                                  , Left 0x000D4               ) -- LATIN CAPITAL LETTER O WITH CIRCUMFLEX
+  , ("Ocy"                                    , Left 0x0041E               ) -- CYRILLIC CAPITAL LETTER O
+  , ("Odblac"                                 , Left 0x00150               ) -- LATIN CAPITAL LETTER O WITH DOUBLE ACUTE
+  , ("Ofr"                                    , Left 0x1D512               ) -- MATHEMATICAL FRAKTUR CAPITAL O
+  , ("Ogr"                                    , Left 0x0039F               ) -- GREEK CAPITAL LETTER OMICRON
+  , ("Ograve"                                 , Left 0x000D2               ) -- LATIN CAPITAL LETTER O WITH GRAVE
+  , ("Omacr"                                  , Left 0x0014C               ) -- LATIN CAPITAL LETTER O WITH MACRON
+  , ("Omega"                                  , Left 0x003A9               ) -- GREEK CAPITAL LETTER OMEGA
+  , ("Omicron"                                , Left 0x0039F               ) -- GREEK CAPITAL LETTER OMICRON
+  , ("Oopf"                                   , Left 0x1D546               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL O
+  , ("OpenCurlyDoubleQuote"                   , Left 0x0201C               ) -- LEFT DOUBLE QUOTATION MARK
+  , ("OpenCurlyQuote"                         , Left 0x02018               ) -- LEFT SINGLE QUOTATION MARK
+  , ("Or"                                     , Left 0x02A54               ) -- DOUBLE LOGICAL OR
+  , ("Oscr"                                   , Left 0x1D4AA               ) -- MATHEMATICAL SCRIPT CAPITAL O
+  , ("Oslash"                                 , Left 0x000D8               ) -- LATIN CAPITAL LETTER O WITH STROKE
+  , ("Otilde"                                 , Left 0x000D5               ) -- LATIN CAPITAL LETTER O WITH TILDE
+  , ("Otimes"                                 , Left 0x02A37               ) -- MULTIPLICATION SIGN IN DOUBLE CIRCLE
+  , ("Ouml"                                   , Left 0x000D6               ) -- LATIN CAPITAL LETTER O WITH DIAERESIS
+  , ("OverBar"                                , Left 0x0203E               ) -- OVERLINE
+  , ("OverBrace"                              , Left 0x023DE               ) -- TOP CURLY BRACKET
+  , ("OverBracket"                            , Left 0x023B4               ) -- TOP SQUARE BRACKET
+  , ("OverParenthesis"                        , Left 0x023DC               ) -- TOP PARENTHESIS
+  , ("PHgr"                                   , Left 0x003A6               ) -- GREEK CAPITAL LETTER PHI
+  , ("PSgr"                                   , Left 0x003A8               ) -- GREEK CAPITAL LETTER PSI
+  , ("PartialD"                               , Left 0x02202               ) -- PARTIAL DIFFERENTIAL
+  , ("Pcy"                                    , Left 0x0041F               ) -- CYRILLIC CAPITAL LETTER PE
+  , ("Pfr"                                    , Left 0x1D513               ) -- MATHEMATICAL FRAKTUR CAPITAL P
+  , ("Pgr"                                    , Left 0x003A0               ) -- GREEK CAPITAL LETTER PI
+  , ("Phi"                                    , Left 0x003A6               ) -- GREEK CAPITAL LETTER PHI
+  , ("Pi"                                     , Left 0x003A0               ) -- GREEK CAPITAL LETTER PI
+  , ("PlusMinus"                              , Left 0x000B1               ) -- PLUS-MINUS SIGN
+  , ("Poincareplane"                          , Left 0x0210C               ) -- BLACK-LETTER CAPITAL H
+  , ("Popf"                                   , Left 0x02119               ) -- DOUBLE-STRUCK CAPITAL P
+  , ("Pr"                                     , Left 0x02ABB               ) -- DOUBLE PRECEDES
+  , ("Precedes"                               , Left 0x0227A               ) -- PRECEDES
+  , ("PrecedesEqual"                          , Left 0x02AAF               ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN
+  , ("PrecedesSlantEqual"                     , Left 0x0227C               ) -- PRECEDES OR EQUAL TO
+  , ("PrecedesTilde"                          , Left 0x0227E               ) -- PRECEDES OR EQUIVALENT TO
+  , ("Prime"                                  , Left 0x02033               ) -- DOUBLE PRIME
+  , ("Product"                                , Left 0x0220F               ) -- N-ARY PRODUCT
+  , ("Proportion"                             , Left 0x02237               ) -- PROPORTION
+  , ("Proportional"                           , Left 0x0221D               ) -- PROPORTIONAL TO
+  , ("Pscr"                                   , Left 0x1D4AB               ) -- MATHEMATICAL SCRIPT CAPITAL P
+  , ("Psi"                                    , Left 0x003A8               ) -- GREEK CAPITAL LETTER PSI
+  , ("QUOT"                                   , Left 0x00022               ) -- QUOTATION MARK
+  , ("Qfr"                                    , Left 0x1D514               ) -- MATHEMATICAL FRAKTUR CAPITAL Q
+  , ("Qopf"                                   , Left 0x0211A               ) -- DOUBLE-STRUCK CAPITAL Q
+  , ("Qscr"                                   , Left 0x1D4AC               ) -- MATHEMATICAL SCRIPT CAPITAL Q
+  , ("RBarr"                                  , Left 0x02910               ) -- RIGHTWARDS TWO-HEADED TRIPLE DASH ARROW
+  , ("REG"                                    , Left 0x000AE               ) -- REGISTERED SIGN
+  , ("Racute"                                 , Left 0x00154               ) -- LATIN CAPITAL LETTER R WITH ACUTE
+  , ("Rang"                                   , Left 0x027EB               ) -- MATHEMATICAL RIGHT DOUBLE ANGLE BRACKET
+  , ("Rarr"                                   , Left 0x021A0               ) -- RIGHTWARDS TWO HEADED ARROW
+  , ("Rarrtl"                                 , Left 0x02916               ) -- RIGHTWARDS TWO-HEADED ARROW WITH TAIL
+  , ("Rcaron"                                 , Left 0x00158               ) -- LATIN CAPITAL LETTER R WITH CARON
+  , ("Rcedil"                                 , Left 0x00156               ) -- LATIN CAPITAL LETTER R WITH CEDILLA
+  , ("Rcy"                                    , Left 0x00420               ) -- CYRILLIC CAPITAL LETTER ER
+  , ("Re"                                     , Left 0x0211C               ) -- BLACK-LETTER CAPITAL R
+  , ("ReverseElement"                         , Left 0x0220B               ) -- CONTAINS AS MEMBER
+  , ("ReverseEquilibrium"                     , Left 0x021CB               ) -- LEFTWARDS HARPOON OVER RIGHTWARDS HARPOON
+  , ("ReverseUpEquilibrium"                   , Left 0x0296F               ) -- DOWNWARDS HARPOON WITH BARB LEFT BESIDE UPWARDS HARPOON WITH BARB RIGHT
+  , ("Rfr"                                    , Left 0x0211C               ) -- BLACK-LETTER CAPITAL R
+  , ("Rgr"                                    , Left 0x003A1               ) -- GREEK CAPITAL LETTER RHO
+  , ("Rho"                                    , Left 0x003A1               ) -- GREEK CAPITAL LETTER RHO
+  , ("RightAngleBracket"                      , Left 0x027E9               ) -- MATHEMATICAL RIGHT ANGLE BRACKET
+  , ("RightArrow"                             , Left 0x02192               ) -- RIGHTWARDS ARROW
+  , ("RightArrowBar"                          , Left 0x021E5               ) -- RIGHTWARDS ARROW TO BAR
+  , ("RightArrowLeftArrow"                    , Left 0x021C4               ) -- RIGHTWARDS ARROW OVER LEFTWARDS ARROW
+  , ("RightCeiling"                           , Left 0x02309               ) -- RIGHT CEILING
+  , ("RightDoubleBracket"                     , Left 0x027E7               ) -- MATHEMATICAL RIGHT WHITE SQUARE BRACKET
+  , ("RightDownTeeVector"                     , Left 0x0295D               ) -- DOWNWARDS HARPOON WITH BARB RIGHT FROM BAR
+  , ("RightDownVector"                        , Left 0x021C2               ) -- DOWNWARDS HARPOON WITH BARB RIGHTWARDS
+  , ("RightDownVectorBar"                     , Left 0x02955               ) -- DOWNWARDS HARPOON WITH BARB RIGHT TO BAR
+  , ("RightFloor"                             , Left 0x0230B               ) -- RIGHT FLOOR
+  , ("RightTee"                               , Left 0x022A2               ) -- RIGHT TACK
+  , ("RightTeeArrow"                          , Left 0x021A6               ) -- RIGHTWARDS ARROW FROM BAR
+  , ("RightTeeVector"                         , Left 0x0295B               ) -- RIGHTWARDS HARPOON WITH BARB UP FROM BAR
+  , ("RightTriangle"                          , Left 0x022B3               ) -- CONTAINS AS NORMAL SUBGROUP
+  , ("RightTriangleBar"                       , Left 0x029D0               ) -- VERTICAL BAR BESIDE RIGHT TRIANGLE
+  , ("RightTriangleEqual"                     , Left 0x022B5               ) -- CONTAINS AS NORMAL SUBGROUP OR EQUAL TO
+  , ("RightUpDownVector"                      , Left 0x0294F               ) -- UP BARB RIGHT DOWN BARB RIGHT HARPOON
+  , ("RightUpTeeVector"                       , Left 0x0295C               ) -- UPWARDS HARPOON WITH BARB RIGHT FROM BAR
+  , ("RightUpVector"                          , Left 0x021BE               ) -- UPWARDS HARPOON WITH BARB RIGHTWARDS
+  , ("RightUpVectorBar"                       , Left 0x02954               ) -- UPWARDS HARPOON WITH BARB RIGHT TO BAR
+  , ("RightVector"                            , Left 0x021C0               ) -- RIGHTWARDS HARPOON WITH BARB UPWARDS
+  , ("RightVectorBar"                         , Left 0x02953               ) -- RIGHTWARDS HARPOON WITH BARB UP TO BAR
+  , ("Rightarrow"                             , Left 0x021D2               ) -- RIGHTWARDS DOUBLE ARROW
+  , ("Ropf"                                   , Left 0x0211D               ) -- DOUBLE-STRUCK CAPITAL R
+  , ("RoundImplies"                           , Left 0x02970               ) -- RIGHT DOUBLE ARROW WITH ROUNDED HEAD
+  , ("Rrightarrow"                            , Left 0x021DB               ) -- RIGHTWARDS TRIPLE ARROW
+  , ("Rscr"                                   , Left 0x0211B               ) -- SCRIPT CAPITAL R
+  , ("Rsh"                                    , Left 0x021B1               ) -- UPWARDS ARROW WITH TIP RIGHTWARDS
+  , ("RuleDelayed"                            , Left 0x029F4               ) -- RULE-DELAYED
+  , ("SHCHcy"                                 , Left 0x00429               ) -- CYRILLIC CAPITAL LETTER SHCHA
+  , ("SHcy"                                   , Left 0x00428               ) -- CYRILLIC CAPITAL LETTER SHA
+  , ("SOFTcy"                                 , Left 0x0042C               ) -- CYRILLIC CAPITAL LETTER SOFT SIGN
+  , ("Sacute"                                 , Left 0x0015A               ) -- LATIN CAPITAL LETTER S WITH ACUTE
+  , ("Sc"                                     , Left 0x02ABC               ) -- DOUBLE SUCCEEDS
+  , ("Scaron"                                 , Left 0x00160               ) -- LATIN CAPITAL LETTER S WITH CARON
+  , ("Scedil"                                 , Left 0x0015E               ) -- LATIN CAPITAL LETTER S WITH CEDILLA
+  , ("Scirc"                                  , Left 0x0015C               ) -- LATIN CAPITAL LETTER S WITH CIRCUMFLEX
+  , ("Scy"                                    , Left 0x00421               ) -- CYRILLIC CAPITAL LETTER ES
+  , ("Sfr"                                    , Left 0x1D516               ) -- MATHEMATICAL FRAKTUR CAPITAL S
+  , ("Sgr"                                    , Left 0x003A3               ) -- GREEK CAPITAL LETTER SIGMA
+  , ("ShortDownArrow"                         , Left 0x02193               ) -- DOWNWARDS ARROW
+  , ("ShortLeftArrow"                         , Left 0x02190               ) -- LEFTWARDS ARROW
+  , ("ShortRightArrow"                        , Left 0x02192               ) -- RIGHTWARDS ARROW
+  , ("ShortUpArrow"                           , Left 0x02191               ) -- UPWARDS ARROW
+  , ("Sigma"                                  , Left 0x003A3               ) -- GREEK CAPITAL LETTER SIGMA
+  , ("SmallCircle"                            , Left 0x02218               ) -- RING OPERATOR
+  , ("Sopf"                                   , Left 0x1D54A               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL S
+  , ("Sqrt"                                   , Left 0x0221A               ) -- SQUARE ROOT
+  , ("Square"                                 , Left 0x025A1               ) -- WHITE SQUARE
+  , ("SquareIntersection"                     , Left 0x02293               ) -- SQUARE CAP
+  , ("SquareSubset"                           , Left 0x0228F               ) -- SQUARE IMAGE OF
+  , ("SquareSubsetEqual"                      , Left 0x02291               ) -- SQUARE IMAGE OF OR EQUAL TO
+  , ("SquareSuperset"                         , Left 0x02290               ) -- SQUARE ORIGINAL OF
+  , ("SquareSupersetEqual"                    , Left 0x02292               ) -- SQUARE ORIGINAL OF OR EQUAL TO
+  , ("SquareUnion"                            , Left 0x02294               ) -- SQUARE CUP
+  , ("Sscr"                                   , Left 0x1D4AE               ) -- MATHEMATICAL SCRIPT CAPITAL S
+  , ("Star"                                   , Left 0x022C6               ) -- STAR OPERATOR
+  , ("Sub"                                    , Left 0x022D0               ) -- DOUBLE SUBSET
+  , ("Subset"                                 , Left 0x022D0               ) -- DOUBLE SUBSET
+  , ("SubsetEqual"                            , Left 0x02286               ) -- SUBSET OF OR EQUAL TO
+  , ("Succeeds"                               , Left 0x0227B               ) -- SUCCEEDS
+  , ("SucceedsEqual"                          , Left 0x02AB0               ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN
+  , ("SucceedsSlantEqual"                     , Left 0x0227D               ) -- SUCCEEDS OR EQUAL TO
+  , ("SucceedsTilde"                          , Left 0x0227F               ) -- SUCCEEDS OR EQUIVALENT TO
+  , ("SuchThat"                               , Left 0x0220B               ) -- CONTAINS AS MEMBER
+  , ("Sum"                                    , Left 0x02211               ) -- N-ARY SUMMATION
+  , ("Sup"                                    , Left 0x022D1               ) -- DOUBLE SUPERSET
+  , ("Superset"                               , Left 0x02283               ) -- SUPERSET OF
+  , ("SupersetEqual"                          , Left 0x02287               ) -- SUPERSET OF OR EQUAL TO
+  , ("Supset"                                 , Left 0x022D1               ) -- DOUBLE SUPERSET
+  , ("THORN"                                  , Left 0x000DE               ) -- LATIN CAPITAL LETTER THORN
+  , ("THgr"                                   , Left 0x00398               ) -- GREEK CAPITAL LETTER THETA
+  , ("TRADE"                                  , Left 0x02122               ) -- TRADE MARK SIGN
+  , ("TSHcy"                                  , Left 0x0040B               ) -- CYRILLIC CAPITAL LETTER TSHE
+  , ("TScy"                                   , Left 0x00426               ) -- CYRILLIC CAPITAL LETTER TSE
+  , ("Tab"                                    , Left 0x00009               ) -- CHARACTER TABULATION
+  , ("Tau"                                    , Left 0x003A4               ) -- GREEK CAPITAL LETTER TAU
+  , ("Tcaron"                                 , Left 0x00164               ) -- LATIN CAPITAL LETTER T WITH CARON
+  , ("Tcedil"                                 , Left 0x00162               ) -- LATIN CAPITAL LETTER T WITH CEDILLA
+  , ("Tcy"                                    , Left 0x00422               ) -- CYRILLIC CAPITAL LETTER TE
+  , ("Tfr"                                    , Left 0x1D517               ) -- MATHEMATICAL FRAKTUR CAPITAL T
+  , ("Tgr"                                    , Left 0x003A4               ) -- GREEK CAPITAL LETTER TAU
+  , ("Therefore"                              , Left 0x02234               ) -- THEREFORE
+  , ("Theta"                                  , Left 0x00398               ) -- GREEK CAPITAL LETTER THETA
+  , ("ThickSpace"                             , Right [ 0x0205F, 0x0200A ] ) -- space of width 5/18 em
+  , ("ThinSpace"                              , Left 0x02009               ) -- THIN SPACE
+  , ("Tilde"                                  , Left 0x0223C               ) -- TILDE OPERATOR
+  , ("TildeEqual"                             , Left 0x02243               ) -- ASYMPTOTICALLY EQUAL TO
+  , ("TildeFullEqual"                         , Left 0x02245               ) -- APPROXIMATELY EQUAL TO
+  , ("TildeTilde"                             , Left 0x02248               ) -- ALMOST EQUAL TO
+  , ("Topf"                                   , Left 0x1D54B               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL T
+  , ("TripleDot"                              , Left 0x020DB               ) -- COMBINING THREE DOTS ABOVE
+  , ("Tscr"                                   , Left 0x1D4AF               ) -- MATHEMATICAL SCRIPT CAPITAL T
+  , ("Tstrok"                                 , Left 0x00166               ) -- LATIN CAPITAL LETTER T WITH STROKE
+  , ("Uacgr"                                  , Left 0x0038E               ) -- GREEK CAPITAL LETTER UPSILON WITH TONOS
+  , ("Uacute"                                 , Left 0x000DA               ) -- LATIN CAPITAL LETTER U WITH ACUTE
+  , ("Uarr"                                   , Left 0x0219F               ) -- UPWARDS TWO HEADED ARROW
+  , ("Uarrocir"                               , Left 0x02949               ) -- UPWARDS TWO-HEADED ARROW FROM SMALL CIRCLE
+  , ("Ubrcy"                                  , Left 0x0040E               ) -- CYRILLIC CAPITAL LETTER SHORT U
+  , ("Ubreve"                                 , Left 0x0016C               ) -- LATIN CAPITAL LETTER U WITH BREVE
+  , ("Ucirc"                                  , Left 0x000DB               ) -- LATIN CAPITAL LETTER U WITH CIRCUMFLEX
+  , ("Ucy"                                    , Left 0x00423               ) -- CYRILLIC CAPITAL LETTER U
+  , ("Udblac"                                 , Left 0x00170               ) -- LATIN CAPITAL LETTER U WITH DOUBLE ACUTE
+  , ("Udigr"                                  , Left 0x003AB               ) -- GREEK CAPITAL LETTER UPSILON WITH DIALYTIKA
+  , ("Ufr"                                    , Left 0x1D518               ) -- MATHEMATICAL FRAKTUR CAPITAL U
+  , ("Ugr"                                    , Left 0x003A5               ) -- GREEK CAPITAL LETTER UPSILON
+  , ("Ugrave"                                 , Left 0x000D9               ) -- LATIN CAPITAL LETTER U WITH GRAVE
+  , ("Umacr"                                  , Left 0x0016A               ) -- LATIN CAPITAL LETTER U WITH MACRON
+  , ("UnderBar"                               , Left 0x0005F               ) -- LOW LINE
+  , ("UnderBrace"                             , Left 0x023DF               ) -- BOTTOM CURLY BRACKET
+  , ("UnderBracket"                           , Left 0x023B5               ) -- BOTTOM SQUARE BRACKET
+  , ("UnderParenthesis"                       , Left 0x023DD               ) -- BOTTOM PARENTHESIS
+  , ("Union"                                  , Left 0x022C3               ) -- N-ARY UNION
+  , ("UnionPlus"                              , Left 0x0228E               ) -- MULTISET UNION
+  , ("Uogon"                                  , Left 0x00172               ) -- LATIN CAPITAL LETTER U WITH OGONEK
+  , ("Uopf"                                   , Left 0x1D54C               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL U
+  , ("UpArrow"                                , Left 0x02191               ) -- UPWARDS ARROW
+  , ("UpArrowBar"                             , Left 0x02912               ) -- UPWARDS ARROW TO BAR
+  , ("UpArrowDownArrow"                       , Left 0x021C5               ) -- UPWARDS ARROW LEFTWARDS OF DOWNWARDS ARROW
+  , ("UpDownArrow"                            , Left 0x02195               ) -- UP DOWN ARROW
+  , ("UpEquilibrium"                          , Left 0x0296E               ) -- UPWARDS HARPOON WITH BARB LEFT BESIDE DOWNWARDS HARPOON WITH BARB RIGHT
+  , ("UpTee"                                  , Left 0x022A5               ) -- UP TACK
+  , ("UpTeeArrow"                             , Left 0x021A5               ) -- UPWARDS ARROW FROM BAR
+  , ("Uparrow"                                , Left 0x021D1               ) -- UPWARDS DOUBLE ARROW
+  , ("Updownarrow"                            , Left 0x021D5               ) -- UP DOWN DOUBLE ARROW
+  , ("UpperLeftArrow"                         , Left 0x02196               ) -- NORTH WEST ARROW
+  , ("UpperRightArrow"                        , Left 0x02197               ) -- NORTH EAST ARROW
+  , ("Upsi"                                   , Left 0x003D2               ) -- GREEK UPSILON WITH HOOK SYMBOL
+  , ("Upsilon"                                , Left 0x003A5               ) -- GREEK CAPITAL LETTER UPSILON
+  , ("Uring"                                  , Left 0x0016E               ) -- LATIN CAPITAL LETTER U WITH RING ABOVE
+  , ("Uscr"                                   , Left 0x1D4B0               ) -- MATHEMATICAL SCRIPT CAPITAL U
+  , ("Utilde"                                 , Left 0x00168               ) -- LATIN CAPITAL LETTER U WITH TILDE
+  , ("Uuml"                                   , Left 0x000DC               ) -- LATIN CAPITAL LETTER U WITH DIAERESIS
+  , ("VDash"                                  , Left 0x022AB               ) -- DOUBLE VERTICAL BAR DOUBLE RIGHT TURNSTILE
+  , ("Vbar"                                   , Left 0x02AEB               ) -- DOUBLE UP TACK
+  , ("Vcy"                                    , Left 0x00412               ) -- CYRILLIC CAPITAL LETTER VE
+  , ("Vdash"                                  , Left 0x022A9               ) -- FORCES
+  , ("Vdashl"                                 , Left 0x02AE6               ) -- LONG DASH FROM LEFT MEMBER OF DOUBLE VERTICAL
+  , ("Vee"                                    , Left 0x022C1               ) -- N-ARY LOGICAL OR
+  , ("Verbar"                                 , Left 0x02016               ) -- DOUBLE VERTICAL LINE
+  , ("Vert"                                   , Left 0x02016               ) -- DOUBLE VERTICAL LINE
+  , ("VerticalBar"                            , Left 0x02223               ) -- DIVIDES
+  , ("VerticalLine"                           , Left 0x0007C               ) -- VERTICAL LINE
+  , ("VerticalSeparator"                      , Left 0x02758               ) -- LIGHT VERTICAL BAR
+  , ("VerticalTilde"                          , Left 0x02240               ) -- WREATH PRODUCT
+  , ("VeryThinSpace"                          , Left 0x0200A               ) -- HAIR SPACE
+  , ("Vfr"                                    , Left 0x1D519               ) -- MATHEMATICAL FRAKTUR CAPITAL V
+  , ("Vopf"                                   , Left 0x1D54D               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL V
+  , ("Vscr"                                   , Left 0x1D4B1               ) -- MATHEMATICAL SCRIPT CAPITAL V
+  , ("Vvdash"                                 , Left 0x022AA               ) -- TRIPLE VERTICAL BAR RIGHT TURNSTILE
+  , ("Wcirc"                                  , Left 0x00174               ) -- LATIN CAPITAL LETTER W WITH CIRCUMFLEX
+  , ("Wedge"                                  , Left 0x022C0               ) -- N-ARY LOGICAL AND
+  , ("Wfr"                                    , Left 0x1D51A               ) -- MATHEMATICAL FRAKTUR CAPITAL W
+  , ("Wopf"                                   , Left 0x1D54E               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL W
+  , ("Wscr"                                   , Left 0x1D4B2               ) -- MATHEMATICAL SCRIPT CAPITAL W
+  , ("Xfr"                                    , Left 0x1D51B               ) -- MATHEMATICAL FRAKTUR CAPITAL X
+  , ("Xgr"                                    , Left 0x0039E               ) -- GREEK CAPITAL LETTER XI
+  , ("Xi"                                     , Left 0x0039E               ) -- GREEK CAPITAL LETTER XI
+  , ("Xopf"                                   , Left 0x1D54F               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL X
+  , ("Xscr"                                   , Left 0x1D4B3               ) -- MATHEMATICAL SCRIPT CAPITAL X
+  , ("YAcy"                                   , Left 0x0042F               ) -- CYRILLIC CAPITAL LETTER YA
+  , ("YIcy"                                   , Left 0x00407               ) -- CYRILLIC CAPITAL LETTER YI
+  , ("YUcy"                                   , Left 0x0042E               ) -- CYRILLIC CAPITAL LETTER YU
+  , ("Yacute"                                 , Left 0x000DD               ) -- LATIN CAPITAL LETTER Y WITH ACUTE
+  , ("Ycirc"                                  , Left 0x00176               ) -- LATIN CAPITAL LETTER Y WITH CIRCUMFLEX
+  , ("Ycy"                                    , Left 0x0042B               ) -- CYRILLIC CAPITAL LETTER YERU
+  , ("Yfr"                                    , Left 0x1D51C               ) -- MATHEMATICAL FRAKTUR CAPITAL Y
+  , ("Yopf"                                   , Left 0x1D550               ) -- MATHEMATICAL DOUBLE-STRUCK CAPITAL Y
+  , ("Yscr"                                   , Left 0x1D4B4               ) -- MATHEMATICAL SCRIPT CAPITAL Y
+  , ("Yuml"                                   , Left 0x00178               ) -- LATIN CAPITAL LETTER Y WITH DIAERESIS
+  , ("ZHcy"                                   , Left 0x00416               ) -- CYRILLIC CAPITAL LETTER ZHE
+  , ("Zacute"                                 , Left 0x00179               ) -- LATIN CAPITAL LETTER Z WITH ACUTE
+  , ("Zcaron"                                 , Left 0x0017D               ) -- LATIN CAPITAL LETTER Z WITH CARON
+  , ("Zcy"                                    , Left 0x00417               ) -- CYRILLIC CAPITAL LETTER ZE
+  , ("Zdot"                                   , Left 0x0017B               ) -- LATIN CAPITAL LETTER Z WITH DOT ABOVE
+  , ("ZeroWidthSpace"                         , Left 0x0200B               ) -- ZERO WIDTH SPACE
+  , ("Zeta"                                   , Left 0x00396               ) -- GREEK CAPITAL LETTER ZETA
+  , ("Zfr"                                    , Left 0x02128               ) -- BLACK-LETTER CAPITAL Z
+  , ("Zgr"                                    , Left 0x00396               ) -- GREEK CAPITAL LETTER ZETA
+  , ("Zopf"                                   , Left 0x02124               ) -- DOUBLE-STRUCK CAPITAL Z
+  , ("Zscr"                                   , Left 0x1D4B5               ) -- MATHEMATICAL SCRIPT CAPITAL Z
+  , ("aacgr"                                  , Left 0x003AC               ) -- GREEK SMALL LETTER ALPHA WITH TONOS
+  , ("aacute"                                 , Left 0x000E1               ) -- LATIN SMALL LETTER A WITH ACUTE
+  , ("abreve"                                 , Left 0x00103               ) -- LATIN SMALL LETTER A WITH BREVE
+  , ("ac"                                     , Left 0x0223E               ) -- INVERTED LAZY S
+  , ("acE"                                    , Right [ 0x0223E, 0x00333 ] ) -- INVERTED LAZY S with double underline
+  , ("acd"                                    , Left 0x0223F               ) -- SINE WAVE
+  , ("acirc"                                  , Left 0x000E2               ) -- LATIN SMALL LETTER A WITH CIRCUMFLEX
+  , ("acute"                                  , Left 0x000B4               ) -- ACUTE ACCENT
+  , ("acy"                                    , Left 0x00430               ) -- CYRILLIC SMALL LETTER A
+  , ("aelig"                                  , Left 0x000E6               ) -- LATIN SMALL LETTER AE
+  , ("af"                                     , Left 0x02061               ) -- FUNCTION APPLICATION
+  , ("afr"                                    , Left 0x1D51E               ) -- MATHEMATICAL FRAKTUR SMALL A
+  , ("agr"                                    , Left 0x003B1               ) -- GREEK SMALL LETTER ALPHA
+  , ("agrave"                                 , Left 0x000E0               ) -- LATIN SMALL LETTER A WITH GRAVE
+  , ("alefsym"                                , Left 0x02135               ) -- ALEF SYMBOL
+  , ("aleph"                                  , Left 0x02135               ) -- ALEF SYMBOL
+  , ("alpha"                                  , Left 0x003B1               ) -- GREEK SMALL LETTER ALPHA
+  , ("amacr"                                  , Left 0x00101               ) -- LATIN SMALL LETTER A WITH MACRON
+  , ("amalg"                                  , Left 0x02A3F               ) -- AMALGAMATION OR COPRODUCT
+  , ("amp"                                    , Left 0x00026               ) -- AMPERSAND
+  , ("and"                                    , Left 0x02227               ) -- LOGICAL AND
+  , ("andand"                                 , Left 0x02A55               ) -- TWO INTERSECTING LOGICAL AND
+  , ("andd"                                   , Left 0x02A5C               ) -- LOGICAL AND WITH HORIZONTAL DASH
+  , ("andslope"                               , Left 0x02A58               ) -- SLOPING LARGE AND
+  , ("andv"                                   , Left 0x02A5A               ) -- LOGICAL AND WITH MIDDLE STEM
+  , ("ang"                                    , Left 0x02220               ) -- ANGLE
+  , ("ange"                                   , Left 0x029A4               ) -- ANGLE WITH UNDERBAR
+  , ("angle"                                  , Left 0x02220               ) -- ANGLE
+  , ("angmsd"                                 , Left 0x02221               ) -- MEASURED ANGLE
+  , ("angmsdaa"                               , Left 0x029A8               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING UP AND RIGHT
+  , ("angmsdab"                               , Left 0x029A9               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING UP AND LEFT
+  , ("angmsdac"                               , Left 0x029AA               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING DOWN AND RIGHT
+  , ("angmsdad"                               , Left 0x029AB               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING DOWN AND LEFT
+  , ("angmsdae"                               , Left 0x029AC               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING RIGHT AND UP
+  , ("angmsdaf"                               , Left 0x029AD               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING LEFT AND UP
+  , ("angmsdag"                               , Left 0x029AE               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING RIGHT AND DOWN
+  , ("angmsdah"                               , Left 0x029AF               ) -- MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING LEFT AND DOWN
+  , ("angrt"                                  , Left 0x0221F               ) -- RIGHT ANGLE
+  , ("angrtvb"                                , Left 0x022BE               ) -- RIGHT ANGLE WITH ARC
+  , ("angrtvbd"                               , Left 0x0299D               ) -- MEASURED RIGHT ANGLE WITH DOT
+  , ("angsph"                                 , Left 0x02222               ) -- SPHERICAL ANGLE
+  , ("angst"                                  , Left 0x000C5               ) -- LATIN CAPITAL LETTER A WITH RING ABOVE
+  , ("angzarr"                                , Left 0x0237C               ) -- RIGHT ANGLE WITH DOWNWARDS ZIGZAG ARROW
+  , ("aogon"                                  , Left 0x00105               ) -- LATIN SMALL LETTER A WITH OGONEK
+  , ("aopf"                                   , Left 0x1D552               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL A
+  , ("ap"                                     , Left 0x02248               ) -- ALMOST EQUAL TO
+  , ("apE"                                    , Left 0x02A70               ) -- APPROXIMATELY EQUAL OR EQUAL TO
+  , ("apacir"                                 , Left 0x02A6F               ) -- ALMOST EQUAL TO WITH CIRCUMFLEX ACCENT
+  , ("ape"                                    , Left 0x0224A               ) -- ALMOST EQUAL OR EQUAL TO
+  , ("apid"                                   , Left 0x0224B               ) -- TRIPLE TILDE
+  , ("apos"                                   , Left 0x00027               ) -- APOSTROPHE
+  , ("approx"                                 , Left 0x02248               ) -- ALMOST EQUAL TO
+  , ("approxeq"                               , Left 0x0224A               ) -- ALMOST EQUAL OR EQUAL TO
+  , ("aring"                                  , Left 0x000E5               ) -- LATIN SMALL LETTER A WITH RING ABOVE
+  , ("ascr"                                   , Left 0x1D4B6               ) -- MATHEMATICAL SCRIPT SMALL A
+  , ("ast"                                    , Left 0x0002A               ) -- ASTERISK
+  , ("asymp"                                  , Left 0x02248               ) -- ALMOST EQUAL TO
+  , ("asympeq"                                , Left 0x0224D               ) -- EQUIVALENT TO
+  , ("atilde"                                 , Left 0x000E3               ) -- LATIN SMALL LETTER A WITH TILDE
+  , ("auml"                                   , Left 0x000E4               ) -- LATIN SMALL LETTER A WITH DIAERESIS
+  , ("awconint"                               , Left 0x02233               ) -- ANTICLOCKWISE CONTOUR INTEGRAL
+  , ("awint"                                  , Left 0x02A11               ) -- ANTICLOCKWISE INTEGRATION
+  , ("b.Delta"                                , Left 0x1D6AB               ) -- MATHEMATICAL BOLD CAPITAL DELTA
+  , ("b.Gamma"                                , Left 0x1D6AA               ) -- MATHEMATICAL BOLD CAPITAL GAMMA
+  , ("b.Gammad"                               , Left 0x1D7CA               ) -- MATHEMATICAL BOLD CAPITAL DIGAMMA
+  , ("b.Lambda"                               , Left 0x1D6B2               ) -- MATHEMATICAL BOLD CAPITAL LAMDA
+  , ("b.Omega"                                , Left 0x1D6C0               ) -- MATHEMATICAL BOLD CAPITAL OMEGA
+  , ("b.Phi"                                  , Left 0x1D6BD               ) -- MATHEMATICAL BOLD CAPITAL PHI
+  , ("b.Pi"                                   , Left 0x1D6B7               ) -- MATHEMATICAL BOLD CAPITAL PI
+  , ("b.Psi"                                  , Left 0x1D6BF               ) -- MATHEMATICAL BOLD CAPITAL PSI
+  , ("b.Sigma"                                , Left 0x1D6BA               ) -- MATHEMATICAL BOLD CAPITAL SIGMA
+  , ("b.Theta"                                , Left 0x1D6AF               ) -- MATHEMATICAL BOLD CAPITAL THETA
+  , ("b.Upsi"                                 , Left 0x1D6BC               ) -- MATHEMATICAL BOLD CAPITAL UPSILON
+  , ("b.Xi"                                   , Left 0x1D6B5               ) -- MATHEMATICAL BOLD CAPITAL XI
+  , ("b.alpha"                                , Left 0x1D6C2               ) -- MATHEMATICAL BOLD SMALL ALPHA
+  , ("b.beta"                                 , Left 0x1D6C3               ) -- MATHEMATICAL BOLD SMALL BETA
+  , ("b.chi"                                  , Left 0x1D6D8               ) -- MATHEMATICAL BOLD SMALL CHI
+  , ("b.delta"                                , Left 0x1D6C5               ) -- MATHEMATICAL BOLD SMALL DELTA
+  , ("b.epsi"                                 , Left 0x1D6C6               ) -- MATHEMATICAL BOLD SMALL EPSILON
+  , ("b.epsiv"                                , Left 0x1D6DC               ) -- MATHEMATICAL BOLD EPSILON SYMBOL
+  , ("b.eta"                                  , Left 0x1D6C8               ) -- MATHEMATICAL BOLD SMALL ETA
+  , ("b.gamma"                                , Left 0x1D6C4               ) -- MATHEMATICAL BOLD SMALL GAMMA
+  , ("b.gammad"                               , Left 0x1D7CB               ) -- MATHEMATICAL BOLD SMALL DIGAMMA
+  , ("b.iota"                                 , Left 0x1D6CA               ) -- MATHEMATICAL BOLD SMALL IOTA
+  , ("b.kappa"                                , Left 0x1D6CB               ) -- MATHEMATICAL BOLD SMALL KAPPA
+  , ("b.kappav"                               , Left 0x1D6DE               ) -- MATHEMATICAL BOLD KAPPA SYMBOL
+  , ("b.lambda"                               , Left 0x1D6CC               ) -- MATHEMATICAL BOLD SMALL LAMDA
+  , ("b.mu"                                   , Left 0x1D6CD               ) -- MATHEMATICAL BOLD SMALL MU
+  , ("b.nu"                                   , Left 0x1D6CE               ) -- MATHEMATICAL BOLD SMALL NU
+  , ("b.omega"                                , Left 0x1D6DA               ) -- MATHEMATICAL BOLD SMALL OMEGA
+  , ("b.phi"                                  , Left 0x1D6D7               ) -- MATHEMATICAL BOLD SMALL PHI
+  , ("b.phiv"                                 , Left 0x1D6DF               ) -- MATHEMATICAL BOLD PHI SYMBOL
+  , ("b.pi"                                   , Left 0x1D6D1               ) -- MATHEMATICAL BOLD SMALL PI
+  , ("b.piv"                                  , Left 0x1D6E1               ) -- MATHEMATICAL BOLD PI SYMBOL
+  , ("b.psi"                                  , Left 0x1D6D9               ) -- MATHEMATICAL BOLD SMALL PSI
+  , ("b.rho"                                  , Left 0x1D6D2               ) -- MATHEMATICAL BOLD SMALL RHO
+  , ("b.rhov"                                 , Left 0x1D6E0               ) -- MATHEMATICAL BOLD RHO SYMBOL
+  , ("b.sigma"                                , Left 0x1D6D4               ) -- MATHEMATICAL BOLD SMALL SIGMA
+  , ("b.sigmav"                               , Left 0x1D6D3               ) -- MATHEMATICAL BOLD SMALL FINAL SIGMA
+  , ("b.tau"                                  , Left 0x1D6D5               ) -- MATHEMATICAL BOLD SMALL TAU
+  , ("b.thetas"                               , Left 0x1D6C9               ) -- MATHEMATICAL BOLD SMALL THETA
+  , ("b.thetav"                               , Left 0x1D6DD               ) -- MATHEMATICAL BOLD THETA SYMBOL
+  , ("b.upsi"                                 , Left 0x1D6D6               ) -- MATHEMATICAL BOLD SMALL UPSILON
+  , ("b.xi"                                   , Left 0x1D6CF               ) -- MATHEMATICAL BOLD SMALL XI
+  , ("b.zeta"                                 , Left 0x1D6C7               ) -- MATHEMATICAL BOLD SMALL ZETA
+  , ("bNot"                                   , Left 0x02AED               ) -- REVERSED DOUBLE STROKE NOT SIGN
+  , ("backcong"                               , Left 0x0224C               ) -- ALL EQUAL TO
+  , ("backepsilon"                            , Left 0x003F6               ) -- GREEK REVERSED LUNATE EPSILON SYMBOL
+  , ("backprime"                              , Left 0x02035               ) -- REVERSED PRIME
+  , ("backsim"                                , Left 0x0223D               ) -- REVERSED TILDE
+  , ("backsimeq"                              , Left 0x022CD               ) -- REVERSED TILDE EQUALS
+  , ("barvee"                                 , Left 0x022BD               ) -- NOR
+  , ("barwed"                                 , Left 0x02305               ) -- PROJECTIVE
+  , ("barwedge"                               , Left 0x02305               ) -- PROJECTIVE
+  , ("bbrk"                                   , Left 0x023B5               ) -- BOTTOM SQUARE BRACKET
+  , ("bbrktbrk"                               , Left 0x023B6               ) -- BOTTOM SQUARE BRACKET OVER TOP SQUARE BRACKET
+  , ("bcong"                                  , Left 0x0224C               ) -- ALL EQUAL TO
+  , ("bcy"                                    , Left 0x00431               ) -- CYRILLIC SMALL LETTER BE
+  , ("bdquo"                                  , Left 0x0201E               ) -- DOUBLE LOW-9 QUOTATION MARK
+  , ("becaus"                                 , Left 0x02235               ) -- BECAUSE
+  , ("because"                                , Left 0x02235               ) -- BECAUSE
+  , ("bemptyv"                                , Left 0x029B0               ) -- REVERSED EMPTY SET
+  , ("bepsi"                                  , Left 0x003F6               ) -- GREEK REVERSED LUNATE EPSILON SYMBOL
+  , ("bernou"                                 , Left 0x0212C               ) -- SCRIPT CAPITAL B
+  , ("beta"                                   , Left 0x003B2               ) -- GREEK SMALL LETTER BETA
+  , ("beth"                                   , Left 0x02136               ) -- BET SYMBOL
+  , ("between"                                , Left 0x0226C               ) -- BETWEEN
+  , ("bfr"                                    , Left 0x1D51F               ) -- MATHEMATICAL FRAKTUR SMALL B
+  , ("bgr"                                    , Left 0x003B2               ) -- GREEK SMALL LETTER BETA
+  , ("bigcap"                                 , Left 0x022C2               ) -- N-ARY INTERSECTION
+  , ("bigcirc"                                , Left 0x025EF               ) -- LARGE CIRCLE
+  , ("bigcup"                                 , Left 0x022C3               ) -- N-ARY UNION
+  , ("bigodot"                                , Left 0x02A00               ) -- N-ARY CIRCLED DOT OPERATOR
+  , ("bigoplus"                               , Left 0x02A01               ) -- N-ARY CIRCLED PLUS OPERATOR
+  , ("bigotimes"                              , Left 0x02A02               ) -- N-ARY CIRCLED TIMES OPERATOR
+  , ("bigsqcup"                               , Left 0x02A06               ) -- N-ARY SQUARE UNION OPERATOR
+  , ("bigstar"                                , Left 0x02605               ) -- BLACK STAR
+  , ("bigtriangledown"                        , Left 0x025BD               ) -- WHITE DOWN-POINTING TRIANGLE
+  , ("bigtriangleup"                          , Left 0x025B3               ) -- WHITE UP-POINTING TRIANGLE
+  , ("biguplus"                               , Left 0x02A04               ) -- N-ARY UNION OPERATOR WITH PLUS
+  , ("bigvee"                                 , Left 0x022C1               ) -- N-ARY LOGICAL OR
+  , ("bigwedge"                               , Left 0x022C0               ) -- N-ARY LOGICAL AND
+  , ("bkarow"                                 , Left 0x0290D               ) -- RIGHTWARDS DOUBLE DASH ARROW
+  , ("blacklozenge"                           , Left 0x029EB               ) -- BLACK LOZENGE
+  , ("blacksquare"                            , Left 0x025AA               ) -- BLACK SMALL SQUARE
+  , ("blacktriangle"                          , Left 0x025B4               ) -- BLACK UP-POINTING SMALL TRIANGLE
+  , ("blacktriangledown"                      , Left 0x025BE               ) -- BLACK DOWN-POINTING SMALL TRIANGLE
+  , ("blacktriangleleft"                      , Left 0x025C2               ) -- BLACK LEFT-POINTING SMALL TRIANGLE
+  , ("blacktriangleright"                     , Left 0x025B8               ) -- BLACK RIGHT-POINTING SMALL TRIANGLE
+  , ("blank"                                  , Left 0x02423               ) -- OPEN BOX
+  , ("blk12"                                  , Left 0x02592               ) -- MEDIUM SHADE
+  , ("blk14"                                  , Left 0x02591               ) -- LIGHT SHADE
+  , ("blk34"                                  , Left 0x02593               ) -- DARK SHADE
+  , ("block"                                  , Left 0x02588               ) -- FULL BLOCK
+  , ("bne"                                    , Right [ 0x0003D, 0x020E5 ] ) -- EQUALS SIGN with reverse slash
+  , ("bnequiv"                                , Right [ 0x02261, 0x020E5 ] ) -- IDENTICAL TO with reverse slash
+  , ("bnot"                                   , Left 0x02310               ) -- REVERSED NOT SIGN
+  , ("bopf"                                   , Left 0x1D553               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL B
+  , ("bot"                                    , Left 0x022A5               ) -- UP TACK
+  , ("bottom"                                 , Left 0x022A5               ) -- UP TACK
+  , ("bowtie"                                 , Left 0x022C8               ) -- BOWTIE
+  , ("boxDL"                                  , Left 0x02557               ) -- BOX DRAWINGS DOUBLE DOWN AND LEFT
+  , ("boxDR"                                  , Left 0x02554               ) -- BOX DRAWINGS DOUBLE DOWN AND RIGHT
+  , ("boxDl"                                  , Left 0x02556               ) -- BOX DRAWINGS DOWN DOUBLE AND LEFT SINGLE
+  , ("boxDr"                                  , Left 0x02553               ) -- BOX DRAWINGS DOWN DOUBLE AND RIGHT SINGLE
+  , ("boxH"                                   , Left 0x02550               ) -- BOX DRAWINGS DOUBLE HORIZONTAL
+  , ("boxHD"                                  , Left 0x02566               ) -- BOX DRAWINGS DOUBLE DOWN AND HORIZONTAL
+  , ("boxHU"                                  , Left 0x02569               ) -- BOX DRAWINGS DOUBLE UP AND HORIZONTAL
+  , ("boxHd"                                  , Left 0x02564               ) -- BOX DRAWINGS DOWN SINGLE AND HORIZONTAL DOUBLE
+  , ("boxHu"                                  , Left 0x02567               ) -- BOX DRAWINGS UP SINGLE AND HORIZONTAL DOUBLE
+  , ("boxUL"                                  , Left 0x0255D               ) -- BOX DRAWINGS DOUBLE UP AND LEFT
+  , ("boxUR"                                  , Left 0x0255A               ) -- BOX DRAWINGS DOUBLE UP AND RIGHT
+  , ("boxUl"                                  , Left 0x0255C               ) -- BOX DRAWINGS UP DOUBLE AND LEFT SINGLE
+  , ("boxUr"                                  , Left 0x02559               ) -- BOX DRAWINGS UP DOUBLE AND RIGHT SINGLE
+  , ("boxV"                                   , Left 0x02551               ) -- BOX DRAWINGS DOUBLE VERTICAL
+  , ("boxVH"                                  , Left 0x0256C               ) -- BOX DRAWINGS DOUBLE VERTICAL AND HORIZONTAL
+  , ("boxVL"                                  , Left 0x02563               ) -- BOX DRAWINGS DOUBLE VERTICAL AND LEFT
+  , ("boxVR"                                  , Left 0x02560               ) -- BOX DRAWINGS DOUBLE VERTICAL AND RIGHT
+  , ("boxVh"                                  , Left 0x0256B               ) -- BOX DRAWINGS VERTICAL DOUBLE AND HORIZONTAL SINGLE
+  , ("boxVl"                                  , Left 0x02562               ) -- BOX DRAWINGS VERTICAL DOUBLE AND LEFT SINGLE
+  , ("boxVr"                                  , Left 0x0255F               ) -- BOX DRAWINGS VERTICAL DOUBLE AND RIGHT SINGLE
+  , ("boxbox"                                 , Left 0x029C9               ) -- TWO JOINED SQUARES
+  , ("boxdL"                                  , Left 0x02555               ) -- BOX DRAWINGS DOWN SINGLE AND LEFT DOUBLE
+  , ("boxdR"                                  , Left 0x02552               ) -- BOX DRAWINGS DOWN SINGLE AND RIGHT DOUBLE
+  , ("boxdl"                                  , Left 0x02510               ) -- BOX DRAWINGS LIGHT DOWN AND LEFT
+  , ("boxdr"                                  , Left 0x0250C               ) -- BOX DRAWINGS LIGHT DOWN AND RIGHT
+  , ("boxh"                                   , Left 0x02500               ) -- BOX DRAWINGS LIGHT HORIZONTAL
+  , ("boxhD"                                  , Left 0x02565               ) -- BOX DRAWINGS DOWN DOUBLE AND HORIZONTAL SINGLE
+  , ("boxhU"                                  , Left 0x02568               ) -- BOX DRAWINGS UP DOUBLE AND HORIZONTAL SINGLE
+  , ("boxhd"                                  , Left 0x0252C               ) -- BOX DRAWINGS LIGHT DOWN AND HORIZONTAL
+  , ("boxhu"                                  , Left 0x02534               ) -- BOX DRAWINGS LIGHT UP AND HORIZONTAL
+  , ("boxminus"                               , Left 0x0229F               ) -- SQUARED MINUS
+  , ("boxplus"                                , Left 0x0229E               ) -- SQUARED PLUS
+  , ("boxtimes"                               , Left 0x022A0               ) -- SQUARED TIMES
+  , ("boxuL"                                  , Left 0x0255B               ) -- BOX DRAWINGS UP SINGLE AND LEFT DOUBLE
+  , ("boxuR"                                  , Left 0x02558               ) -- BOX DRAWINGS UP SINGLE AND RIGHT DOUBLE
+  , ("boxul"                                  , Left 0x02518               ) -- BOX DRAWINGS LIGHT UP AND LEFT
+  , ("boxur"                                  , Left 0x02514               ) -- BOX DRAWINGS LIGHT UP AND RIGHT
+  , ("boxv"                                   , Left 0x02502               ) -- BOX DRAWINGS LIGHT VERTICAL
+  , ("boxvH"                                  , Left 0x0256A               ) -- BOX DRAWINGS VERTICAL SINGLE AND HORIZONTAL DOUBLE
+  , ("boxvL"                                  , Left 0x02561               ) -- BOX DRAWINGS VERTICAL SINGLE AND LEFT DOUBLE
+  , ("boxvR"                                  , Left 0x0255E               ) -- BOX DRAWINGS VERTICAL SINGLE AND RIGHT DOUBLE
+  , ("boxvh"                                  , Left 0x0253C               ) -- BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL
+  , ("boxvl"                                  , Left 0x02524               ) -- BOX DRAWINGS LIGHT VERTICAL AND LEFT
+  , ("boxvr"                                  , Left 0x0251C               ) -- BOX DRAWINGS LIGHT VERTICAL AND RIGHT
+  , ("bprime"                                 , Left 0x02035               ) -- REVERSED PRIME
+  , ("breve"                                  , Left 0x002D8               ) -- BREVE
+  , ("brvbar"                                 , Left 0x000A6               ) -- BROKEN BAR
+  , ("bscr"                                   , Left 0x1D4B7               ) -- MATHEMATICAL SCRIPT SMALL B
+  , ("bsemi"                                  , Left 0x0204F               ) -- REVERSED SEMICOLON
+  , ("bsim"                                   , Left 0x0223D               ) -- REVERSED TILDE
+  , ("bsime"                                  , Left 0x022CD               ) -- REVERSED TILDE EQUALS
+  , ("bsol"                                   , Left 0x0005C               ) -- REVERSE SOLIDUS
+  , ("bsolb"                                  , Left 0x029C5               ) -- SQUARED FALLING DIAGONAL SLASH
+  , ("bsolhsub"                               , Left 0x027C8               ) -- REVERSE SOLIDUS PRECEDING SUBSET
+  , ("bull"                                   , Left 0x02022               ) -- BULLET
+  , ("bullet"                                 , Left 0x02022               ) -- BULLET
+  , ("bump"                                   , Left 0x0224E               ) -- GEOMETRICALLY EQUIVALENT TO
+  , ("bumpE"                                  , Left 0x02AAE               ) -- EQUALS SIGN WITH BUMPY ABOVE
+  , ("bumpe"                                  , Left 0x0224F               ) -- DIFFERENCE BETWEEN
+  , ("bumpeq"                                 , Left 0x0224F               ) -- DIFFERENCE BETWEEN
+  , ("cacute"                                 , Left 0x00107               ) -- LATIN SMALL LETTER C WITH ACUTE
+  , ("cap"                                    , Left 0x02229               ) -- INTERSECTION
+  , ("capand"                                 , Left 0x02A44               ) -- INTERSECTION WITH LOGICAL AND
+  , ("capbrcup"                               , Left 0x02A49               ) -- INTERSECTION ABOVE BAR ABOVE UNION
+  , ("capcap"                                 , Left 0x02A4B               ) -- INTERSECTION BESIDE AND JOINED WITH INTERSECTION
+  , ("capcup"                                 , Left 0x02A47               ) -- INTERSECTION ABOVE UNION
+  , ("capdot"                                 , Left 0x02A40               ) -- INTERSECTION WITH DOT
+  , ("caps"                                   , Right [ 0x02229, 0x0FE00 ] ) -- INTERSECTION with serifs
+  , ("caret"                                  , Left 0x02041               ) -- CARET INSERTION POINT
+  , ("caron"                                  , Left 0x002C7               ) -- CARON
+  , ("ccaps"                                  , Left 0x02A4D               ) -- CLOSED INTERSECTION WITH SERIFS
+  , ("ccaron"                                 , Left 0x0010D               ) -- LATIN SMALL LETTER C WITH CARON
+  , ("ccedil"                                 , Left 0x000E7               ) -- LATIN SMALL LETTER C WITH CEDILLA
+  , ("ccirc"                                  , Left 0x00109               ) -- LATIN SMALL LETTER C WITH CIRCUMFLEX
+  , ("ccups"                                  , Left 0x02A4C               ) -- CLOSED UNION WITH SERIFS
+  , ("ccupssm"                                , Left 0x02A50               ) -- CLOSED UNION WITH SERIFS AND SMASH PRODUCT
+  , ("cdot"                                   , Left 0x0010B               ) -- LATIN SMALL LETTER C WITH DOT ABOVE
+  , ("cedil"                                  , Left 0x000B8               ) -- CEDILLA
+  , ("cemptyv"                                , Left 0x029B2               ) -- EMPTY SET WITH SMALL CIRCLE ABOVE
+  , ("cent"                                   , Left 0x000A2               ) -- CENT SIGN
+  , ("centerdot"                              , Left 0x000B7               ) -- MIDDLE DOT
+  , ("cfr"                                    , Left 0x1D520               ) -- MATHEMATICAL FRAKTUR SMALL C
+  , ("chcy"                                   , Left 0x00447               ) -- CYRILLIC SMALL LETTER CHE
+  , ("check"                                  , Left 0x02713               ) -- CHECK MARK
+  , ("checkmark"                              , Left 0x02713               ) -- CHECK MARK
+  , ("chi"                                    , Left 0x003C7               ) -- GREEK SMALL LETTER CHI
+  , ("cir"                                    , Left 0x025CB               ) -- WHITE CIRCLE
+  , ("cirE"                                   , Left 0x029C3               ) -- CIRCLE WITH TWO HORIZONTAL STROKES TO THE RIGHT
+  , ("circ"                                   , Left 0x002C6               ) -- MODIFIER LETTER CIRCUMFLEX ACCENT
+  , ("circeq"                                 , Left 0x02257               ) -- RING EQUAL TO
+  , ("circlearrowleft"                        , Left 0x021BA               ) -- ANTICLOCKWISE OPEN CIRCLE ARROW
+  , ("circlearrowright"                       , Left 0x021BB               ) -- CLOCKWISE OPEN CIRCLE ARROW
+  , ("circledR"                               , Left 0x000AE               ) -- REGISTERED SIGN
+  , ("circledS"                               , Left 0x024C8               ) -- CIRCLED LATIN CAPITAL LETTER S
+  , ("circledast"                             , Left 0x0229B               ) -- CIRCLED ASTERISK OPERATOR
+  , ("circledcirc"                            , Left 0x0229A               ) -- CIRCLED RING OPERATOR
+  , ("circleddash"                            , Left 0x0229D               ) -- CIRCLED DASH
+  , ("cire"                                   , Left 0x02257               ) -- RING EQUAL TO
+  , ("cirfnint"                               , Left 0x02A10               ) -- CIRCULATION FUNCTION
+  , ("cirmid"                                 , Left 0x02AEF               ) -- VERTICAL LINE WITH CIRCLE ABOVE
+  , ("cirscir"                                , Left 0x029C2               ) -- CIRCLE WITH SMALL CIRCLE TO THE RIGHT
+  , ("clubs"                                  , Left 0x02663               ) -- BLACK CLUB SUIT
+  , ("clubsuit"                               , Left 0x02663               ) -- BLACK CLUB SUIT
+  , ("colon"                                  , Left 0x0003A               ) -- COLON
+  , ("colone"                                 , Left 0x02254               ) -- COLON EQUALS
+  , ("coloneq"                                , Left 0x02254               ) -- COLON EQUALS
+  , ("comma"                                  , Left 0x0002C               ) -- COMMA
+  , ("commat"                                 , Left 0x00040               ) -- COMMERCIAL AT
+  , ("comp"                                   , Left 0x02201               ) -- COMPLEMENT
+  , ("compfn"                                 , Left 0x02218               ) -- RING OPERATOR
+  , ("complement"                             , Left 0x02201               ) -- COMPLEMENT
+  , ("complexes"                              , Left 0x02102               ) -- DOUBLE-STRUCK CAPITAL C
+  , ("cong"                                   , Left 0x02245               ) -- APPROXIMATELY EQUAL TO
+  , ("congdot"                                , Left 0x02A6D               ) -- CONGRUENT WITH DOT ABOVE
+  , ("conint"                                 , Left 0x0222E               ) -- CONTOUR INTEGRAL
+  , ("copf"                                   , Left 0x1D554               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL C
+  , ("coprod"                                 , Left 0x02210               ) -- N-ARY COPRODUCT
+  , ("copy"                                   , Left 0x000A9               ) -- COPYRIGHT SIGN
+  , ("copysr"                                 , Left 0x02117               ) -- SOUND RECORDING COPYRIGHT
+  , ("crarr"                                  , Left 0x021B5               ) -- DOWNWARDS ARROW WITH CORNER LEFTWARDS
+  , ("cross"                                  , Left 0x02717               ) -- BALLOT X
+  , ("cscr"                                   , Left 0x1D4B8               ) -- MATHEMATICAL SCRIPT SMALL C
+  , ("csub"                                   , Left 0x02ACF               ) -- CLOSED SUBSET
+  , ("csube"                                  , Left 0x02AD1               ) -- CLOSED SUBSET OR EQUAL TO
+  , ("csup"                                   , Left 0x02AD0               ) -- CLOSED SUPERSET
+  , ("csupe"                                  , Left 0x02AD2               ) -- CLOSED SUPERSET OR EQUAL TO
+  , ("ctdot"                                  , Left 0x022EF               ) -- MIDLINE HORIZONTAL ELLIPSIS
+  , ("cudarrl"                                , Left 0x02938               ) -- RIGHT-SIDE ARC CLOCKWISE ARROW
+  , ("cudarrr"                                , Left 0x02935               ) -- ARROW POINTING RIGHTWARDS THEN CURVING DOWNWARDS
+  , ("cuepr"                                  , Left 0x022DE               ) -- EQUAL TO OR PRECEDES
+  , ("cuesc"                                  , Left 0x022DF               ) -- EQUAL TO OR SUCCEEDS
+  , ("cularr"                                 , Left 0x021B6               ) -- ANTICLOCKWISE TOP SEMICIRCLE ARROW
+  , ("cularrp"                                , Left 0x0293D               ) -- TOP ARC ANTICLOCKWISE ARROW WITH PLUS
+  , ("cup"                                    , Left 0x0222A               ) -- UNION
+  , ("cupbrcap"                               , Left 0x02A48               ) -- UNION ABOVE BAR ABOVE INTERSECTION
+  , ("cupcap"                                 , Left 0x02A46               ) -- UNION ABOVE INTERSECTION
+  , ("cupcup"                                 , Left 0x02A4A               ) -- UNION BESIDE AND JOINED WITH UNION
+  , ("cupdot"                                 , Left 0x0228D               ) -- MULTISET MULTIPLICATION
+  , ("cupor"                                  , Left 0x02A45               ) -- UNION WITH LOGICAL OR
+  , ("cups"                                   , Right [ 0x0222A, 0x0FE00 ] ) -- UNION with serifs
+  , ("curarr"                                 , Left 0x021B7               ) -- CLOCKWISE TOP SEMICIRCLE ARROW
+  , ("curarrm"                                , Left 0x0293C               ) -- TOP ARC CLOCKWISE ARROW WITH MINUS
+  , ("curlyeqprec"                            , Left 0x022DE               ) -- EQUAL TO OR PRECEDES
+  , ("curlyeqsucc"                            , Left 0x022DF               ) -- EQUAL TO OR SUCCEEDS
+  , ("curlyvee"                               , Left 0x022CE               ) -- CURLY LOGICAL OR
+  , ("curlywedge"                             , Left 0x022CF               ) -- CURLY LOGICAL AND
+  , ("curren"                                 , Left 0x000A4               ) -- CURRENCY SIGN
+  , ("curvearrowleft"                         , Left 0x021B6               ) -- ANTICLOCKWISE TOP SEMICIRCLE ARROW
+  , ("curvearrowright"                        , Left 0x021B7               ) -- CLOCKWISE TOP SEMICIRCLE ARROW
+  , ("cuvee"                                  , Left 0x022CE               ) -- CURLY LOGICAL OR
+  , ("cuwed"                                  , Left 0x022CF               ) -- CURLY LOGICAL AND
+  , ("cwconint"                               , Left 0x02232               ) -- CLOCKWISE CONTOUR INTEGRAL
+  , ("cwint"                                  , Left 0x02231               ) -- CLOCKWISE INTEGRAL
+  , ("cylcty"                                 , Left 0x0232D               ) -- CYLINDRICITY
+  , ("dArr"                                   , Left 0x021D3               ) -- DOWNWARDS DOUBLE ARROW
+  , ("dHar"                                   , Left 0x02965               ) -- DOWNWARDS HARPOON WITH BARB LEFT BESIDE DOWNWARDS HARPOON WITH BARB RIGHT
+  , ("dagger"                                 , Left 0x02020               ) -- DAGGER
+  , ("daleth"                                 , Left 0x02138               ) -- DALET SYMBOL
+  , ("darr"                                   , Left 0x02193               ) -- DOWNWARDS ARROW
+  , ("dash"                                   , Left 0x02010               ) -- HYPHEN
+  , ("dashv"                                  , Left 0x022A3               ) -- LEFT TACK
+  , ("dbkarow"                                , Left 0x0290F               ) -- RIGHTWARDS TRIPLE DASH ARROW
+  , ("dblac"                                  , Left 0x002DD               ) -- DOUBLE ACUTE ACCENT
+  , ("dcaron"                                 , Left 0x0010F               ) -- LATIN SMALL LETTER D WITH CARON
+  , ("dcy"                                    , Left 0x00434               ) -- CYRILLIC SMALL LETTER DE
+  , ("dd"                                     , Left 0x02146               ) -- DOUBLE-STRUCK ITALIC SMALL D
+  , ("ddagger"                                , Left 0x02021               ) -- DOUBLE DAGGER
+  , ("ddarr"                                  , Left 0x021CA               ) -- DOWNWARDS PAIRED ARROWS
+  , ("ddotseq"                                , Left 0x02A77               ) -- EQUALS SIGN WITH TWO DOTS ABOVE AND TWO DOTS BELOW
+  , ("deg"                                    , Left 0x000B0               ) -- DEGREE SIGN
+  , ("delta"                                  , Left 0x003B4               ) -- GREEK SMALL LETTER DELTA
+  , ("demptyv"                                , Left 0x029B1               ) -- EMPTY SET WITH OVERBAR
+  , ("dfisht"                                 , Left 0x0297F               ) -- DOWN FISH TAIL
+  , ("dfr"                                    , Left 0x1D521               ) -- MATHEMATICAL FRAKTUR SMALL D
+  , ("dgr"                                    , Left 0x003B4               ) -- GREEK SMALL LETTER DELTA
+  , ("dharl"                                  , Left 0x021C3               ) -- DOWNWARDS HARPOON WITH BARB LEFTWARDS
+  , ("dharr"                                  , Left 0x021C2               ) -- DOWNWARDS HARPOON WITH BARB RIGHTWARDS
+  , ("diam"                                   , Left 0x022C4               ) -- DIAMOND OPERATOR
+  , ("diamond"                                , Left 0x022C4               ) -- DIAMOND OPERATOR
+  , ("diamondsuit"                            , Left 0x02666               ) -- BLACK DIAMOND SUIT
+  , ("diams"                                  , Left 0x02666               ) -- BLACK DIAMOND SUIT
+  , ("die"                                    , Left 0x000A8               ) -- DIAERESIS
+  , ("digamma"                                , Left 0x003DD               ) -- GREEK SMALL LETTER DIGAMMA
+  , ("disin"                                  , Left 0x022F2               ) -- ELEMENT OF WITH LONG HORIZONTAL STROKE
+  , ("div"                                    , Left 0x000F7               ) -- DIVISION SIGN
+  , ("divide"                                 , Left 0x000F7               ) -- DIVISION SIGN
+  , ("divideontimes"                          , Left 0x022C7               ) -- DIVISION TIMES
+  , ("divonx"                                 , Left 0x022C7               ) -- DIVISION TIMES
+  , ("djcy"                                   , Left 0x00452               ) -- CYRILLIC SMALL LETTER DJE
+  , ("dlcorn"                                 , Left 0x0231E               ) -- BOTTOM LEFT CORNER
+  , ("dlcrop"                                 , Left 0x0230D               ) -- BOTTOM LEFT CROP
+  , ("dollar"                                 , Left 0x00024               ) -- DOLLAR SIGN
+  , ("dopf"                                   , Left 0x1D555               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL D
+  , ("dot"                                    , Left 0x002D9               ) -- DOT ABOVE
+  , ("doteq"                                  , Left 0x02250               ) -- APPROACHES THE LIMIT
+  , ("doteqdot"                               , Left 0x02251               ) -- GEOMETRICALLY EQUAL TO
+  , ("dotminus"                               , Left 0x02238               ) -- DOT MINUS
+  , ("dotplus"                                , Left 0x02214               ) -- DOT PLUS
+  , ("dotsquare"                              , Left 0x022A1               ) -- SQUARED DOT OPERATOR
+  , ("doublebarwedge"                         , Left 0x02306               ) -- PERSPECTIVE
+  , ("downarrow"                              , Left 0x02193               ) -- DOWNWARDS ARROW
+  , ("downdownarrows"                         , Left 0x021CA               ) -- DOWNWARDS PAIRED ARROWS
+  , ("downharpoonleft"                        , Left 0x021C3               ) -- DOWNWARDS HARPOON WITH BARB LEFTWARDS
+  , ("downharpoonright"                       , Left 0x021C2               ) -- DOWNWARDS HARPOON WITH BARB RIGHTWARDS
+  , ("drbkarow"                               , Left 0x02910               ) -- RIGHTWARDS TWO-HEADED TRIPLE DASH ARROW
+  , ("drcorn"                                 , Left 0x0231F               ) -- BOTTOM RIGHT CORNER
+  , ("drcrop"                                 , Left 0x0230C               ) -- BOTTOM RIGHT CROP
+  , ("dscr"                                   , Left 0x1D4B9               ) -- MATHEMATICAL SCRIPT SMALL D
+  , ("dscy"                                   , Left 0x00455               ) -- CYRILLIC SMALL LETTER DZE
+  , ("dsol"                                   , Left 0x029F6               ) -- SOLIDUS WITH OVERBAR
+  , ("dstrok"                                 , Left 0x00111               ) -- LATIN SMALL LETTER D WITH STROKE
+  , ("dtdot"                                  , Left 0x022F1               ) -- DOWN RIGHT DIAGONAL ELLIPSIS
+  , ("dtri"                                   , Left 0x025BF               ) -- WHITE DOWN-POINTING SMALL TRIANGLE
+  , ("dtrif"                                  , Left 0x025BE               ) -- BLACK DOWN-POINTING SMALL TRIANGLE
+  , ("duarr"                                  , Left 0x021F5               ) -- DOWNWARDS ARROW LEFTWARDS OF UPWARDS ARROW
+  , ("duhar"                                  , Left 0x0296F               ) -- DOWNWARDS HARPOON WITH BARB LEFT BESIDE UPWARDS HARPOON WITH BARB RIGHT
+  , ("dwangle"                                , Left 0x029A6               ) -- OBLIQUE ANGLE OPENING UP
+  , ("dzcy"                                   , Left 0x0045F               ) -- CYRILLIC SMALL LETTER DZHE
+  , ("dzigrarr"                               , Left 0x027FF               ) -- LONG RIGHTWARDS SQUIGGLE ARROW
+  , ("eDDot"                                  , Left 0x02A77               ) -- EQUALS SIGN WITH TWO DOTS ABOVE AND TWO DOTS BELOW
+  , ("eDot"                                   , Left 0x02251               ) -- GEOMETRICALLY EQUAL TO
+  , ("eacgr"                                  , Left 0x003AD               ) -- GREEK SMALL LETTER EPSILON WITH TONOS
+  , ("eacute"                                 , Left 0x000E9               ) -- LATIN SMALL LETTER E WITH ACUTE
+  , ("easter"                                 , Left 0x02A6E               ) -- EQUALS WITH ASTERISK
+  , ("ecaron"                                 , Left 0x0011B               ) -- LATIN SMALL LETTER E WITH CARON
+  , ("ecir"                                   , Left 0x02256               ) -- RING IN EQUAL TO
+  , ("ecirc"                                  , Left 0x000EA               ) -- LATIN SMALL LETTER E WITH CIRCUMFLEX
+  , ("ecolon"                                 , Left 0x02255               ) -- EQUALS COLON
+  , ("ecy"                                    , Left 0x0044D               ) -- CYRILLIC SMALL LETTER E
+  , ("edot"                                   , Left 0x00117               ) -- LATIN SMALL LETTER E WITH DOT ABOVE
+  , ("ee"                                     , Left 0x02147               ) -- DOUBLE-STRUCK ITALIC SMALL E
+  , ("eeacgr"                                 , Left 0x003AE               ) -- GREEK SMALL LETTER ETA WITH TONOS
+  , ("eegr"                                   , Left 0x003B7               ) -- GREEK SMALL LETTER ETA
+  , ("efDot"                                  , Left 0x02252               ) -- APPROXIMATELY EQUAL TO OR THE IMAGE OF
+  , ("efr"                                    , Left 0x1D522               ) -- MATHEMATICAL FRAKTUR SMALL E
+  , ("eg"                                     , Left 0x02A9A               ) -- DOUBLE-LINE EQUAL TO OR GREATER-THAN
+  , ("egr"                                    , Left 0x003B5               ) -- GREEK SMALL LETTER EPSILON
+  , ("egrave"                                 , Left 0x000E8               ) -- LATIN SMALL LETTER E WITH GRAVE
+  , ("egs"                                    , Left 0x02A96               ) -- SLANTED EQUAL TO OR GREATER-THAN
+  , ("egsdot"                                 , Left 0x02A98               ) -- SLANTED EQUAL TO OR GREATER-THAN WITH DOT INSIDE
+  , ("el"                                     , Left 0x02A99               ) -- DOUBLE-LINE EQUAL TO OR LESS-THAN
+  , ("elinters"                               , Left 0x023E7               ) -- ELECTRICAL INTERSECTION
+  , ("ell"                                    , Left 0x02113               ) -- SCRIPT SMALL L
+  , ("els"                                    , Left 0x02A95               ) -- SLANTED EQUAL TO OR LESS-THAN
+  , ("elsdot"                                 , Left 0x02A97               ) -- SLANTED EQUAL TO OR LESS-THAN WITH DOT INSIDE
+  , ("emacr"                                  , Left 0x00113               ) -- LATIN SMALL LETTER E WITH MACRON
+  , ("empty"                                  , Left 0x02205               ) -- EMPTY SET
+  , ("emptyset"                               , Left 0x02205               ) -- EMPTY SET
+  , ("emptyv"                                 , Left 0x02205               ) -- EMPTY SET
+  , ("emsp"                                   , Left 0x02003               ) -- EM SPACE
+  , ("emsp13"                                 , Left 0x02004               ) -- THREE-PER-EM SPACE
+  , ("emsp14"                                 , Left 0x02005               ) -- FOUR-PER-EM SPACE
+  , ("eng"                                    , Left 0x0014B               ) -- LATIN SMALL LETTER ENG
+  , ("ensp"                                   , Left 0x02002               ) -- EN SPACE
+  , ("eogon"                                  , Left 0x00119               ) -- LATIN SMALL LETTER E WITH OGONEK
+  , ("eopf"                                   , Left 0x1D556               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL E
+  , ("epar"                                   , Left 0x022D5               ) -- EQUAL AND PARALLEL TO
+  , ("eparsl"                                 , Left 0x029E3               ) -- EQUALS SIGN AND SLANTED PARALLEL
+  , ("eplus"                                  , Left 0x02A71               ) -- EQUALS SIGN ABOVE PLUS SIGN
+  , ("epsi"                                   , Left 0x003B5               ) -- GREEK SMALL LETTER EPSILON
+  , ("epsilon"                                , Left 0x003B5               ) -- GREEK SMALL LETTER EPSILON
+  , ("epsiv"                                  , Left 0x003F5               ) -- GREEK LUNATE EPSILON SYMBOL
+  , ("eqcirc"                                 , Left 0x02256               ) -- RING IN EQUAL TO
+  , ("eqcolon"                                , Left 0x02255               ) -- EQUALS COLON
+  , ("eqsim"                                  , Left 0x02242               ) -- MINUS TILDE
+  , ("eqslantgtr"                             , Left 0x02A96               ) -- SLANTED EQUAL TO OR GREATER-THAN
+  , ("eqslantless"                            , Left 0x02A95               ) -- SLANTED EQUAL TO OR LESS-THAN
+  , ("equals"                                 , Left 0x0003D               ) -- EQUALS SIGN
+  , ("equest"                                 , Left 0x0225F               ) -- QUESTIONED EQUAL TO
+  , ("equiv"                                  , Left 0x02261               ) -- IDENTICAL TO
+  , ("equivDD"                                , Left 0x02A78               ) -- EQUIVALENT WITH FOUR DOTS ABOVE
+  , ("eqvparsl"                               , Left 0x029E5               ) -- IDENTICAL TO AND SLANTED PARALLEL
+  , ("erDot"                                  , Left 0x02253               ) -- IMAGE OF OR APPROXIMATELY EQUAL TO
+  , ("erarr"                                  , Left 0x02971               ) -- EQUALS SIGN ABOVE RIGHTWARDS ARROW
+  , ("escr"                                   , Left 0x0212F               ) -- SCRIPT SMALL E
+  , ("esdot"                                  , Left 0x02250               ) -- APPROACHES THE LIMIT
+  , ("esim"                                   , Left 0x02242               ) -- MINUS TILDE
+  , ("eta"                                    , Left 0x003B7               ) -- GREEK SMALL LETTER ETA
+  , ("eth"                                    , Left 0x000F0               ) -- LATIN SMALL LETTER ETH
+  , ("euml"                                   , Left 0x000EB               ) -- LATIN SMALL LETTER E WITH DIAERESIS
+  , ("euro"                                   , Left 0x020AC               ) -- EURO SIGN
+  , ("excl"                                   , Left 0x00021               ) -- EXCLAMATION MARK
+  , ("exist"                                  , Left 0x02203               ) -- THERE EXISTS
+  , ("expectation"                            , Left 0x02130               ) -- SCRIPT CAPITAL E
+  , ("exponentiale"                           , Left 0x02147               ) -- DOUBLE-STRUCK ITALIC SMALL E
+  , ("fallingdotseq"                          , Left 0x02252               ) -- APPROXIMATELY EQUAL TO OR THE IMAGE OF
+  , ("fcy"                                    , Left 0x00444               ) -- CYRILLIC SMALL LETTER EF
+  , ("female"                                 , Left 0x02640               ) -- FEMALE SIGN
+  , ("ffilig"                                 , Left 0x0FB03               ) -- LATIN SMALL LIGATURE FFI
+  , ("fflig"                                  , Left 0x0FB00               ) -- LATIN SMALL LIGATURE FF
+  , ("ffllig"                                 , Left 0x0FB04               ) -- LATIN SMALL LIGATURE FFL
+  , ("ffr"                                    , Left 0x1D523               ) -- MATHEMATICAL FRAKTUR SMALL F
+  , ("filig"                                  , Left 0x0FB01               ) -- LATIN SMALL LIGATURE FI
+  , ("fjlig"                                  , Right [ 0x00066, 0x0006A ] ) -- fj ligature
+  , ("flat"                                   , Left 0x0266D               ) -- MUSIC FLAT SIGN
+  , ("fllig"                                  , Left 0x0FB02               ) -- LATIN SMALL LIGATURE FL
+  , ("fltns"                                  , Left 0x025B1               ) -- WHITE PARALLELOGRAM
+  , ("fnof"                                   , Left 0x00192               ) -- LATIN SMALL LETTER F WITH HOOK
+  , ("fopf"                                   , Left 0x1D557               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL F
+  , ("forall"                                 , Left 0x02200               ) -- FOR ALL
+  , ("fork"                                   , Left 0x022D4               ) -- PITCHFORK
+  , ("forkv"                                  , Left 0x02AD9               ) -- ELEMENT OF OPENING DOWNWARDS
+  , ("fpartint"                               , Left 0x02A0D               ) -- FINITE PART INTEGRAL
+  , ("frac12"                                 , Left 0x000BD               ) -- VULGAR FRACTION ONE HALF
+  , ("frac13"                                 , Left 0x02153               ) -- VULGAR FRACTION ONE THIRD
+  , ("frac14"                                 , Left 0x000BC               ) -- VULGAR FRACTION ONE QUARTER
+  , ("frac15"                                 , Left 0x02155               ) -- VULGAR FRACTION ONE FIFTH
+  , ("frac16"                                 , Left 0x02159               ) -- VULGAR FRACTION ONE SIXTH
+  , ("frac18"                                 , Left 0x0215B               ) -- VULGAR FRACTION ONE EIGHTH
+  , ("frac23"                                 , Left 0x02154               ) -- VULGAR FRACTION TWO THIRDS
+  , ("frac25"                                 , Left 0x02156               ) -- VULGAR FRACTION TWO FIFTHS
+  , ("frac34"                                 , Left 0x000BE               ) -- VULGAR FRACTION THREE QUARTERS
+  , ("frac35"                                 , Left 0x02157               ) -- VULGAR FRACTION THREE FIFTHS
+  , ("frac38"                                 , Left 0x0215C               ) -- VULGAR FRACTION THREE EIGHTHS
+  , ("frac45"                                 , Left 0x02158               ) -- VULGAR FRACTION FOUR FIFTHS
+  , ("frac56"                                 , Left 0x0215A               ) -- VULGAR FRACTION FIVE SIXTHS
+  , ("frac58"                                 , Left 0x0215D               ) -- VULGAR FRACTION FIVE EIGHTHS
+  , ("frac78"                                 , Left 0x0215E               ) -- VULGAR FRACTION SEVEN EIGHTHS
+  , ("frasl"                                  , Left 0x02044               ) -- FRACTION SLASH
+  , ("frown"                                  , Left 0x02322               ) -- FROWN
+  , ("fscr"                                   , Left 0x1D4BB               ) -- MATHEMATICAL SCRIPT SMALL F
+  , ("gE"                                     , Left 0x02267               ) -- GREATER-THAN OVER EQUAL TO
+  , ("gEl"                                    , Left 0x02A8C               ) -- GREATER-THAN ABOVE DOUBLE-LINE EQUAL ABOVE LESS-THAN
+  , ("gacute"                                 , Left 0x001F5               ) -- LATIN SMALL LETTER G WITH ACUTE
+  , ("gamma"                                  , Left 0x003B3               ) -- GREEK SMALL LETTER GAMMA
+  , ("gammad"                                 , Left 0x003DD               ) -- GREEK SMALL LETTER DIGAMMA
+  , ("gap"                                    , Left 0x02A86               ) -- GREATER-THAN OR APPROXIMATE
+  , ("gbreve"                                 , Left 0x0011F               ) -- LATIN SMALL LETTER G WITH BREVE
+  , ("gcirc"                                  , Left 0x0011D               ) -- LATIN SMALL LETTER G WITH CIRCUMFLEX
+  , ("gcy"                                    , Left 0x00433               ) -- CYRILLIC SMALL LETTER GHE
+  , ("gdot"                                   , Left 0x00121               ) -- LATIN SMALL LETTER G WITH DOT ABOVE
+  , ("ge"                                     , Left 0x02265               ) -- GREATER-THAN OR EQUAL TO
+  , ("gel"                                    , Left 0x022DB               ) -- GREATER-THAN EQUAL TO OR LESS-THAN
+  , ("geq"                                    , Left 0x02265               ) -- GREATER-THAN OR EQUAL TO
+  , ("geqq"                                   , Left 0x02267               ) -- GREATER-THAN OVER EQUAL TO
+  , ("geqslant"                               , Left 0x02A7E               ) -- GREATER-THAN OR SLANTED EQUAL TO
+  , ("ges"                                    , Left 0x02A7E               ) -- GREATER-THAN OR SLANTED EQUAL TO
+  , ("gescc"                                  , Left 0x02AA9               ) -- GREATER-THAN CLOSED BY CURVE ABOVE SLANTED EQUAL
+  , ("gesdot"                                 , Left 0x02A80               ) -- GREATER-THAN OR SLANTED EQUAL TO WITH DOT INSIDE
+  , ("gesdoto"                                , Left 0x02A82               ) -- GREATER-THAN OR SLANTED EQUAL TO WITH DOT ABOVE
+  , ("gesdotol"                               , Left 0x02A84               ) -- GREATER-THAN OR SLANTED EQUAL TO WITH DOT ABOVE LEFT
+  , ("gesl"                                   , Right [ 0x022DB, 0x0FE00 ] ) -- GREATER-THAN slanted EQUAL TO OR LESS-THAN
+  , ("gesles"                                 , Left 0x02A94               ) -- GREATER-THAN ABOVE SLANTED EQUAL ABOVE LESS-THAN ABOVE SLANTED EQUAL
+  , ("gfr"                                    , Left 0x1D524               ) -- MATHEMATICAL FRAKTUR SMALL G
+  , ("gg"                                     , Left 0x0226B               ) -- MUCH GREATER-THAN
+  , ("ggg"                                    , Left 0x022D9               ) -- VERY MUCH GREATER-THAN
+  , ("ggr"                                    , Left 0x003B3               ) -- GREEK SMALL LETTER GAMMA
+  , ("gimel"                                  , Left 0x02137               ) -- GIMEL SYMBOL
+  , ("gjcy"                                   , Left 0x00453               ) -- CYRILLIC SMALL LETTER GJE
+  , ("gl"                                     , Left 0x02277               ) -- GREATER-THAN OR LESS-THAN
+  , ("glE"                                    , Left 0x02A92               ) -- GREATER-THAN ABOVE LESS-THAN ABOVE DOUBLE-LINE EQUAL
+  , ("gla"                                    , Left 0x02AA5               ) -- GREATER-THAN BESIDE LESS-THAN
+  , ("glj"                                    , Left 0x02AA4               ) -- GREATER-THAN OVERLAPPING LESS-THAN
+  , ("gnE"                                    , Left 0x02269               ) -- GREATER-THAN BUT NOT EQUAL TO
+  , ("gnap"                                   , Left 0x02A8A               ) -- GREATER-THAN AND NOT APPROXIMATE
+  , ("gnapprox"                               , Left 0x02A8A               ) -- GREATER-THAN AND NOT APPROXIMATE
+  , ("gne"                                    , Left 0x02A88               ) -- GREATER-THAN AND SINGLE-LINE NOT EQUAL TO
+  , ("gneq"                                   , Left 0x02A88               ) -- GREATER-THAN AND SINGLE-LINE NOT EQUAL TO
+  , ("gneqq"                                  , Left 0x02269               ) -- GREATER-THAN BUT NOT EQUAL TO
+  , ("gnsim"                                  , Left 0x022E7               ) -- GREATER-THAN BUT NOT EQUIVALENT TO
+  , ("gopf"                                   , Left 0x1D558               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL G
+  , ("grave"                                  , Left 0x00060               ) -- GRAVE ACCENT
+  , ("gscr"                                   , Left 0x0210A               ) -- SCRIPT SMALL G
+  , ("gsim"                                   , Left 0x02273               ) -- GREATER-THAN OR EQUIVALENT TO
+  , ("gsime"                                  , Left 0x02A8E               ) -- GREATER-THAN ABOVE SIMILAR OR EQUAL
+  , ("gsiml"                                  , Left 0x02A90               ) -- GREATER-THAN ABOVE SIMILAR ABOVE LESS-THAN
+  , ("gt"                                     , Left 0x0003E               ) -- GREATER-THAN SIGN
+  , ("gtcc"                                   , Left 0x02AA7               ) -- GREATER-THAN CLOSED BY CURVE
+  , ("gtcir"                                  , Left 0x02A7A               ) -- GREATER-THAN WITH CIRCLE INSIDE
+  , ("gtdot"                                  , Left 0x022D7               ) -- GREATER-THAN WITH DOT
+  , ("gtlPar"                                 , Left 0x02995               ) -- DOUBLE LEFT ARC GREATER-THAN BRACKET
+  , ("gtquest"                                , Left 0x02A7C               ) -- GREATER-THAN WITH QUESTION MARK ABOVE
+  , ("gtrapprox"                              , Left 0x02A86               ) -- GREATER-THAN OR APPROXIMATE
+  , ("gtrarr"                                 , Left 0x02978               ) -- GREATER-THAN ABOVE RIGHTWARDS ARROW
+  , ("gtrdot"                                 , Left 0x022D7               ) -- GREATER-THAN WITH DOT
+  , ("gtreqless"                              , Left 0x022DB               ) -- GREATER-THAN EQUAL TO OR LESS-THAN
+  , ("gtreqqless"                             , Left 0x02A8C               ) -- GREATER-THAN ABOVE DOUBLE-LINE EQUAL ABOVE LESS-THAN
+  , ("gtrless"                                , Left 0x02277               ) -- GREATER-THAN OR LESS-THAN
+  , ("gtrsim"                                 , Left 0x02273               ) -- GREATER-THAN OR EQUIVALENT TO
+  , ("gvertneqq"                              , Right [ 0x02269, 0x0FE00 ] ) -- GREATER-THAN BUT NOT EQUAL TO - with vertical stroke
+  , ("gvnE"                                   , Right [ 0x02269, 0x0FE00 ] ) -- GREATER-THAN BUT NOT EQUAL TO - with vertical stroke
+  , ("hArr"                                   , Left 0x021D4               ) -- LEFT RIGHT DOUBLE ARROW
+  , ("hairsp"                                 , Left 0x0200A               ) -- HAIR SPACE
+  , ("half"                                   , Left 0x000BD               ) -- VULGAR FRACTION ONE HALF
+  , ("hamilt"                                 , Left 0x0210B               ) -- SCRIPT CAPITAL H
+  , ("hardcy"                                 , Left 0x0044A               ) -- CYRILLIC SMALL LETTER HARD SIGN
+  , ("harr"                                   , Left 0x02194               ) -- LEFT RIGHT ARROW
+  , ("harrcir"                                , Left 0x02948               ) -- LEFT RIGHT ARROW THROUGH SMALL CIRCLE
+  , ("harrw"                                  , Left 0x021AD               ) -- LEFT RIGHT WAVE ARROW
+  , ("hbar"                                   , Left 0x0210F               ) -- PLANCK CONSTANT OVER TWO PI
+  , ("hcirc"                                  , Left 0x00125               ) -- LATIN SMALL LETTER H WITH CIRCUMFLEX
+  , ("hearts"                                 , Left 0x02665               ) -- BLACK HEART SUIT
+  , ("heartsuit"                              , Left 0x02665               ) -- BLACK HEART SUIT
+  , ("hellip"                                 , Left 0x02026               ) -- HORIZONTAL ELLIPSIS
+  , ("hercon"                                 , Left 0x022B9               ) -- HERMITIAN CONJUGATE MATRIX
+  , ("hfr"                                    , Left 0x1D525               ) -- MATHEMATICAL FRAKTUR SMALL H
+  , ("hksearow"                               , Left 0x02925               ) -- SOUTH EAST ARROW WITH HOOK
+  , ("hkswarow"                               , Left 0x02926               ) -- SOUTH WEST ARROW WITH HOOK
+  , ("hoarr"                                  , Left 0x021FF               ) -- LEFT RIGHT OPEN-HEADED ARROW
+  , ("homtht"                                 , Left 0x0223B               ) -- HOMOTHETIC
+  , ("hookleftarrow"                          , Left 0x021A9               ) -- LEFTWARDS ARROW WITH HOOK
+  , ("hookrightarrow"                         , Left 0x021AA               ) -- RIGHTWARDS ARROW WITH HOOK
+  , ("hopf"                                   , Left 0x1D559               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL H
+  , ("horbar"                                 , Left 0x02015               ) -- HORIZONTAL BAR
+  , ("hscr"                                   , Left 0x1D4BD               ) -- MATHEMATICAL SCRIPT SMALL H
+  , ("hslash"                                 , Left 0x0210F               ) -- PLANCK CONSTANT OVER TWO PI
+  , ("hstrok"                                 , Left 0x00127               ) -- LATIN SMALL LETTER H WITH STROKE
+  , ("hybull"                                 , Left 0x02043               ) -- HYPHEN BULLET
+  , ("hyphen"                                 , Left 0x02010               ) -- HYPHEN
+  , ("iacgr"                                  , Left 0x003AF               ) -- GREEK SMALL LETTER IOTA WITH TONOS
+  , ("iacute"                                 , Left 0x000ED               ) -- LATIN SMALL LETTER I WITH ACUTE
+  , ("ic"                                     , Left 0x02063               ) -- INVISIBLE SEPARATOR
+  , ("icirc"                                  , Left 0x000EE               ) -- LATIN SMALL LETTER I WITH CIRCUMFLEX
+  , ("icy"                                    , Left 0x00438               ) -- CYRILLIC SMALL LETTER I
+  , ("idiagr"                                 , Left 0x00390               ) -- GREEK SMALL LETTER IOTA WITH DIALYTIKA AND TONOS
+  , ("idigr"                                  , Left 0x003CA               ) -- GREEK SMALL LETTER IOTA WITH DIALYTIKA
+  , ("iecy"                                   , Left 0x00435               ) -- CYRILLIC SMALL LETTER IE
+  , ("iexcl"                                  , Left 0x000A1               ) -- INVERTED EXCLAMATION MARK
+  , ("iff"                                    , Left 0x021D4               ) -- LEFT RIGHT DOUBLE ARROW
+  , ("ifr"                                    , Left 0x1D526               ) -- MATHEMATICAL FRAKTUR SMALL I
+  , ("igr"                                    , Left 0x003B9               ) -- GREEK SMALL LETTER IOTA
+  , ("igrave"                                 , Left 0x000EC               ) -- LATIN SMALL LETTER I WITH GRAVE
+  , ("ii"                                     , Left 0x02148               ) -- DOUBLE-STRUCK ITALIC SMALL I
+  , ("iiiint"                                 , Left 0x02A0C               ) -- QUADRUPLE INTEGRAL OPERATOR
+  , ("iiint"                                  , Left 0x0222D               ) -- TRIPLE INTEGRAL
+  , ("iinfin"                                 , Left 0x029DC               ) -- INCOMPLETE INFINITY
+  , ("iiota"                                  , Left 0x02129               ) -- TURNED GREEK SMALL LETTER IOTA
+  , ("ijlig"                                  , Left 0x00133               ) -- LATIN SMALL LIGATURE IJ
+  , ("imacr"                                  , Left 0x0012B               ) -- LATIN SMALL LETTER I WITH MACRON
+  , ("image"                                  , Left 0x02111               ) -- BLACK-LETTER CAPITAL I
+  , ("imagline"                               , Left 0x02110               ) -- SCRIPT CAPITAL I
+  , ("imagpart"                               , Left 0x02111               ) -- BLACK-LETTER CAPITAL I
+  , ("imath"                                  , Left 0x00131               ) -- LATIN SMALL LETTER DOTLESS I
+  , ("imof"                                   , Left 0x022B7               ) -- IMAGE OF
+  , ("imped"                                  , Left 0x001B5               ) -- LATIN CAPITAL LETTER Z WITH STROKE
+  , ("in"                                     , Left 0x02208               ) -- ELEMENT OF
+  , ("incare"                                 , Left 0x02105               ) -- CARE OF
+  , ("infin"                                  , Left 0x0221E               ) -- INFINITY
+  , ("infintie"                               , Left 0x029DD               ) -- TIE OVER INFINITY
+  , ("inodot"                                 , Left 0x00131               ) -- LATIN SMALL LETTER DOTLESS I
+  , ("int"                                    , Left 0x0222B               ) -- INTEGRAL
+  , ("intcal"                                 , Left 0x022BA               ) -- INTERCALATE
+  , ("integers"                               , Left 0x02124               ) -- DOUBLE-STRUCK CAPITAL Z
+  , ("intercal"                               , Left 0x022BA               ) -- INTERCALATE
+  , ("intlarhk"                               , Left 0x02A17               ) -- INTEGRAL WITH LEFTWARDS ARROW WITH HOOK
+  , ("intprod"                                , Left 0x02A3C               ) -- INTERIOR PRODUCT
+  , ("iocy"                                   , Left 0x00451               ) -- CYRILLIC SMALL LETTER IO
+  , ("iogon"                                  , Left 0x0012F               ) -- LATIN SMALL LETTER I WITH OGONEK
+  , ("iopf"                                   , Left 0x1D55A               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL I
+  , ("iota"                                   , Left 0x003B9               ) -- GREEK SMALL LETTER IOTA
+  , ("iprod"                                  , Left 0x02A3C               ) -- INTERIOR PRODUCT
+  , ("iquest"                                 , Left 0x000BF               ) -- INVERTED QUESTION MARK
+  , ("iscr"                                   , Left 0x1D4BE               ) -- MATHEMATICAL SCRIPT SMALL I
+  , ("isin"                                   , Left 0x02208               ) -- ELEMENT OF
+  , ("isinE"                                  , Left 0x022F9               ) -- ELEMENT OF WITH TWO HORIZONTAL STROKES
+  , ("isindot"                                , Left 0x022F5               ) -- ELEMENT OF WITH DOT ABOVE
+  , ("isins"                                  , Left 0x022F4               ) -- SMALL ELEMENT OF WITH VERTICAL BAR AT END OF HORIZONTAL STROKE
+  , ("isinsv"                                 , Left 0x022F3               ) -- ELEMENT OF WITH VERTICAL BAR AT END OF HORIZONTAL STROKE
+  , ("isinv"                                  , Left 0x02208               ) -- ELEMENT OF
+  , ("it"                                     , Left 0x02062               ) -- INVISIBLE TIMES
+  , ("itilde"                                 , Left 0x00129               ) -- LATIN SMALL LETTER I WITH TILDE
+  , ("iukcy"                                  , Left 0x00456               ) -- CYRILLIC SMALL LETTER BYELORUSSIAN-UKRAINIAN I
+  , ("iuml"                                   , Left 0x000EF               ) -- LATIN SMALL LETTER I WITH DIAERESIS
+  , ("jcirc"                                  , Left 0x00135               ) -- LATIN SMALL LETTER J WITH CIRCUMFLEX
+  , ("jcy"                                    , Left 0x00439               ) -- CYRILLIC SMALL LETTER SHORT I
+  , ("jfr"                                    , Left 0x1D527               ) -- MATHEMATICAL FRAKTUR SMALL J
+  , ("jmath"                                  , Left 0x00237               ) -- LATIN SMALL LETTER DOTLESS J
+  , ("jopf"                                   , Left 0x1D55B               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL J
+  , ("jscr"                                   , Left 0x1D4BF               ) -- MATHEMATICAL SCRIPT SMALL J
+  , ("jsercy"                                 , Left 0x00458               ) -- CYRILLIC SMALL LETTER JE
+  , ("jukcy"                                  , Left 0x00454               ) -- CYRILLIC SMALL LETTER UKRAINIAN IE
+  , ("kappa"                                  , Left 0x003BA               ) -- GREEK SMALL LETTER KAPPA
+  , ("kappav"                                 , Left 0x003F0               ) -- GREEK KAPPA SYMBOL
+  , ("kcedil"                                 , Left 0x00137               ) -- LATIN SMALL LETTER K WITH CEDILLA
+  , ("kcy"                                    , Left 0x0043A               ) -- CYRILLIC SMALL LETTER KA
+  , ("kfr"                                    , Left 0x1D528               ) -- MATHEMATICAL FRAKTUR SMALL K
+  , ("kgr"                                    , Left 0x003BA               ) -- GREEK SMALL LETTER KAPPA
+  , ("kgreen"                                 , Left 0x00138               ) -- LATIN SMALL LETTER KRA
+  , ("khcy"                                   , Left 0x00445               ) -- CYRILLIC SMALL LETTER HA
+  , ("khgr"                                   , Left 0x003C7               ) -- GREEK SMALL LETTER CHI
+  , ("kjcy"                                   , Left 0x0045C               ) -- CYRILLIC SMALL LETTER KJE
+  , ("kopf"                                   , Left 0x1D55C               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL K
+  , ("kscr"                                   , Left 0x1D4C0               ) -- MATHEMATICAL SCRIPT SMALL K
+  , ("lAarr"                                  , Left 0x021DA               ) -- LEFTWARDS TRIPLE ARROW
+  , ("lArr"                                   , Left 0x021D0               ) -- LEFTWARDS DOUBLE ARROW
+  , ("lAtail"                                 , Left 0x0291B               ) -- LEFTWARDS DOUBLE ARROW-TAIL
+  , ("lBarr"                                  , Left 0x0290E               ) -- LEFTWARDS TRIPLE DASH ARROW
+  , ("lE"                                     , Left 0x02266               ) -- LESS-THAN OVER EQUAL TO
+  , ("lEg"                                    , Left 0x02A8B               ) -- LESS-THAN ABOVE DOUBLE-LINE EQUAL ABOVE GREATER-THAN
+  , ("lHar"                                   , Left 0x02962               ) -- LEFTWARDS HARPOON WITH BARB UP ABOVE LEFTWARDS HARPOON WITH BARB DOWN
+  , ("lacute"                                 , Left 0x0013A               ) -- LATIN SMALL LETTER L WITH ACUTE
+  , ("laemptyv"                               , Left 0x029B4               ) -- EMPTY SET WITH LEFT ARROW ABOVE
+  , ("lagran"                                 , Left 0x02112               ) -- SCRIPT CAPITAL L
+  , ("lambda"                                 , Left 0x003BB               ) -- GREEK SMALL LETTER LAMDA
+  , ("lang"                                   , Left 0x027E8               ) -- MATHEMATICAL LEFT ANGLE BRACKET
+  , ("langd"                                  , Left 0x02991               ) -- LEFT ANGLE BRACKET WITH DOT
+  , ("langle"                                 , Left 0x027E8               ) -- MATHEMATICAL LEFT ANGLE BRACKET
+  , ("lap"                                    , Left 0x02A85               ) -- LESS-THAN OR APPROXIMATE
+  , ("laquo"                                  , Left 0x000AB               ) -- LEFT-POINTING DOUBLE ANGLE QUOTATION MARK
+  , ("larr"                                   , Left 0x02190               ) -- LEFTWARDS ARROW
+  , ("larrb"                                  , Left 0x021E4               ) -- LEFTWARDS ARROW TO BAR
+  , ("larrbfs"                                , Left 0x0291F               ) -- LEFTWARDS ARROW FROM BAR TO BLACK DIAMOND
+  , ("larrfs"                                 , Left 0x0291D               ) -- LEFTWARDS ARROW TO BLACK DIAMOND
+  , ("larrhk"                                 , Left 0x021A9               ) -- LEFTWARDS ARROW WITH HOOK
+  , ("larrlp"                                 , Left 0x021AB               ) -- LEFTWARDS ARROW WITH LOOP
+  , ("larrpl"                                 , Left 0x02939               ) -- LEFT-SIDE ARC ANTICLOCKWISE ARROW
+  , ("larrsim"                                , Left 0x02973               ) -- LEFTWARDS ARROW ABOVE TILDE OPERATOR
+  , ("larrtl"                                 , Left 0x021A2               ) -- LEFTWARDS ARROW WITH TAIL
+  , ("lat"                                    , Left 0x02AAB               ) -- LARGER THAN
+  , ("latail"                                 , Left 0x02919               ) -- LEFTWARDS ARROW-TAIL
+  , ("late"                                   , Left 0x02AAD               ) -- LARGER THAN OR EQUAL TO
+  , ("lates"                                  , Right [ 0x02AAD, 0x0FE00 ] ) -- LARGER THAN OR slanted EQUAL
+  , ("lbarr"                                  , Left 0x0290C               ) -- LEFTWARDS DOUBLE DASH ARROW
+  , ("lbbrk"                                  , Left 0x02772               ) -- LIGHT LEFT TORTOISE SHELL BRACKET ORNAMENT
+  , ("lbrace"                                 , Left 0x0007B               ) -- LEFT CURLY BRACKET
+  , ("lbrack"                                 , Left 0x0005B               ) -- LEFT SQUARE BRACKET
+  , ("lbrke"                                  , Left 0x0298B               ) -- LEFT SQUARE BRACKET WITH UNDERBAR
+  , ("lbrksld"                                , Left 0x0298F               ) -- LEFT SQUARE BRACKET WITH TICK IN BOTTOM CORNER
+  , ("lbrkslu"                                , Left 0x0298D               ) -- LEFT SQUARE BRACKET WITH TICK IN TOP CORNER
+  , ("lcaron"                                 , Left 0x0013E               ) -- LATIN SMALL LETTER L WITH CARON
+  , ("lcedil"                                 , Left 0x0013C               ) -- LATIN SMALL LETTER L WITH CEDILLA
+  , ("lceil"                                  , Left 0x02308               ) -- LEFT CEILING
+  , ("lcub"                                   , Left 0x0007B               ) -- LEFT CURLY BRACKET
+  , ("lcy"                                    , Left 0x0043B               ) -- CYRILLIC SMALL LETTER EL
+  , ("ldca"                                   , Left 0x02936               ) -- ARROW POINTING DOWNWARDS THEN CURVING LEFTWARDS
+  , ("ldquo"                                  , Left 0x0201C               ) -- LEFT DOUBLE QUOTATION MARK
+  , ("ldquor"                                 , Left 0x0201E               ) -- DOUBLE LOW-9 QUOTATION MARK
+  , ("ldrdhar"                                , Left 0x02967               ) -- LEFTWARDS HARPOON WITH BARB DOWN ABOVE RIGHTWARDS HARPOON WITH BARB DOWN
+  , ("ldrushar"                               , Left 0x0294B               ) -- LEFT BARB DOWN RIGHT BARB UP HARPOON
+  , ("ldsh"                                   , Left 0x021B2               ) -- DOWNWARDS ARROW WITH TIP LEFTWARDS
+  , ("le"                                     , Left 0x02264               ) -- LESS-THAN OR EQUAL TO
+  , ("leftarrow"                              , Left 0x02190               ) -- LEFTWARDS ARROW
+  , ("leftarrowtail"                          , Left 0x021A2               ) -- LEFTWARDS ARROW WITH TAIL
+  , ("leftharpoondown"                        , Left 0x021BD               ) -- LEFTWARDS HARPOON WITH BARB DOWNWARDS
+  , ("leftharpoonup"                          , Left 0x021BC               ) -- LEFTWARDS HARPOON WITH BARB UPWARDS
+  , ("leftleftarrows"                         , Left 0x021C7               ) -- LEFTWARDS PAIRED ARROWS
+  , ("leftrightarrow"                         , Left 0x02194               ) -- LEFT RIGHT ARROW
+  , ("leftrightarrows"                        , Left 0x021C6               ) -- LEFTWARDS ARROW OVER RIGHTWARDS ARROW
+  , ("leftrightharpoons"                      , Left 0x021CB               ) -- LEFTWARDS HARPOON OVER RIGHTWARDS HARPOON
+  , ("leftrightsquigarrow"                    , Left 0x021AD               ) -- LEFT RIGHT WAVE ARROW
+  , ("leftthreetimes"                         , Left 0x022CB               ) -- LEFT SEMIDIRECT PRODUCT
+  , ("leg"                                    , Left 0x022DA               ) -- LESS-THAN EQUAL TO OR GREATER-THAN
+  , ("leq"                                    , Left 0x02264               ) -- LESS-THAN OR EQUAL TO
+  , ("leqq"                                   , Left 0x02266               ) -- LESS-THAN OVER EQUAL TO
+  , ("leqslant"                               , Left 0x02A7D               ) -- LESS-THAN OR SLANTED EQUAL TO
+  , ("les"                                    , Left 0x02A7D               ) -- LESS-THAN OR SLANTED EQUAL TO
+  , ("lescc"                                  , Left 0x02AA8               ) -- LESS-THAN CLOSED BY CURVE ABOVE SLANTED EQUAL
+  , ("lesdot"                                 , Left 0x02A7F               ) -- LESS-THAN OR SLANTED EQUAL TO WITH DOT INSIDE
+  , ("lesdoto"                                , Left 0x02A81               ) -- LESS-THAN OR SLANTED EQUAL TO WITH DOT ABOVE
+  , ("lesdotor"                               , Left 0x02A83               ) -- LESS-THAN OR SLANTED EQUAL TO WITH DOT ABOVE RIGHT
+  , ("lesg"                                   , Right [ 0x022DA, 0x0FE00 ] ) -- LESS-THAN slanted EQUAL TO OR GREATER-THAN
+  , ("lesges"                                 , Left 0x02A93               ) -- LESS-THAN ABOVE SLANTED EQUAL ABOVE GREATER-THAN ABOVE SLANTED EQUAL
+  , ("lessapprox"                             , Left 0x02A85               ) -- LESS-THAN OR APPROXIMATE
+  , ("lessdot"                                , Left 0x022D6               ) -- LESS-THAN WITH DOT
+  , ("lesseqgtr"                              , Left 0x022DA               ) -- LESS-THAN EQUAL TO OR GREATER-THAN
+  , ("lesseqqgtr"                             , Left 0x02A8B               ) -- LESS-THAN ABOVE DOUBLE-LINE EQUAL ABOVE GREATER-THAN
+  , ("lessgtr"                                , Left 0x02276               ) -- LESS-THAN OR GREATER-THAN
+  , ("lesssim"                                , Left 0x02272               ) -- LESS-THAN OR EQUIVALENT TO
+  , ("lfisht"                                 , Left 0x0297C               ) -- LEFT FISH TAIL
+  , ("lfloor"                                 , Left 0x0230A               ) -- LEFT FLOOR
+  , ("lfr"                                    , Left 0x1D529               ) -- MATHEMATICAL FRAKTUR SMALL L
+  , ("lg"                                     , Left 0x02276               ) -- LESS-THAN OR GREATER-THAN
+  , ("lgE"                                    , Left 0x02A91               ) -- LESS-THAN ABOVE GREATER-THAN ABOVE DOUBLE-LINE EQUAL
+  , ("lgr"                                    , Left 0x003BB               ) -- GREEK SMALL LETTER LAMDA
+  , ("lhard"                                  , Left 0x021BD               ) -- LEFTWARDS HARPOON WITH BARB DOWNWARDS
+  , ("lharu"                                  , Left 0x021BC               ) -- LEFTWARDS HARPOON WITH BARB UPWARDS
+  , ("lharul"                                 , Left 0x0296A               ) -- LEFTWARDS HARPOON WITH BARB UP ABOVE LONG DASH
+  , ("lhblk"                                  , Left 0x02584               ) -- LOWER HALF BLOCK
+  , ("ljcy"                                   , Left 0x00459               ) -- CYRILLIC SMALL LETTER LJE
+  , ("ll"                                     , Left 0x0226A               ) -- MUCH LESS-THAN
+  , ("llarr"                                  , Left 0x021C7               ) -- LEFTWARDS PAIRED ARROWS
+  , ("llcorner"                               , Left 0x0231E               ) -- BOTTOM LEFT CORNER
+  , ("llhard"                                 , Left 0x0296B               ) -- LEFTWARDS HARPOON WITH BARB DOWN BELOW LONG DASH
+  , ("lltri"                                  , Left 0x025FA               ) -- LOWER LEFT TRIANGLE
+  , ("lmidot"                                 , Left 0x00140               ) -- LATIN SMALL LETTER L WITH MIDDLE DOT
+  , ("lmoust"                                 , Left 0x023B0               ) -- UPPER LEFT OR LOWER RIGHT CURLY BRACKET SECTION
+  , ("lmoustache"                             , Left 0x023B0               ) -- UPPER LEFT OR LOWER RIGHT CURLY BRACKET SECTION
+  , ("lnE"                                    , Left 0x02268               ) -- LESS-THAN BUT NOT EQUAL TO
+  , ("lnap"                                   , Left 0x02A89               ) -- LESS-THAN AND NOT APPROXIMATE
+  , ("lnapprox"                               , Left 0x02A89               ) -- LESS-THAN AND NOT APPROXIMATE
+  , ("lne"                                    , Left 0x02A87               ) -- LESS-THAN AND SINGLE-LINE NOT EQUAL TO
+  , ("lneq"                                   , Left 0x02A87               ) -- LESS-THAN AND SINGLE-LINE NOT EQUAL TO
+  , ("lneqq"                                  , Left 0x02268               ) -- LESS-THAN BUT NOT EQUAL TO
+  , ("lnsim"                                  , Left 0x022E6               ) -- LESS-THAN BUT NOT EQUIVALENT TO
+  , ("loang"                                  , Left 0x027EC               ) -- MATHEMATICAL LEFT WHITE TORTOISE SHELL BRACKET
+  , ("loarr"                                  , Left 0x021FD               ) -- LEFTWARDS OPEN-HEADED ARROW
+  , ("lobrk"                                  , Left 0x027E6               ) -- MATHEMATICAL LEFT WHITE SQUARE BRACKET
+  , ("longleftarrow"                          , Left 0x027F5               ) -- LONG LEFTWARDS ARROW
+  , ("longleftrightarrow"                     , Left 0x027F7               ) -- LONG LEFT RIGHT ARROW
+  , ("longmapsto"                             , Left 0x027FC               ) -- LONG RIGHTWARDS ARROW FROM BAR
+  , ("longrightarrow"                         , Left 0x027F6               ) -- LONG RIGHTWARDS ARROW
+  , ("looparrowleft"                          , Left 0x021AB               ) -- LEFTWARDS ARROW WITH LOOP
+  , ("looparrowright"                         , Left 0x021AC               ) -- RIGHTWARDS ARROW WITH LOOP
+  , ("lopar"                                  , Left 0x02985               ) -- LEFT WHITE PARENTHESIS
+  , ("lopf"                                   , Left 0x1D55D               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL L
+  , ("loplus"                                 , Left 0x02A2D               ) -- PLUS SIGN IN LEFT HALF CIRCLE
+  , ("lotimes"                                , Left 0x02A34               ) -- MULTIPLICATION SIGN IN LEFT HALF CIRCLE
+  , ("lowast"                                 , Left 0x02217               ) -- ASTERISK OPERATOR
+  , ("lowbar"                                 , Left 0x0005F               ) -- LOW LINE
+  , ("loz"                                    , Left 0x025CA               ) -- LOZENGE
+  , ("lozenge"                                , Left 0x025CA               ) -- LOZENGE
+  , ("lozf"                                   , Left 0x029EB               ) -- BLACK LOZENGE
+  , ("lpar"                                   , Left 0x00028               ) -- LEFT PARENTHESIS
+  , ("lparlt"                                 , Left 0x02993               ) -- LEFT ARC LESS-THAN BRACKET
+  , ("lrarr"                                  , Left 0x021C6               ) -- LEFTWARDS ARROW OVER RIGHTWARDS ARROW
+  , ("lrcorner"                               , Left 0x0231F               ) -- BOTTOM RIGHT CORNER
+  , ("lrhar"                                  , Left 0x021CB               ) -- LEFTWARDS HARPOON OVER RIGHTWARDS HARPOON
+  , ("lrhard"                                 , Left 0x0296D               ) -- RIGHTWARDS HARPOON WITH BARB DOWN BELOW LONG DASH
+  , ("lrm"                                    , Left 0x0200E               ) -- LEFT-TO-RIGHT MARK
+  , ("lrtri"                                  , Left 0x022BF               ) -- RIGHT TRIANGLE
+  , ("lsaquo"                                 , Left 0x02039               ) -- SINGLE LEFT-POINTING ANGLE QUOTATION MARK
+  , ("lscr"                                   , Left 0x1D4C1               ) -- MATHEMATICAL SCRIPT SMALL L
+  , ("lsh"                                    , Left 0x021B0               ) -- UPWARDS ARROW WITH TIP LEFTWARDS
+  , ("lsim"                                   , Left 0x02272               ) -- LESS-THAN OR EQUIVALENT TO
+  , ("lsime"                                  , Left 0x02A8D               ) -- LESS-THAN ABOVE SIMILAR OR EQUAL
+  , ("lsimg"                                  , Left 0x02A8F               ) -- LESS-THAN ABOVE SIMILAR ABOVE GREATER-THAN
+  , ("lsqb"                                   , Left 0x0005B               ) -- LEFT SQUARE BRACKET
+  , ("lsquo"                                  , Left 0x02018               ) -- LEFT SINGLE QUOTATION MARK
+  , ("lsquor"                                 , Left 0x0201A               ) -- SINGLE LOW-9 QUOTATION MARK
+  , ("lstrok"                                 , Left 0x00142               ) -- LATIN SMALL LETTER L WITH STROKE
+  , ("lt"                                     , Left 0x0003C               ) -- LESS-THAN SIGN
+  , ("ltcc"                                   , Left 0x02AA6               ) -- LESS-THAN CLOSED BY CURVE
+  , ("ltcir"                                  , Left 0x02A79               ) -- LESS-THAN WITH CIRCLE INSIDE
+  , ("ltdot"                                  , Left 0x022D6               ) -- LESS-THAN WITH DOT
+  , ("lthree"                                 , Left 0x022CB               ) -- LEFT SEMIDIRECT PRODUCT
+  , ("ltimes"                                 , Left 0x022C9               ) -- LEFT NORMAL FACTOR SEMIDIRECT PRODUCT
+  , ("ltlarr"                                 , Left 0x02976               ) -- LESS-THAN ABOVE LEFTWARDS ARROW
+  , ("ltquest"                                , Left 0x02A7B               ) -- LESS-THAN WITH QUESTION MARK ABOVE
+  , ("ltrPar"                                 , Left 0x02996               ) -- DOUBLE RIGHT ARC LESS-THAN BRACKET
+  , ("ltri"                                   , Left 0x025C3               ) -- WHITE LEFT-POINTING SMALL TRIANGLE
+  , ("ltrie"                                  , Left 0x022B4               ) -- NORMAL SUBGROUP OF OR EQUAL TO
+  , ("ltrif"                                  , Left 0x025C2               ) -- BLACK LEFT-POINTING SMALL TRIANGLE
+  , ("lurdshar"                               , Left 0x0294A               ) -- LEFT BARB UP RIGHT BARB DOWN HARPOON
+  , ("luruhar"                                , Left 0x02966               ) -- LEFTWARDS HARPOON WITH BARB UP ABOVE RIGHTWARDS HARPOON WITH BARB UP
+  , ("lvertneqq"                              , Right [ 0x02268, 0x0FE00 ] ) -- LESS-THAN BUT NOT EQUAL TO - with vertical stroke
+  , ("lvnE"                                   , Right [ 0x02268, 0x0FE00 ] ) -- LESS-THAN BUT NOT EQUAL TO - with vertical stroke
+  , ("mDDot"                                  , Left 0x0223A               ) -- GEOMETRIC PROPORTION
+  , ("macr"                                   , Left 0x000AF               ) -- MACRON
+  , ("male"                                   , Left 0x02642               ) -- MALE SIGN
+  , ("malt"                                   , Left 0x02720               ) -- MALTESE CROSS
+  , ("maltese"                                , Left 0x02720               ) -- MALTESE CROSS
+  , ("map"                                    , Left 0x021A6               ) -- RIGHTWARDS ARROW FROM BAR
+  , ("mapsto"                                 , Left 0x021A6               ) -- RIGHTWARDS ARROW FROM BAR
+  , ("mapstodown"                             , Left 0x021A7               ) -- DOWNWARDS ARROW FROM BAR
+  , ("mapstoleft"                             , Left 0x021A4               ) -- LEFTWARDS ARROW FROM BAR
+  , ("mapstoup"                               , Left 0x021A5               ) -- UPWARDS ARROW FROM BAR
+  , ("marker"                                 , Left 0x025AE               ) -- BLACK VERTICAL RECTANGLE
+  , ("mcomma"                                 , Left 0x02A29               ) -- MINUS SIGN WITH COMMA ABOVE
+  , ("mcy"                                    , Left 0x0043C               ) -- CYRILLIC SMALL LETTER EM
+  , ("mdash"                                  , Left 0x02014               ) -- EM DASH
+  , ("measuredangle"                          , Left 0x02221               ) -- MEASURED ANGLE
+  , ("mfr"                                    , Left 0x1D52A               ) -- MATHEMATICAL FRAKTUR SMALL M
+  , ("mgr"                                    , Left 0x003BC               ) -- GREEK SMALL LETTER MU
+  , ("mho"                                    , Left 0x02127               ) -- INVERTED OHM SIGN
+  , ("micro"                                  , Left 0x000B5               ) -- MICRO SIGN
+  , ("mid"                                    , Left 0x02223               ) -- DIVIDES
+  , ("midast"                                 , Left 0x0002A               ) -- ASTERISK
+  , ("midcir"                                 , Left 0x02AF0               ) -- VERTICAL LINE WITH CIRCLE BELOW
+  , ("middot"                                 , Left 0x000B7               ) -- MIDDLE DOT
+  , ("minus"                                  , Left 0x02212               ) -- MINUS SIGN
+  , ("minusb"                                 , Left 0x0229F               ) -- SQUARED MINUS
+  , ("minusd"                                 , Left 0x02238               ) -- DOT MINUS
+  , ("minusdu"                                , Left 0x02A2A               ) -- MINUS SIGN WITH DOT BELOW
+  , ("mlcp"                                   , Left 0x02ADB               ) -- TRANSVERSAL INTERSECTION
+  , ("mldr"                                   , Left 0x02026               ) -- HORIZONTAL ELLIPSIS
+  , ("mnplus"                                 , Left 0x02213               ) -- MINUS-OR-PLUS SIGN
+  , ("models"                                 , Left 0x022A7               ) -- MODELS
+  , ("mopf"                                   , Left 0x1D55E               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL M
+  , ("mp"                                     , Left 0x02213               ) -- MINUS-OR-PLUS SIGN
+  , ("mscr"                                   , Left 0x1D4C2               ) -- MATHEMATICAL SCRIPT SMALL M
+  , ("mstpos"                                 , Left 0x0223E               ) -- INVERTED LAZY S
+  , ("mu"                                     , Left 0x003BC               ) -- GREEK SMALL LETTER MU
+  , ("multimap"                               , Left 0x022B8               ) -- MULTIMAP
+  , ("mumap"                                  , Left 0x022B8               ) -- MULTIMAP
+  , ("nGg"                                    , Right [ 0x022D9, 0x00338 ] ) -- VERY MUCH GREATER-THAN with slash
+  , ("nGt"                                    , Right [ 0x0226B, 0x020D2 ] ) -- MUCH GREATER THAN with vertical line
+  , ("nGtv"                                   , Right [ 0x0226B, 0x00338 ] ) -- MUCH GREATER THAN with slash
+  , ("nLeftarrow"                             , Left 0x021CD               ) -- LEFTWARDS DOUBLE ARROW WITH STROKE
+  , ("nLeftrightarrow"                        , Left 0x021CE               ) -- LEFT RIGHT DOUBLE ARROW WITH STROKE
+  , ("nLl"                                    , Right [ 0x022D8, 0x00338 ] ) -- VERY MUCH LESS-THAN with slash
+  , ("nLt"                                    , Right [ 0x0226A, 0x020D2 ] ) -- MUCH LESS THAN with vertical line
+  , ("nLtv"                                   , Right [ 0x0226A, 0x00338 ] ) -- MUCH LESS THAN with slash
+  , ("nRightarrow"                            , Left 0x021CF               ) -- RIGHTWARDS DOUBLE ARROW WITH STROKE
+  , ("nVDash"                                 , Left 0x022AF               ) -- NEGATED DOUBLE VERTICAL BAR DOUBLE RIGHT TURNSTILE
+  , ("nVdash"                                 , Left 0x022AE               ) -- DOES NOT FORCE
+  , ("nabla"                                  , Left 0x02207               ) -- NABLA
+  , ("nacute"                                 , Left 0x00144               ) -- LATIN SMALL LETTER N WITH ACUTE
+  , ("nang"                                   , Right [ 0x02220, 0x020D2 ] ) -- ANGLE with vertical line
+  , ("nap"                                    , Left 0x02249               ) -- NOT ALMOST EQUAL TO
+  , ("napE"                                   , Right [ 0x02A70, 0x00338 ] ) -- APPROXIMATELY EQUAL OR EQUAL TO with slash
+  , ("napid"                                  , Right [ 0x0224B, 0x00338 ] ) -- TRIPLE TILDE with slash
+  , ("napos"                                  , Left 0x00149               ) -- LATIN SMALL LETTER N PRECEDED BY APOSTROPHE
+  , ("napprox"                                , Left 0x02249               ) -- NOT ALMOST EQUAL TO
+  , ("natur"                                  , Left 0x0266E               ) -- MUSIC NATURAL SIGN
+  , ("natural"                                , Left 0x0266E               ) -- MUSIC NATURAL SIGN
+  , ("naturals"                               , Left 0x02115               ) -- DOUBLE-STRUCK CAPITAL N
+  , ("nbsp"                                   , Left 0x000A0               ) -- NO-BREAK SPACE
+  , ("nbump"                                  , Right [ 0x0224E, 0x00338 ] ) -- GEOMETRICALLY EQUIVALENT TO with slash
+  , ("nbumpe"                                 , Right [ 0x0224F, 0x00338 ] ) -- DIFFERENCE BETWEEN with slash
+  , ("ncap"                                   , Left 0x02A43               ) -- INTERSECTION WITH OVERBAR
+  , ("ncaron"                                 , Left 0x00148               ) -- LATIN SMALL LETTER N WITH CARON
+  , ("ncedil"                                 , Left 0x00146               ) -- LATIN SMALL LETTER N WITH CEDILLA
+  , ("ncong"                                  , Left 0x02247               ) -- NEITHER APPROXIMATELY NOR ACTUALLY EQUAL TO
+  , ("ncongdot"                               , Right [ 0x02A6D, 0x00338 ] ) -- CONGRUENT WITH DOT ABOVE with slash
+  , ("ncup"                                   , Left 0x02A42               ) -- UNION WITH OVERBAR
+  , ("ncy"                                    , Left 0x0043D               ) -- CYRILLIC SMALL LETTER EN
+  , ("ndash"                                  , Left 0x02013               ) -- EN DASH
+  , ("ne"                                     , Left 0x02260               ) -- NOT EQUAL TO
+  , ("neArr"                                  , Left 0x021D7               ) -- NORTH EAST DOUBLE ARROW
+  , ("nearhk"                                 , Left 0x02924               ) -- NORTH EAST ARROW WITH HOOK
+  , ("nearr"                                  , Left 0x02197               ) -- NORTH EAST ARROW
+  , ("nearrow"                                , Left 0x02197               ) -- NORTH EAST ARROW
+  , ("nedot"                                  , Right [ 0x02250, 0x00338 ] ) -- APPROACHES THE LIMIT with slash
+  , ("nequiv"                                 , Left 0x02262               ) -- NOT IDENTICAL TO
+  , ("nesear"                                 , Left 0x02928               ) -- NORTH EAST ARROW AND SOUTH EAST ARROW
+  , ("nesim"                                  , Right [ 0x02242, 0x00338 ] ) -- MINUS TILDE with slash
+  , ("nexist"                                 , Left 0x02204               ) -- THERE DOES NOT EXIST
+  , ("nexists"                                , Left 0x02204               ) -- THERE DOES NOT EXIST
+  , ("nfr"                                    , Left 0x1D52B               ) -- MATHEMATICAL FRAKTUR SMALL N
+  , ("ngE"                                    , Right [ 0x02267, 0x00338 ] ) -- GREATER-THAN OVER EQUAL TO with slash
+  , ("nge"                                    , Left 0x02271               ) -- NEITHER GREATER-THAN NOR EQUAL TO
+  , ("ngeq"                                   , Left 0x02271               ) -- NEITHER GREATER-THAN NOR EQUAL TO
+  , ("ngeqq"                                  , Right [ 0x02267, 0x00338 ] ) -- GREATER-THAN OVER EQUAL TO with slash
+  , ("ngeqslant"                              , Right [ 0x02A7E, 0x00338 ] ) -- GREATER-THAN OR SLANTED EQUAL TO with slash
+  , ("nges"                                   , Right [ 0x02A7E, 0x00338 ] ) -- GREATER-THAN OR SLANTED EQUAL TO with slash
+  , ("ngr"                                    , Left 0x003BD               ) -- GREEK SMALL LETTER NU
+  , ("ngsim"                                  , Left 0x02275               ) -- NEITHER GREATER-THAN NOR EQUIVALENT TO
+  , ("ngt"                                    , Left 0x0226F               ) -- NOT GREATER-THAN
+  , ("ngtr"                                   , Left 0x0226F               ) -- NOT GREATER-THAN
+  , ("nhArr"                                  , Left 0x021CE               ) -- LEFT RIGHT DOUBLE ARROW WITH STROKE
+  , ("nharr"                                  , Left 0x021AE               ) -- LEFT RIGHT ARROW WITH STROKE
+  , ("nhpar"                                  , Left 0x02AF2               ) -- PARALLEL WITH HORIZONTAL STROKE
+  , ("ni"                                     , Left 0x0220B               ) -- CONTAINS AS MEMBER
+  , ("nis"                                    , Left 0x022FC               ) -- SMALL CONTAINS WITH VERTICAL BAR AT END OF HORIZONTAL STROKE
+  , ("nisd"                                   , Left 0x022FA               ) -- CONTAINS WITH LONG HORIZONTAL STROKE
+  , ("niv"                                    , Left 0x0220B               ) -- CONTAINS AS MEMBER
+  , ("njcy"                                   , Left 0x0045A               ) -- CYRILLIC SMALL LETTER NJE
+  , ("nlArr"                                  , Left 0x021CD               ) -- LEFTWARDS DOUBLE ARROW WITH STROKE
+  , ("nlE"                                    , Right [ 0x02266, 0x00338 ] ) -- LESS-THAN OVER EQUAL TO with slash
+  , ("nlarr"                                  , Left 0x0219A               ) -- LEFTWARDS ARROW WITH STROKE
+  , ("nldr"                                   , Left 0x02025               ) -- TWO DOT LEADER
+  , ("nle"                                    , Left 0x02270               ) -- NEITHER LESS-THAN NOR EQUAL TO
+  , ("nleftarrow"                             , Left 0x0219A               ) -- LEFTWARDS ARROW WITH STROKE
+  , ("nleftrightarrow"                        , Left 0x021AE               ) -- LEFT RIGHT ARROW WITH STROKE
+  , ("nleq"                                   , Left 0x02270               ) -- NEITHER LESS-THAN NOR EQUAL TO
+  , ("nleqq"                                  , Right [ 0x02266, 0x00338 ] ) -- LESS-THAN OVER EQUAL TO with slash
+  , ("nleqslant"                              , Right [ 0x02A7D, 0x00338 ] ) -- LESS-THAN OR SLANTED EQUAL TO with slash
+  , ("nles"                                   , Right [ 0x02A7D, 0x00338 ] ) -- LESS-THAN OR SLANTED EQUAL TO with slash
+  , ("nless"                                  , Left 0x0226E               ) -- NOT LESS-THAN
+  , ("nlsim"                                  , Left 0x02274               ) -- NEITHER LESS-THAN NOR EQUIVALENT TO
+  , ("nlt"                                    , Left 0x0226E               ) -- NOT LESS-THAN
+  , ("nltri"                                  , Left 0x022EA               ) -- NOT NORMAL SUBGROUP OF
+  , ("nltrie"                                 , Left 0x022EC               ) -- NOT NORMAL SUBGROUP OF OR EQUAL TO
+  , ("nmid"                                   , Left 0x02224               ) -- DOES NOT DIVIDE
+  , ("nopf"                                   , Left 0x1D55F               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL N
+  , ("not"                                    , Left 0x000AC               ) -- NOT SIGN
+  , ("notin"                                  , Left 0x02209               ) -- NOT AN ELEMENT OF
+  , ("notinE"                                 , Right [ 0x022F9, 0x00338 ] ) -- ELEMENT OF WITH TWO HORIZONTAL STROKES with slash
+  , ("notindot"                               , Right [ 0x022F5, 0x00338 ] ) -- ELEMENT OF WITH DOT ABOVE with slash
+  , ("notinva"                                , Left 0x02209               ) -- NOT AN ELEMENT OF
+  , ("notinvb"                                , Left 0x022F7               ) -- SMALL ELEMENT OF WITH OVERBAR
+  , ("notinvc"                                , Left 0x022F6               ) -- ELEMENT OF WITH OVERBAR
+  , ("notni"                                  , Left 0x0220C               ) -- DOES NOT CONTAIN AS MEMBER
+  , ("notniva"                                , Left 0x0220C               ) -- DOES NOT CONTAIN AS MEMBER
+  , ("notnivb"                                , Left 0x022FE               ) -- SMALL CONTAINS WITH OVERBAR
+  , ("notnivc"                                , Left 0x022FD               ) -- CONTAINS WITH OVERBAR
+  , ("npar"                                   , Left 0x02226               ) -- NOT PARALLEL TO
+  , ("nparallel"                              , Left 0x02226               ) -- NOT PARALLEL TO
+  , ("nparsl"                                 , Right [ 0x02AFD, 0x020E5 ] ) -- DOUBLE SOLIDUS OPERATOR with reverse slash
+  , ("npart"                                  , Right [ 0x02202, 0x00338 ] ) -- PARTIAL DIFFERENTIAL with slash
+  , ("npolint"                                , Left 0x02A14               ) -- LINE INTEGRATION NOT INCLUDING THE POLE
+  , ("npr"                                    , Left 0x02280               ) -- DOES NOT PRECEDE
+  , ("nprcue"                                 , Left 0x022E0               ) -- DOES NOT PRECEDE OR EQUAL
+  , ("npre"                                   , Right [ 0x02AAF, 0x00338 ] ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN with slash
+  , ("nprec"                                  , Left 0x02280               ) -- DOES NOT PRECEDE
+  , ("npreceq"                                , Right [ 0x02AAF, 0x00338 ] ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN with slash
+  , ("nrArr"                                  , Left 0x021CF               ) -- RIGHTWARDS DOUBLE ARROW WITH STROKE
+  , ("nrarr"                                  , Left 0x0219B               ) -- RIGHTWARDS ARROW WITH STROKE
+  , ("nrarrc"                                 , Right [ 0x02933, 0x00338 ] ) -- WAVE ARROW POINTING DIRECTLY RIGHT with slash
+  , ("nrarrw"                                 , Right [ 0x0219D, 0x00338 ] ) -- RIGHTWARDS WAVE ARROW with slash
+  , ("nrightarrow"                            , Left 0x0219B               ) -- RIGHTWARDS ARROW WITH STROKE
+  , ("nrtri"                                  , Left 0x022EB               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP
+  , ("nrtrie"                                 , Left 0x022ED               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP OR EQUAL
+  , ("nsc"                                    , Left 0x02281               ) -- DOES NOT SUCCEED
+  , ("nsccue"                                 , Left 0x022E1               ) -- DOES NOT SUCCEED OR EQUAL
+  , ("nsce"                                   , Right [ 0x02AB0, 0x00338 ] ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN with slash
+  , ("nscr"                                   , Left 0x1D4C3               ) -- MATHEMATICAL SCRIPT SMALL N
+  , ("nshortmid"                              , Left 0x02224               ) -- DOES NOT DIVIDE
+  , ("nshortparallel"                         , Left 0x02226               ) -- NOT PARALLEL TO
+  , ("nsim"                                   , Left 0x02241               ) -- NOT TILDE
+  , ("nsime"                                  , Left 0x02244               ) -- NOT ASYMPTOTICALLY EQUAL TO
+  , ("nsimeq"                                 , Left 0x02244               ) -- NOT ASYMPTOTICALLY EQUAL TO
+  , ("nsmid"                                  , Left 0x02224               ) -- DOES NOT DIVIDE
+  , ("nspar"                                  , Left 0x02226               ) -- NOT PARALLEL TO
+  , ("nsqsube"                                , Left 0x022E2               ) -- NOT SQUARE IMAGE OF OR EQUAL TO
+  , ("nsqsupe"                                , Left 0x022E3               ) -- NOT SQUARE ORIGINAL OF OR EQUAL TO
+  , ("nsub"                                   , Left 0x02284               ) -- NOT A SUBSET OF
+  , ("nsubE"                                  , Right [ 0x02AC5, 0x00338 ] ) -- SUBSET OF ABOVE EQUALS SIGN with slash
+  , ("nsube"                                  , Left 0x02288               ) -- NEITHER A SUBSET OF NOR EQUAL TO
+  , ("nsubset"                                , Right [ 0x02282, 0x020D2 ] ) -- SUBSET OF with vertical line
+  , ("nsubseteq"                              , Left 0x02288               ) -- NEITHER A SUBSET OF NOR EQUAL TO
+  , ("nsubseteqq"                             , Right [ 0x02AC5, 0x00338 ] ) -- SUBSET OF ABOVE EQUALS SIGN with slash
+  , ("nsucc"                                  , Left 0x02281               ) -- DOES NOT SUCCEED
+  , ("nsucceq"                                , Right [ 0x02AB0, 0x00338 ] ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN with slash
+  , ("nsup"                                   , Left 0x02285               ) -- NOT A SUPERSET OF
+  , ("nsupE"                                  , Right [ 0x02AC6, 0x00338 ] ) -- SUPERSET OF ABOVE EQUALS SIGN with slash
+  , ("nsupe"                                  , Left 0x02289               ) -- NEITHER A SUPERSET OF NOR EQUAL TO
+  , ("nsupset"                                , Right [ 0x02283, 0x020D2 ] ) -- SUPERSET OF with vertical line
+  , ("nsupseteq"                              , Left 0x02289               ) -- NEITHER A SUPERSET OF NOR EQUAL TO
+  , ("nsupseteqq"                             , Right [ 0x02AC6, 0x00338 ] ) -- SUPERSET OF ABOVE EQUALS SIGN with slash
+  , ("ntgl"                                   , Left 0x02279               ) -- NEITHER GREATER-THAN NOR LESS-THAN
+  , ("ntilde"                                 , Left 0x000F1               ) -- LATIN SMALL LETTER N WITH TILDE
+  , ("ntlg"                                   , Left 0x02278               ) -- NEITHER LESS-THAN NOR GREATER-THAN
+  , ("ntriangleleft"                          , Left 0x022EA               ) -- NOT NORMAL SUBGROUP OF
+  , ("ntrianglelefteq"                        , Left 0x022EC               ) -- NOT NORMAL SUBGROUP OF OR EQUAL TO
+  , ("ntriangleright"                         , Left 0x022EB               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP
+  , ("ntrianglerighteq"                       , Left 0x022ED               ) -- DOES NOT CONTAIN AS NORMAL SUBGROUP OR EQUAL
+  , ("nu"                                     , Left 0x003BD               ) -- GREEK SMALL LETTER NU
+  , ("num"                                    , Left 0x00023               ) -- NUMBER SIGN
+  , ("numero"                                 , Left 0x02116               ) -- NUMERO SIGN
+  , ("numsp"                                  , Left 0x02007               ) -- FIGURE SPACE
+  , ("nvDash"                                 , Left 0x022AD               ) -- NOT TRUE
+  , ("nvHarr"                                 , Left 0x02904               ) -- LEFT RIGHT DOUBLE ARROW WITH VERTICAL STROKE
+  , ("nvap"                                   , Right [ 0x0224D, 0x020D2 ] ) -- EQUIVALENT TO with vertical line
+  , ("nvdash"                                 , Left 0x022AC               ) -- DOES NOT PROVE
+  , ("nvge"                                   , Right [ 0x02265, 0x020D2 ] ) -- GREATER-THAN OR EQUAL TO with vertical line
+  , ("nvgt"                                   , Right [ 0x0003E, 0x020D2 ] ) -- GREATER-THAN SIGN with vertical line
+  , ("nvinfin"                                , Left 0x029DE               ) -- INFINITY NEGATED WITH VERTICAL BAR
+  , ("nvlArr"                                 , Left 0x02902               ) -- LEFTWARDS DOUBLE ARROW WITH VERTICAL STROKE
+  , ("nvle"                                   , Right [ 0x02264, 0x020D2 ] ) -- LESS-THAN OR EQUAL TO with vertical line
+  , ("nvlt"                                   , Right [ 0x0003C, 0x020D2 ] ) -- LESS-THAN SIGN with vertical line
+  , ("nvltrie"                                , Right [ 0x022B4, 0x020D2 ] ) -- NORMAL SUBGROUP OF OR EQUAL TO with vertical line
+  , ("nvrArr"                                 , Left 0x02903               ) -- RIGHTWARDS DOUBLE ARROW WITH VERTICAL STROKE
+  , ("nvrtrie"                                , Right [ 0x022B5, 0x020D2 ] ) -- CONTAINS AS NORMAL SUBGROUP OR EQUAL TO with vertical line
+  , ("nvsim"                                  , Right [ 0x0223C, 0x020D2 ] ) -- TILDE OPERATOR with vertical line
+  , ("nwArr"                                  , Left 0x021D6               ) -- NORTH WEST DOUBLE ARROW
+  , ("nwarhk"                                 , Left 0x02923               ) -- NORTH WEST ARROW WITH HOOK
+  , ("nwarr"                                  , Left 0x02196               ) -- NORTH WEST ARROW
+  , ("nwarrow"                                , Left 0x02196               ) -- NORTH WEST ARROW
+  , ("nwnear"                                 , Left 0x02927               ) -- NORTH WEST ARROW AND NORTH EAST ARROW
+  , ("oS"                                     , Left 0x024C8               ) -- CIRCLED LATIN CAPITAL LETTER S
+  , ("oacgr"                                  , Left 0x003CC               ) -- GREEK SMALL LETTER OMICRON WITH TONOS
+  , ("oacute"                                 , Left 0x000F3               ) -- LATIN SMALL LETTER O WITH ACUTE
+  , ("oast"                                   , Left 0x0229B               ) -- CIRCLED ASTERISK OPERATOR
+  , ("ocir"                                   , Left 0x0229A               ) -- CIRCLED RING OPERATOR
+  , ("ocirc"                                  , Left 0x000F4               ) -- LATIN SMALL LETTER O WITH CIRCUMFLEX
+  , ("ocy"                                    , Left 0x0043E               ) -- CYRILLIC SMALL LETTER O
+  , ("odash"                                  , Left 0x0229D               ) -- CIRCLED DASH
+  , ("odblac"                                 , Left 0x00151               ) -- LATIN SMALL LETTER O WITH DOUBLE ACUTE
+  , ("odiv"                                   , Left 0x02A38               ) -- CIRCLED DIVISION SIGN
+  , ("odot"                                   , Left 0x02299               ) -- CIRCLED DOT OPERATOR
+  , ("odsold"                                 , Left 0x029BC               ) -- CIRCLED ANTICLOCKWISE-ROTATED DIVISION SIGN
+  , ("oelig"                                  , Left 0x00153               ) -- LATIN SMALL LIGATURE OE
+  , ("ofcir"                                  , Left 0x029BF               ) -- CIRCLED BULLET
+  , ("ofr"                                    , Left 0x1D52C               ) -- MATHEMATICAL FRAKTUR SMALL O
+  , ("ogon"                                   , Left 0x002DB               ) -- OGONEK
+  , ("ogr"                                    , Left 0x003BF               ) -- GREEK SMALL LETTER OMICRON
+  , ("ograve"                                 , Left 0x000F2               ) -- LATIN SMALL LETTER O WITH GRAVE
+  , ("ogt"                                    , Left 0x029C1               ) -- CIRCLED GREATER-THAN
+  , ("ohacgr"                                 , Left 0x003CE               ) -- GREEK SMALL LETTER OMEGA WITH TONOS
+  , ("ohbar"                                  , Left 0x029B5               ) -- CIRCLE WITH HORIZONTAL BAR
+  , ("ohgr"                                   , Left 0x003C9               ) -- GREEK SMALL LETTER OMEGA
+  , ("ohm"                                    , Left 0x003A9               ) -- GREEK CAPITAL LETTER OMEGA
+  , ("oint"                                   , Left 0x0222E               ) -- CONTOUR INTEGRAL
+  , ("olarr"                                  , Left 0x021BA               ) -- ANTICLOCKWISE OPEN CIRCLE ARROW
+  , ("olcir"                                  , Left 0x029BE               ) -- CIRCLED WHITE BULLET
+  , ("olcross"                                , Left 0x029BB               ) -- CIRCLE WITH SUPERIMPOSED X
+  , ("oline"                                  , Left 0x0203E               ) -- OVERLINE
+  , ("olt"                                    , Left 0x029C0               ) -- CIRCLED LESS-THAN
+  , ("omacr"                                  , Left 0x0014D               ) -- LATIN SMALL LETTER O WITH MACRON
+  , ("omega"                                  , Left 0x003C9               ) -- GREEK SMALL LETTER OMEGA
+  , ("omicron"                                , Left 0x003BF               ) -- GREEK SMALL LETTER OMICRON
+  , ("omid"                                   , Left 0x029B6               ) -- CIRCLED VERTICAL BAR
+  , ("ominus"                                 , Left 0x02296               ) -- CIRCLED MINUS
+  , ("oopf"                                   , Left 0x1D560               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL O
+  , ("opar"                                   , Left 0x029B7               ) -- CIRCLED PARALLEL
+  , ("operp"                                  , Left 0x029B9               ) -- CIRCLED PERPENDICULAR
+  , ("oplus"                                  , Left 0x02295               ) -- CIRCLED PLUS
+  , ("or"                                     , Left 0x02228               ) -- LOGICAL OR
+  , ("orarr"                                  , Left 0x021BB               ) -- CLOCKWISE OPEN CIRCLE ARROW
+  , ("ord"                                    , Left 0x02A5D               ) -- LOGICAL OR WITH HORIZONTAL DASH
+  , ("order"                                  , Left 0x02134               ) -- SCRIPT SMALL O
+  , ("orderof"                                , Left 0x02134               ) -- SCRIPT SMALL O
+  , ("ordf"                                   , Left 0x000AA               ) -- FEMININE ORDINAL INDICATOR
+  , ("ordm"                                   , Left 0x000BA               ) -- MASCULINE ORDINAL INDICATOR
+  , ("origof"                                 , Left 0x022B6               ) -- ORIGINAL OF
+  , ("oror"                                   , Left 0x02A56               ) -- TWO INTERSECTING LOGICAL OR
+  , ("orslope"                                , Left 0x02A57               ) -- SLOPING LARGE OR
+  , ("orv"                                    , Left 0x02A5B               ) -- LOGICAL OR WITH MIDDLE STEM
+  , ("oscr"                                   , Left 0x02134               ) -- SCRIPT SMALL O
+  , ("oslash"                                 , Left 0x000F8               ) -- LATIN SMALL LETTER O WITH STROKE
+  , ("osol"                                   , Left 0x02298               ) -- CIRCLED DIVISION SLASH
+  , ("otilde"                                 , Left 0x000F5               ) -- LATIN SMALL LETTER O WITH TILDE
+  , ("otimes"                                 , Left 0x02297               ) -- CIRCLED TIMES
+  , ("otimesas"                               , Left 0x02A36               ) -- CIRCLED MULTIPLICATION SIGN WITH CIRCUMFLEX ACCENT
+  , ("ouml"                                   , Left 0x000F6               ) -- LATIN SMALL LETTER O WITH DIAERESIS
+  , ("ovbar"                                  , Left 0x0233D               ) -- APL FUNCTIONAL SYMBOL CIRCLE STILE
+  , ("par"                                    , Left 0x02225               ) -- PARALLEL TO
+  , ("para"                                   , Left 0x000B6               ) -- PILCROW SIGN
+  , ("parallel"                               , Left 0x02225               ) -- PARALLEL TO
+  , ("parsim"                                 , Left 0x02AF3               ) -- PARALLEL WITH TILDE OPERATOR
+  , ("parsl"                                  , Left 0x02AFD               ) -- DOUBLE SOLIDUS OPERATOR
+  , ("part"                                   , Left 0x02202               ) -- PARTIAL DIFFERENTIAL
+  , ("pcy"                                    , Left 0x0043F               ) -- CYRILLIC SMALL LETTER PE
+  , ("percnt"                                 , Left 0x00025               ) -- PERCENT SIGN
+  , ("period"                                 , Left 0x0002E               ) -- FULL STOP
+  , ("permil"                                 , Left 0x02030               ) -- PER MILLE SIGN
+  , ("perp"                                   , Left 0x022A5               ) -- UP TACK
+  , ("pertenk"                                , Left 0x02031               ) -- PER TEN THOUSAND SIGN
+  , ("pfr"                                    , Left 0x1D52D               ) -- MATHEMATICAL FRAKTUR SMALL P
+  , ("pgr"                                    , Left 0x003C0               ) -- GREEK SMALL LETTER PI
+  , ("phgr"                                   , Left 0x003C6               ) -- GREEK SMALL LETTER PHI
+  , ("phi"                                    , Left 0x003C6               ) -- GREEK SMALL LETTER PHI
+  , ("phiv"                                   , Left 0x003D5               ) -- GREEK PHI SYMBOL
+  , ("phmmat"                                 , Left 0x02133               ) -- SCRIPT CAPITAL M
+  , ("phone"                                  , Left 0x0260E               ) -- BLACK TELEPHONE
+  , ("pi"                                     , Left 0x003C0               ) -- GREEK SMALL LETTER PI
+  , ("pitchfork"                              , Left 0x022D4               ) -- PITCHFORK
+  , ("piv"                                    , Left 0x003D6               ) -- GREEK PI SYMBOL
+  , ("planck"                                 , Left 0x0210F               ) -- PLANCK CONSTANT OVER TWO PI
+  , ("planckh"                                , Left 0x0210E               ) -- PLANCK CONSTANT
+  , ("plankv"                                 , Left 0x0210F               ) -- PLANCK CONSTANT OVER TWO PI
+  , ("plus"                                   , Left 0x0002B               ) -- PLUS SIGN
+  , ("plusacir"                               , Left 0x02A23               ) -- PLUS SIGN WITH CIRCUMFLEX ACCENT ABOVE
+  , ("plusb"                                  , Left 0x0229E               ) -- SQUARED PLUS
+  , ("pluscir"                                , Left 0x02A22               ) -- PLUS SIGN WITH SMALL CIRCLE ABOVE
+  , ("plusdo"                                 , Left 0x02214               ) -- DOT PLUS
+  , ("plusdu"                                 , Left 0x02A25               ) -- PLUS SIGN WITH DOT BELOW
+  , ("pluse"                                  , Left 0x02A72               ) -- PLUS SIGN ABOVE EQUALS SIGN
+  , ("plusmn"                                 , Left 0x000B1               ) -- PLUS-MINUS SIGN
+  , ("plussim"                                , Left 0x02A26               ) -- PLUS SIGN WITH TILDE BELOW
+  , ("plustwo"                                , Left 0x02A27               ) -- PLUS SIGN WITH SUBSCRIPT TWO
+  , ("pm"                                     , Left 0x000B1               ) -- PLUS-MINUS SIGN
+  , ("pointint"                               , Left 0x02A15               ) -- INTEGRAL AROUND A POINT OPERATOR
+  , ("popf"                                   , Left 0x1D561               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL P
+  , ("pound"                                  , Left 0x000A3               ) -- POUND SIGN
+  , ("pr"                                     , Left 0x0227A               ) -- PRECEDES
+  , ("prE"                                    , Left 0x02AB3               ) -- PRECEDES ABOVE EQUALS SIGN
+  , ("prap"                                   , Left 0x02AB7               ) -- PRECEDES ABOVE ALMOST EQUAL TO
+  , ("prcue"                                  , Left 0x0227C               ) -- PRECEDES OR EQUAL TO
+  , ("pre"                                    , Left 0x02AAF               ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN
+  , ("prec"                                   , Left 0x0227A               ) -- PRECEDES
+  , ("precapprox"                             , Left 0x02AB7               ) -- PRECEDES ABOVE ALMOST EQUAL TO
+  , ("preccurlyeq"                            , Left 0x0227C               ) -- PRECEDES OR EQUAL TO
+  , ("preceq"                                 , Left 0x02AAF               ) -- PRECEDES ABOVE SINGLE-LINE EQUALS SIGN
+  , ("precnapprox"                            , Left 0x02AB9               ) -- PRECEDES ABOVE NOT ALMOST EQUAL TO
+  , ("precneqq"                               , Left 0x02AB5               ) -- PRECEDES ABOVE NOT EQUAL TO
+  , ("precnsim"                               , Left 0x022E8               ) -- PRECEDES BUT NOT EQUIVALENT TO
+  , ("precsim"                                , Left 0x0227E               ) -- PRECEDES OR EQUIVALENT TO
+  , ("prime"                                  , Left 0x02032               ) -- PRIME
+  , ("primes"                                 , Left 0x02119               ) -- DOUBLE-STRUCK CAPITAL P
+  , ("prnE"                                   , Left 0x02AB5               ) -- PRECEDES ABOVE NOT EQUAL TO
+  , ("prnap"                                  , Left 0x02AB9               ) -- PRECEDES ABOVE NOT ALMOST EQUAL TO
+  , ("prnsim"                                 , Left 0x022E8               ) -- PRECEDES BUT NOT EQUIVALENT TO
+  , ("prod"                                   , Left 0x0220F               ) -- N-ARY PRODUCT
+  , ("profalar"                               , Left 0x0232E               ) -- ALL AROUND-PROFILE
+  , ("profline"                               , Left 0x02312               ) -- ARC
+  , ("profsurf"                               , Left 0x02313               ) -- SEGMENT
+  , ("prop"                                   , Left 0x0221D               ) -- PROPORTIONAL TO
+  , ("propto"                                 , Left 0x0221D               ) -- PROPORTIONAL TO
+  , ("prsim"                                  , Left 0x0227E               ) -- PRECEDES OR EQUIVALENT TO
+  , ("prurel"                                 , Left 0x022B0               ) -- PRECEDES UNDER RELATION
+  , ("pscr"                                   , Left 0x1D4C5               ) -- MATHEMATICAL SCRIPT SMALL P
+  , ("psgr"                                   , Left 0x003C8               ) -- GREEK SMALL LETTER PSI
+  , ("psi"                                    , Left 0x003C8               ) -- GREEK SMALL LETTER PSI
+  , ("puncsp"                                 , Left 0x02008               ) -- PUNCTUATION SPACE
+  , ("qfr"                                    , Left 0x1D52E               ) -- MATHEMATICAL FRAKTUR SMALL Q
+  , ("qint"                                   , Left 0x02A0C               ) -- QUADRUPLE INTEGRAL OPERATOR
+  , ("qopf"                                   , Left 0x1D562               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL Q
+  , ("qprime"                                 , Left 0x02057               ) -- QUADRUPLE PRIME
+  , ("qscr"                                   , Left 0x1D4C6               ) -- MATHEMATICAL SCRIPT SMALL Q
+  , ("quaternions"                            , Left 0x0210D               ) -- DOUBLE-STRUCK CAPITAL H
+  , ("quatint"                                , Left 0x02A16               ) -- QUATERNION INTEGRAL OPERATOR
+  , ("quest"                                  , Left 0x0003F               ) -- QUESTION MARK
+  , ("questeq"                                , Left 0x0225F               ) -- QUESTIONED EQUAL TO
+  , ("quot"                                   , Left 0x00022               ) -- QUOTATION MARK
+  , ("rAarr"                                  , Left 0x021DB               ) -- RIGHTWARDS TRIPLE ARROW
+  , ("rArr"                                   , Left 0x021D2               ) -- RIGHTWARDS DOUBLE ARROW
+  , ("rAtail"                                 , Left 0x0291C               ) -- RIGHTWARDS DOUBLE ARROW-TAIL
+  , ("rBarr"                                  , Left 0x0290F               ) -- RIGHTWARDS TRIPLE DASH ARROW
+  , ("rHar"                                   , Left 0x02964               ) -- RIGHTWARDS HARPOON WITH BARB UP ABOVE RIGHTWARDS HARPOON WITH BARB DOWN
+  , ("race"                                   , Right [ 0x0223D, 0x00331 ] ) -- REVERSED TILDE with underline
+  , ("racute"                                 , Left 0x00155               ) -- LATIN SMALL LETTER R WITH ACUTE
+  , ("radic"                                  , Left 0x0221A               ) -- SQUARE ROOT
+  , ("raemptyv"                               , Left 0x029B3               ) -- EMPTY SET WITH RIGHT ARROW ABOVE
+  , ("rang"                                   , Left 0x027E9               ) -- MATHEMATICAL RIGHT ANGLE BRACKET
+  , ("rangd"                                  , Left 0x02992               ) -- RIGHT ANGLE BRACKET WITH DOT
+  , ("range"                                  , Left 0x029A5               ) -- REVERSED ANGLE WITH UNDERBAR
+  , ("rangle"                                 , Left 0x027E9               ) -- MATHEMATICAL RIGHT ANGLE BRACKET
+  , ("raquo"                                  , Left 0x000BB               ) -- RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK
+  , ("rarr"                                   , Left 0x02192               ) -- RIGHTWARDS ARROW
+  , ("rarrap"                                 , Left 0x02975               ) -- RIGHTWARDS ARROW ABOVE ALMOST EQUAL TO
+  , ("rarrb"                                  , Left 0x021E5               ) -- RIGHTWARDS ARROW TO BAR
+  , ("rarrbfs"                                , Left 0x02920               ) -- RIGHTWARDS ARROW FROM BAR TO BLACK DIAMOND
+  , ("rarrc"                                  , Left 0x02933               ) -- WAVE ARROW POINTING DIRECTLY RIGHT
+  , ("rarrfs"                                 , Left 0x0291E               ) -- RIGHTWARDS ARROW TO BLACK DIAMOND
+  , ("rarrhk"                                 , Left 0x021AA               ) -- RIGHTWARDS ARROW WITH HOOK
+  , ("rarrlp"                                 , Left 0x021AC               ) -- RIGHTWARDS ARROW WITH LOOP
+  , ("rarrpl"                                 , Left 0x02945               ) -- RIGHTWARDS ARROW WITH PLUS BELOW
+  , ("rarrsim"                                , Left 0x02974               ) -- RIGHTWARDS ARROW ABOVE TILDE OPERATOR
+  , ("rarrtl"                                 , Left 0x021A3               ) -- RIGHTWARDS ARROW WITH TAIL
+  , ("rarrw"                                  , Left 0x0219D               ) -- RIGHTWARDS WAVE ARROW
+  , ("ratail"                                 , Left 0x0291A               ) -- RIGHTWARDS ARROW-TAIL
+  , ("ratio"                                  , Left 0x02236               ) -- RATIO
+  , ("rationals"                              , Left 0x0211A               ) -- DOUBLE-STRUCK CAPITAL Q
+  , ("rbarr"                                  , Left 0x0290D               ) -- RIGHTWARDS DOUBLE DASH ARROW
+  , ("rbbrk"                                  , Left 0x02773               ) -- LIGHT RIGHT TORTOISE SHELL BRACKET ORNAMENT
+  , ("rbrace"                                 , Left 0x0007D               ) -- RIGHT CURLY BRACKET
+  , ("rbrack"                                 , Left 0x0005D               ) -- RIGHT SQUARE BRACKET
+  , ("rbrke"                                  , Left 0x0298C               ) -- RIGHT SQUARE BRACKET WITH UNDERBAR
+  , ("rbrksld"                                , Left 0x0298E               ) -- RIGHT SQUARE BRACKET WITH TICK IN BOTTOM CORNER
+  , ("rbrkslu"                                , Left 0x02990               ) -- RIGHT SQUARE BRACKET WITH TICK IN TOP CORNER
+  , ("rcaron"                                 , Left 0x00159               ) -- LATIN SMALL LETTER R WITH CARON
+  , ("rcedil"                                 , Left 0x00157               ) -- LATIN SMALL LETTER R WITH CEDILLA
+  , ("rceil"                                  , Left 0x02309               ) -- RIGHT CEILING
+  , ("rcub"                                   , Left 0x0007D               ) -- RIGHT CURLY BRACKET
+  , ("rcy"                                    , Left 0x00440               ) -- CYRILLIC SMALL LETTER ER
+  , ("rdca"                                   , Left 0x02937               ) -- ARROW POINTING DOWNWARDS THEN CURVING RIGHTWARDS
+  , ("rdldhar"                                , Left 0x02969               ) -- RIGHTWARDS HARPOON WITH BARB DOWN ABOVE LEFTWARDS HARPOON WITH BARB DOWN
+  , ("rdquo"                                  , Left 0x0201D               ) -- RIGHT DOUBLE QUOTATION MARK
+  , ("rdquor"                                 , Left 0x0201D               ) -- RIGHT DOUBLE QUOTATION MARK
+  , ("rdsh"                                   , Left 0x021B3               ) -- DOWNWARDS ARROW WITH TIP RIGHTWARDS
+  , ("real"                                   , Left 0x0211C               ) -- BLACK-LETTER CAPITAL R
+  , ("realine"                                , Left 0x0211B               ) -- SCRIPT CAPITAL R
+  , ("realpart"                               , Left 0x0211C               ) -- BLACK-LETTER CAPITAL R
+  , ("reals"                                  , Left 0x0211D               ) -- DOUBLE-STRUCK CAPITAL R
+  , ("rect"                                   , Left 0x025AD               ) -- WHITE RECTANGLE
+  , ("reg"                                    , Left 0x000AE               ) -- REGISTERED SIGN
+  , ("rfisht"                                 , Left 0x0297D               ) -- RIGHT FISH TAIL
+  , ("rfloor"                                 , Left 0x0230B               ) -- RIGHT FLOOR
+  , ("rfr"                                    , Left 0x1D52F               ) -- MATHEMATICAL FRAKTUR SMALL R
+  , ("rgr"                                    , Left 0x003C1               ) -- GREEK SMALL LETTER RHO
+  , ("rhard"                                  , Left 0x021C1               ) -- RIGHTWARDS HARPOON WITH BARB DOWNWARDS
+  , ("rharu"                                  , Left 0x021C0               ) -- RIGHTWARDS HARPOON WITH BARB UPWARDS
+  , ("rharul"                                 , Left 0x0296C               ) -- RIGHTWARDS HARPOON WITH BARB UP ABOVE LONG DASH
+  , ("rho"                                    , Left 0x003C1               ) -- GREEK SMALL LETTER RHO
+  , ("rhov"                                   , Left 0x003F1               ) -- GREEK RHO SYMBOL
+  , ("rightarrow"                             , Left 0x02192               ) -- RIGHTWARDS ARROW
+  , ("rightarrowtail"                         , Left 0x021A3               ) -- RIGHTWARDS ARROW WITH TAIL
+  , ("rightharpoondown"                       , Left 0x021C1               ) -- RIGHTWARDS HARPOON WITH BARB DOWNWARDS
+  , ("rightharpoonup"                         , Left 0x021C0               ) -- RIGHTWARDS HARPOON WITH BARB UPWARDS
+  , ("rightleftarrows"                        , Left 0x021C4               ) -- RIGHTWARDS ARROW OVER LEFTWARDS ARROW
+  , ("rightleftharpoons"                      , Left 0x021CC               ) -- RIGHTWARDS HARPOON OVER LEFTWARDS HARPOON
+  , ("rightrightarrows"                       , Left 0x021C9               ) -- RIGHTWARDS PAIRED ARROWS
+  , ("rightsquigarrow"                        , Left 0x0219D               ) -- RIGHTWARDS WAVE ARROW
+  , ("rightthreetimes"                        , Left 0x022CC               ) -- RIGHT SEMIDIRECT PRODUCT
+  , ("ring"                                   , Left 0x002DA               ) -- RING ABOVE
+  , ("risingdotseq"                           , Left 0x02253               ) -- IMAGE OF OR APPROXIMATELY EQUAL TO
+  , ("rlarr"                                  , Left 0x021C4               ) -- RIGHTWARDS ARROW OVER LEFTWARDS ARROW
+  , ("rlhar"                                  , Left 0x021CC               ) -- RIGHTWARDS HARPOON OVER LEFTWARDS HARPOON
+  , ("rlm"                                    , Left 0x0200F               ) -- RIGHT-TO-LEFT MARK
+  , ("rmoust"                                 , Left 0x023B1               ) -- UPPER RIGHT OR LOWER LEFT CURLY BRACKET SECTION
+  , ("rmoustache"                             , Left 0x023B1               ) -- UPPER RIGHT OR LOWER LEFT CURLY BRACKET SECTION
+  , ("rnmid"                                  , Left 0x02AEE               ) -- DOES NOT DIVIDE WITH REVERSED NEGATION SLASH
+  , ("roang"                                  , Left 0x027ED               ) -- MATHEMATICAL RIGHT WHITE TORTOISE SHELL BRACKET
+  , ("roarr"                                  , Left 0x021FE               ) -- RIGHTWARDS OPEN-HEADED ARROW
+  , ("robrk"                                  , Left 0x027E7               ) -- MATHEMATICAL RIGHT WHITE SQUARE BRACKET
+  , ("ropar"                                  , Left 0x02986               ) -- RIGHT WHITE PARENTHESIS
+  , ("ropf"                                   , Left 0x1D563               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL R
+  , ("roplus"                                 , Left 0x02A2E               ) -- PLUS SIGN IN RIGHT HALF CIRCLE
+  , ("rotimes"                                , Left 0x02A35               ) -- MULTIPLICATION SIGN IN RIGHT HALF CIRCLE
+  , ("rpar"                                   , Left 0x00029               ) -- RIGHT PARENTHESIS
+  , ("rpargt"                                 , Left 0x02994               ) -- RIGHT ARC GREATER-THAN BRACKET
+  , ("rppolint"                               , Left 0x02A12               ) -- LINE INTEGRATION WITH RECTANGULAR PATH AROUND POLE
+  , ("rrarr"                                  , Left 0x021C9               ) -- RIGHTWARDS PAIRED ARROWS
+  , ("rsaquo"                                 , Left 0x0203A               ) -- SINGLE RIGHT-POINTING ANGLE QUOTATION MARK
+  , ("rscr"                                   , Left 0x1D4C7               ) -- MATHEMATICAL SCRIPT SMALL R
+  , ("rsh"                                    , Left 0x021B1               ) -- UPWARDS ARROW WITH TIP RIGHTWARDS
+  , ("rsqb"                                   , Left 0x0005D               ) -- RIGHT SQUARE BRACKET
+  , ("rsquo"                                  , Left 0x02019               ) -- RIGHT SINGLE QUOTATION MARK
+  , ("rsquor"                                 , Left 0x02019               ) -- RIGHT SINGLE QUOTATION MARK
+  , ("rthree"                                 , Left 0x022CC               ) -- RIGHT SEMIDIRECT PRODUCT
+  , ("rtimes"                                 , Left 0x022CA               ) -- RIGHT NORMAL FACTOR SEMIDIRECT PRODUCT
+  , ("rtri"                                   , Left 0x025B9               ) -- WHITE RIGHT-POINTING SMALL TRIANGLE
+  , ("rtrie"                                  , Left 0x022B5               ) -- CONTAINS AS NORMAL SUBGROUP OR EQUAL TO
+  , ("rtrif"                                  , Left 0x025B8               ) -- BLACK RIGHT-POINTING SMALL TRIANGLE
+  , ("rtriltri"                               , Left 0x029CE               ) -- RIGHT TRIANGLE ABOVE LEFT TRIANGLE
+  , ("ruluhar"                                , Left 0x02968               ) -- RIGHTWARDS HARPOON WITH BARB UP ABOVE LEFTWARDS HARPOON WITH BARB UP
+  , ("rx"                                     , Left 0x0211E               ) -- PRESCRIPTION TAKE
+  , ("sacute"                                 , Left 0x0015B               ) -- LATIN SMALL LETTER S WITH ACUTE
+  , ("sbquo"                                  , Left 0x0201A               ) -- SINGLE LOW-9 QUOTATION MARK
+  , ("sc"                                     , Left 0x0227B               ) -- SUCCEEDS
+  , ("scE"                                    , Left 0x02AB4               ) -- SUCCEEDS ABOVE EQUALS SIGN
+  , ("scap"                                   , Left 0x02AB8               ) -- SUCCEEDS ABOVE ALMOST EQUAL TO
+  , ("scaron"                                 , Left 0x00161               ) -- LATIN SMALL LETTER S WITH CARON
+  , ("sccue"                                  , Left 0x0227D               ) -- SUCCEEDS OR EQUAL TO
+  , ("sce"                                    , Left 0x02AB0               ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN
+  , ("scedil"                                 , Left 0x0015F               ) -- LATIN SMALL LETTER S WITH CEDILLA
+  , ("scirc"                                  , Left 0x0015D               ) -- LATIN SMALL LETTER S WITH CIRCUMFLEX
+  , ("scnE"                                   , Left 0x02AB6               ) -- SUCCEEDS ABOVE NOT EQUAL TO
+  , ("scnap"                                  , Left 0x02ABA               ) -- SUCCEEDS ABOVE NOT ALMOST EQUAL TO
+  , ("scnsim"                                 , Left 0x022E9               ) -- SUCCEEDS BUT NOT EQUIVALENT TO
+  , ("scpolint"                               , Left 0x02A13               ) -- LINE INTEGRATION WITH SEMICIRCULAR PATH AROUND POLE
+  , ("scsim"                                  , Left 0x0227F               ) -- SUCCEEDS OR EQUIVALENT TO
+  , ("scy"                                    , Left 0x00441               ) -- CYRILLIC SMALL LETTER ES
+  , ("sdot"                                   , Left 0x022C5               ) -- DOT OPERATOR
+  , ("sdotb"                                  , Left 0x022A1               ) -- SQUARED DOT OPERATOR
+  , ("sdote"                                  , Left 0x02A66               ) -- EQUALS SIGN WITH DOT BELOW
+  , ("seArr"                                  , Left 0x021D8               ) -- SOUTH EAST DOUBLE ARROW
+  , ("searhk"                                 , Left 0x02925               ) -- SOUTH EAST ARROW WITH HOOK
+  , ("searr"                                  , Left 0x02198               ) -- SOUTH EAST ARROW
+  , ("searrow"                                , Left 0x02198               ) -- SOUTH EAST ARROW
+  , ("sect"                                   , Left 0x000A7               ) -- SECTION SIGN
+  , ("semi"                                   , Left 0x0003B               ) -- SEMICOLON
+  , ("seswar"                                 , Left 0x02929               ) -- SOUTH EAST ARROW AND SOUTH WEST ARROW
+  , ("setminus"                               , Left 0x02216               ) -- SET MINUS
+  , ("setmn"                                  , Left 0x02216               ) -- SET MINUS
+  , ("sext"                                   , Left 0x02736               ) -- SIX POINTED BLACK STAR
+  , ("sfgr"                                   , Left 0x003C2               ) -- GREEK SMALL LETTER FINAL SIGMA
+  , ("sfr"                                    , Left 0x1D530               ) -- MATHEMATICAL FRAKTUR SMALL S
+  , ("sfrown"                                 , Left 0x02322               ) -- FROWN
+  , ("sgr"                                    , Left 0x003C3               ) -- GREEK SMALL LETTER SIGMA
+  , ("sharp"                                  , Left 0x0266F               ) -- MUSIC SHARP SIGN
+  , ("shchcy"                                 , Left 0x00449               ) -- CYRILLIC SMALL LETTER SHCHA
+  , ("shcy"                                   , Left 0x00448               ) -- CYRILLIC SMALL LETTER SHA
+  , ("shortmid"                               , Left 0x02223               ) -- DIVIDES
+  , ("shortparallel"                          , Left 0x02225               ) -- PARALLEL TO
+  , ("shy"                                    , Left 0x000AD               ) -- SOFT HYPHEN
+  , ("sigma"                                  , Left 0x003C3               ) -- GREEK SMALL LETTER SIGMA
+  , ("sigmaf"                                 , Left 0x003C2               ) -- GREEK SMALL LETTER FINAL SIGMA
+  , ("sigmav"                                 , Left 0x003C2               ) -- GREEK SMALL LETTER FINAL SIGMA
+  , ("sim"                                    , Left 0x0223C               ) -- TILDE OPERATOR
+  , ("simdot"                                 , Left 0x02A6A               ) -- TILDE OPERATOR WITH DOT ABOVE
+  , ("sime"                                   , Left 0x02243               ) -- ASYMPTOTICALLY EQUAL TO
+  , ("simeq"                                  , Left 0x02243               ) -- ASYMPTOTICALLY EQUAL TO
+  , ("simg"                                   , Left 0x02A9E               ) -- SIMILAR OR GREATER-THAN
+  , ("simgE"                                  , Left 0x02AA0               ) -- SIMILAR ABOVE GREATER-THAN ABOVE EQUALS SIGN
+  , ("siml"                                   , Left 0x02A9D               ) -- SIMILAR OR LESS-THAN
+  , ("simlE"                                  , Left 0x02A9F               ) -- SIMILAR ABOVE LESS-THAN ABOVE EQUALS SIGN
+  , ("simne"                                  , Left 0x02246               ) -- APPROXIMATELY BUT NOT ACTUALLY EQUAL TO
+  , ("simplus"                                , Left 0x02A24               ) -- PLUS SIGN WITH TILDE ABOVE
+  , ("simrarr"                                , Left 0x02972               ) -- TILDE OPERATOR ABOVE RIGHTWARDS ARROW
+  , ("slarr"                                  , Left 0x02190               ) -- LEFTWARDS ARROW
+  , ("smallsetminus"                          , Left 0x02216               ) -- SET MINUS
+  , ("smashp"                                 , Left 0x02A33               ) -- SMASH PRODUCT
+  , ("smeparsl"                               , Left 0x029E4               ) -- EQUALS SIGN AND SLANTED PARALLEL WITH TILDE ABOVE
+  , ("smid"                                   , Left 0x02223               ) -- DIVIDES
+  , ("smile"                                  , Left 0x02323               ) -- SMILE
+  , ("smt"                                    , Left 0x02AAA               ) -- SMALLER THAN
+  , ("smte"                                   , Left 0x02AAC               ) -- SMALLER THAN OR EQUAL TO
+  , ("smtes"                                  , Right [ 0x02AAC, 0x0FE00 ] ) -- SMALLER THAN OR slanted EQUAL
+  , ("softcy"                                 , Left 0x0044C               ) -- CYRILLIC SMALL LETTER SOFT SIGN
+  , ("sol"                                    , Left 0x0002F               ) -- SOLIDUS
+  , ("solb"                                   , Left 0x029C4               ) -- SQUARED RISING DIAGONAL SLASH
+  , ("solbar"                                 , Left 0x0233F               ) -- APL FUNCTIONAL SYMBOL SLASH BAR
+  , ("sopf"                                   , Left 0x1D564               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL S
+  , ("spades"                                 , Left 0x02660               ) -- BLACK SPADE SUIT
+  , ("spadesuit"                              , Left 0x02660               ) -- BLACK SPADE SUIT
+  , ("spar"                                   , Left 0x02225               ) -- PARALLEL TO
+  , ("sqcap"                                  , Left 0x02293               ) -- SQUARE CAP
+  , ("sqcaps"                                 , Right [ 0x02293, 0x0FE00 ] ) -- SQUARE CAP with serifs
+  , ("sqcup"                                  , Left 0x02294               ) -- SQUARE CUP
+  , ("sqcups"                                 , Right [ 0x02294, 0x0FE00 ] ) -- SQUARE CUP with serifs
+  , ("sqsub"                                  , Left 0x0228F               ) -- SQUARE IMAGE OF
+  , ("sqsube"                                 , Left 0x02291               ) -- SQUARE IMAGE OF OR EQUAL TO
+  , ("sqsubset"                               , Left 0x0228F               ) -- SQUARE IMAGE OF
+  , ("sqsubseteq"                             , Left 0x02291               ) -- SQUARE IMAGE OF OR EQUAL TO
+  , ("sqsup"                                  , Left 0x02290               ) -- SQUARE ORIGINAL OF
+  , ("sqsupe"                                 , Left 0x02292               ) -- SQUARE ORIGINAL OF OR EQUAL TO
+  , ("sqsupset"                               , Left 0x02290               ) -- SQUARE ORIGINAL OF
+  , ("sqsupseteq"                             , Left 0x02292               ) -- SQUARE ORIGINAL OF OR EQUAL TO
+  , ("squ"                                    , Left 0x025A1               ) -- WHITE SQUARE
+  , ("square"                                 , Left 0x025A1               ) -- WHITE SQUARE
+  , ("squarf"                                 , Left 0x025AA               ) -- BLACK SMALL SQUARE
+  , ("squf"                                   , Left 0x025AA               ) -- BLACK SMALL SQUARE
+  , ("srarr"                                  , Left 0x02192               ) -- RIGHTWARDS ARROW
+  , ("sscr"                                   , Left 0x1D4C8               ) -- MATHEMATICAL SCRIPT SMALL S
+  , ("ssetmn"                                 , Left 0x02216               ) -- SET MINUS
+  , ("ssmile"                                 , Left 0x02323               ) -- SMILE
+  , ("sstarf"                                 , Left 0x022C6               ) -- STAR OPERATOR
+  , ("star"                                   , Left 0x02606               ) -- WHITE STAR
+  , ("starf"                                  , Left 0x02605               ) -- BLACK STAR
+  , ("straightepsilon"                        , Left 0x003F5               ) -- GREEK LUNATE EPSILON SYMBOL
+  , ("straightphi"                            , Left 0x003D5               ) -- GREEK PHI SYMBOL
+  , ("strns"                                  , Left 0x000AF               ) -- MACRON
+  , ("sub"                                    , Left 0x02282               ) -- SUBSET OF
+  , ("subE"                                   , Left 0x02AC5               ) -- SUBSET OF ABOVE EQUALS SIGN
+  , ("subdot"                                 , Left 0x02ABD               ) -- SUBSET WITH DOT
+  , ("sube"                                   , Left 0x02286               ) -- SUBSET OF OR EQUAL TO
+  , ("subedot"                                , Left 0x02AC3               ) -- SUBSET OF OR EQUAL TO WITH DOT ABOVE
+  , ("submult"                                , Left 0x02AC1               ) -- SUBSET WITH MULTIPLICATION SIGN BELOW
+  , ("subnE"                                  , Left 0x02ACB               ) -- SUBSET OF ABOVE NOT EQUAL TO
+  , ("subne"                                  , Left 0x0228A               ) -- SUBSET OF WITH NOT EQUAL TO
+  , ("subplus"                                , Left 0x02ABF               ) -- SUBSET WITH PLUS SIGN BELOW
+  , ("subrarr"                                , Left 0x02979               ) -- SUBSET ABOVE RIGHTWARDS ARROW
+  , ("subset"                                 , Left 0x02282               ) -- SUBSET OF
+  , ("subseteq"                               , Left 0x02286               ) -- SUBSET OF OR EQUAL TO
+  , ("subseteqq"                              , Left 0x02AC5               ) -- SUBSET OF ABOVE EQUALS SIGN
+  , ("subsetneq"                              , Left 0x0228A               ) -- SUBSET OF WITH NOT EQUAL TO
+  , ("subsetneqq"                             , Left 0x02ACB               ) -- SUBSET OF ABOVE NOT EQUAL TO
+  , ("subsim"                                 , Left 0x02AC7               ) -- SUBSET OF ABOVE TILDE OPERATOR
+  , ("subsub"                                 , Left 0x02AD5               ) -- SUBSET ABOVE SUBSET
+  , ("subsup"                                 , Left 0x02AD3               ) -- SUBSET ABOVE SUPERSET
+  , ("succ"                                   , Left 0x0227B               ) -- SUCCEEDS
+  , ("succapprox"                             , Left 0x02AB8               ) -- SUCCEEDS ABOVE ALMOST EQUAL TO
+  , ("succcurlyeq"                            , Left 0x0227D               ) -- SUCCEEDS OR EQUAL TO
+  , ("succeq"                                 , Left 0x02AB0               ) -- SUCCEEDS ABOVE SINGLE-LINE EQUALS SIGN
+  , ("succnapprox"                            , Left 0x02ABA               ) -- SUCCEEDS ABOVE NOT ALMOST EQUAL TO
+  , ("succneqq"                               , Left 0x02AB6               ) -- SUCCEEDS ABOVE NOT EQUAL TO
+  , ("succnsim"                               , Left 0x022E9               ) -- SUCCEEDS BUT NOT EQUIVALENT TO
+  , ("succsim"                                , Left 0x0227F               ) -- SUCCEEDS OR EQUIVALENT TO
+  , ("sum"                                    , Left 0x02211               ) -- N-ARY SUMMATION
+  , ("sung"                                   , Left 0x0266A               ) -- EIGHTH NOTE
+  , ("sup"                                    , Left 0x02283               ) -- SUPERSET OF
+  , ("sup1"                                   , Left 0x000B9               ) -- SUPERSCRIPT ONE
+  , ("sup2"                                   , Left 0x000B2               ) -- SUPERSCRIPT TWO
+  , ("sup3"                                   , Left 0x000B3               ) -- SUPERSCRIPT THREE
+  , ("supE"                                   , Left 0x02AC6               ) -- SUPERSET OF ABOVE EQUALS SIGN
+  , ("supdot"                                 , Left 0x02ABE               ) -- SUPERSET WITH DOT
+  , ("supdsub"                                , Left 0x02AD8               ) -- SUPERSET BESIDE AND JOINED BY DASH WITH SUBSET
+  , ("supe"                                   , Left 0x02287               ) -- SUPERSET OF OR EQUAL TO
+  , ("supedot"                                , Left 0x02AC4               ) -- SUPERSET OF OR EQUAL TO WITH DOT ABOVE
+  , ("suphsol"                                , Left 0x027C9               ) -- SUPERSET PRECEDING SOLIDUS
+  , ("suphsub"                                , Left 0x02AD7               ) -- SUPERSET BESIDE SUBSET
+  , ("suplarr"                                , Left 0x0297B               ) -- SUPERSET ABOVE LEFTWARDS ARROW
+  , ("supmult"                                , Left 0x02AC2               ) -- SUPERSET WITH MULTIPLICATION SIGN BELOW
+  , ("supnE"                                  , Left 0x02ACC               ) -- SUPERSET OF ABOVE NOT EQUAL TO
+  , ("supne"                                  , Left 0x0228B               ) -- SUPERSET OF WITH NOT EQUAL TO
+  , ("supplus"                                , Left 0x02AC0               ) -- SUPERSET WITH PLUS SIGN BELOW
+  , ("supset"                                 , Left 0x02283               ) -- SUPERSET OF
+  , ("supseteq"                               , Left 0x02287               ) -- SUPERSET OF OR EQUAL TO
+  , ("supseteqq"                              , Left 0x02AC6               ) -- SUPERSET OF ABOVE EQUALS SIGN
+  , ("supsetneq"                              , Left 0x0228B               ) -- SUPERSET OF WITH NOT EQUAL TO
+  , ("supsetneqq"                             , Left 0x02ACC               ) -- SUPERSET OF ABOVE NOT EQUAL TO
+  , ("supsim"                                 , Left 0x02AC8               ) -- SUPERSET OF ABOVE TILDE OPERATOR
+  , ("supsub"                                 , Left 0x02AD4               ) -- SUPERSET ABOVE SUBSET
+  , ("supsup"                                 , Left 0x02AD6               ) -- SUPERSET ABOVE SUPERSET
+  , ("swArr"                                  , Left 0x021D9               ) -- SOUTH WEST DOUBLE ARROW
+  , ("swarhk"                                 , Left 0x02926               ) -- SOUTH WEST ARROW WITH HOOK
+  , ("swarr"                                  , Left 0x02199               ) -- SOUTH WEST ARROW
+  , ("swarrow"                                , Left 0x02199               ) -- SOUTH WEST ARROW
+  , ("swnwar"                                 , Left 0x0292A               ) -- SOUTH WEST ARROW AND NORTH WEST ARROW
+  , ("szlig"                                  , Left 0x000DF               ) -- LATIN SMALL LETTER SHARP S
+  , ("target"                                 , Left 0x02316               ) -- POSITION INDICATOR
+  , ("tau"                                    , Left 0x003C4               ) -- GREEK SMALL LETTER TAU
+  , ("tbrk"                                   , Left 0x023B4               ) -- TOP SQUARE BRACKET
+  , ("tcaron"                                 , Left 0x00165               ) -- LATIN SMALL LETTER T WITH CARON
+  , ("tcedil"                                 , Left 0x00163               ) -- LATIN SMALL LETTER T WITH CEDILLA
+  , ("tcy"                                    , Left 0x00442               ) -- CYRILLIC SMALL LETTER TE
+  , ("tdot"                                   , Left 0x020DB               ) -- COMBINING THREE DOTS ABOVE
+  , ("telrec"                                 , Left 0x02315               ) -- TELEPHONE RECORDER
+  , ("tfr"                                    , Left 0x1D531               ) -- MATHEMATICAL FRAKTUR SMALL T
+  , ("tgr"                                    , Left 0x003C4               ) -- GREEK SMALL LETTER TAU
+  , ("there4"                                 , Left 0x02234               ) -- THEREFORE
+  , ("therefore"                              , Left 0x02234               ) -- THEREFORE
+  , ("theta"                                  , Left 0x003B8               ) -- GREEK SMALL LETTER THETA
+  , ("thetasym"                               , Left 0x003D1               ) -- GREEK THETA SYMBOL
+  , ("thetav"                                 , Left 0x003D1               ) -- GREEK THETA SYMBOL
+  , ("thgr"                                   , Left 0x003B8               ) -- GREEK SMALL LETTER THETA
+  , ("thickapprox"                            , Left 0x02248               ) -- ALMOST EQUAL TO
+  , ("thicksim"                               , Left 0x0223C               ) -- TILDE OPERATOR
+  , ("thinsp"                                 , Left 0x02009               ) -- THIN SPACE
+  , ("thkap"                                  , Left 0x02248               ) -- ALMOST EQUAL TO
+  , ("thksim"                                 , Left 0x0223C               ) -- TILDE OPERATOR
+  , ("thorn"                                  , Left 0x000FE               ) -- LATIN SMALL LETTER THORN
+  , ("tilde"                                  , Left 0x002DC               ) -- SMALL TILDE
+  , ("times"                                  , Left 0x000D7               ) -- MULTIPLICATION SIGN
+  , ("timesb"                                 , Left 0x022A0               ) -- SQUARED TIMES
+  , ("timesbar"                               , Left 0x02A31               ) -- MULTIPLICATION SIGN WITH UNDERBAR
+  , ("timesd"                                 , Left 0x02A30               ) -- MULTIPLICATION SIGN WITH DOT ABOVE
+  , ("tint"                                   , Left 0x0222D               ) -- TRIPLE INTEGRAL
+  , ("toea"                                   , Left 0x02928               ) -- NORTH EAST ARROW AND SOUTH EAST ARROW
+  , ("top"                                    , Left 0x022A4               ) -- DOWN TACK
+  , ("topbot"                                 , Left 0x02336               ) -- APL FUNCTIONAL SYMBOL I-BEAM
+  , ("topcir"                                 , Left 0x02AF1               ) -- DOWN TACK WITH CIRCLE BELOW
+  , ("topf"                                   , Left 0x1D565               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL T
+  , ("topfork"                                , Left 0x02ADA               ) -- PITCHFORK WITH TEE TOP
+  , ("tosa"                                   , Left 0x02929               ) -- SOUTH EAST ARROW AND SOUTH WEST ARROW
+  , ("tprime"                                 , Left 0x02034               ) -- TRIPLE PRIME
+  , ("trade"                                  , Left 0x02122               ) -- TRADE MARK SIGN
+  , ("triangle"                               , Left 0x025B5               ) -- WHITE UP-POINTING SMALL TRIANGLE
+  , ("triangledown"                           , Left 0x025BF               ) -- WHITE DOWN-POINTING SMALL TRIANGLE
+  , ("triangleleft"                           , Left 0x025C3               ) -- WHITE LEFT-POINTING SMALL TRIANGLE
+  , ("trianglelefteq"                         , Left 0x022B4               ) -- NORMAL SUBGROUP OF OR EQUAL TO
+  , ("triangleq"                              , Left 0x0225C               ) -- DELTA EQUAL TO
+  , ("triangleright"                          , Left 0x025B9               ) -- WHITE RIGHT-POINTING SMALL TRIANGLE
+  , ("trianglerighteq"                        , Left 0x022B5               ) -- CONTAINS AS NORMAL SUBGROUP OR EQUAL TO
+  , ("tridot"                                 , Left 0x025EC               ) -- WHITE UP-POINTING TRIANGLE WITH DOT
+  , ("trie"                                   , Left 0x0225C               ) -- DELTA EQUAL TO
+  , ("triminus"                               , Left 0x02A3A               ) -- MINUS SIGN IN TRIANGLE
+  , ("triplus"                                , Left 0x02A39               ) -- PLUS SIGN IN TRIANGLE
+  , ("trisb"                                  , Left 0x029CD               ) -- TRIANGLE WITH SERIFS AT BOTTOM
+  , ("tritime"                                , Left 0x02A3B               ) -- MULTIPLICATION SIGN IN TRIANGLE
+  , ("trpezium"                               , Left 0x023E2               ) -- WHITE TRAPEZIUM
+  , ("tscr"                                   , Left 0x1D4C9               ) -- MATHEMATICAL SCRIPT SMALL T
+  , ("tscy"                                   , Left 0x00446               ) -- CYRILLIC SMALL LETTER TSE
+  , ("tshcy"                                  , Left 0x0045B               ) -- CYRILLIC SMALL LETTER TSHE
+  , ("tstrok"                                 , Left 0x00167               ) -- LATIN SMALL LETTER T WITH STROKE
+  , ("twixt"                                  , Left 0x0226C               ) -- BETWEEN
+  , ("twoheadleftarrow"                       , Left 0x0219E               ) -- LEFTWARDS TWO HEADED ARROW
+  , ("twoheadrightarrow"                      , Left 0x021A0               ) -- RIGHTWARDS TWO HEADED ARROW
+  , ("uArr"                                   , Left 0x021D1               ) -- UPWARDS DOUBLE ARROW
+  , ("uHar"                                   , Left 0x02963               ) -- UPWARDS HARPOON WITH BARB LEFT BESIDE UPWARDS HARPOON WITH BARB RIGHT
+  , ("uacgr"                                  , Left 0x003CD               ) -- GREEK SMALL LETTER UPSILON WITH TONOS
+  , ("uacute"                                 , Left 0x000FA               ) -- LATIN SMALL LETTER U WITH ACUTE
+  , ("uarr"                                   , Left 0x02191               ) -- UPWARDS ARROW
+  , ("ubrcy"                                  , Left 0x0045E               ) -- CYRILLIC SMALL LETTER SHORT U
+  , ("ubreve"                                 , Left 0x0016D               ) -- LATIN SMALL LETTER U WITH BREVE
+  , ("ucirc"                                  , Left 0x000FB               ) -- LATIN SMALL LETTER U WITH CIRCUMFLEX
+  , ("ucy"                                    , Left 0x00443               ) -- CYRILLIC SMALL LETTER U
+  , ("udarr"                                  , Left 0x021C5               ) -- UPWARDS ARROW LEFTWARDS OF DOWNWARDS ARROW
+  , ("udblac"                                 , Left 0x00171               ) -- LATIN SMALL LETTER U WITH DOUBLE ACUTE
+  , ("udhar"                                  , Left 0x0296E               ) -- UPWARDS HARPOON WITH BARB LEFT BESIDE DOWNWARDS HARPOON WITH BARB RIGHT
+  , ("udiagr"                                 , Left 0x003B0               ) -- GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND TONOS
+  , ("udigr"                                  , Left 0x003CB               ) -- GREEK SMALL LETTER UPSILON WITH DIALYTIKA
+  , ("ufisht"                                 , Left 0x0297E               ) -- UP FISH TAIL
+  , ("ufr"                                    , Left 0x1D532               ) -- MATHEMATICAL FRAKTUR SMALL U
+  , ("ugr"                                    , Left 0x003C5               ) -- GREEK SMALL LETTER UPSILON
+  , ("ugrave"                                 , Left 0x000F9               ) -- LATIN SMALL LETTER U WITH GRAVE
+  , ("uharl"                                  , Left 0x021BF               ) -- UPWARDS HARPOON WITH BARB LEFTWARDS
+  , ("uharr"                                  , Left 0x021BE               ) -- UPWARDS HARPOON WITH BARB RIGHTWARDS
+  , ("uhblk"                                  , Left 0x02580               ) -- UPPER HALF BLOCK
+  , ("ulcorn"                                 , Left 0x0231C               ) -- TOP LEFT CORNER
+  , ("ulcorner"                               , Left 0x0231C               ) -- TOP LEFT CORNER
+  , ("ulcrop"                                 , Left 0x0230F               ) -- TOP LEFT CROP
+  , ("ultri"                                  , Left 0x025F8               ) -- UPPER LEFT TRIANGLE
+  , ("umacr"                                  , Left 0x0016B               ) -- LATIN SMALL LETTER U WITH MACRON
+  , ("uml"                                    , Left 0x000A8               ) -- DIAERESIS
+  , ("uogon"                                  , Left 0x00173               ) -- LATIN SMALL LETTER U WITH OGONEK
+  , ("uopf"                                   , Left 0x1D566               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL U
+  , ("uparrow"                                , Left 0x02191               ) -- UPWARDS ARROW
+  , ("updownarrow"                            , Left 0x02195               ) -- UP DOWN ARROW
+  , ("upharpoonleft"                          , Left 0x021BF               ) -- UPWARDS HARPOON WITH BARB LEFTWARDS
+  , ("upharpoonright"                         , Left 0x021BE               ) -- UPWARDS HARPOON WITH BARB RIGHTWARDS
+  , ("uplus"                                  , Left 0x0228E               ) -- MULTISET UNION
+  , ("upsi"                                   , Left 0x003C5               ) -- GREEK SMALL LETTER UPSILON
+  , ("upsih"                                  , Left 0x003D2               ) -- GREEK UPSILON WITH HOOK SYMBOL
+  , ("upsilon"                                , Left 0x003C5               ) -- GREEK SMALL LETTER UPSILON
+  , ("upuparrows"                             , Left 0x021C8               ) -- UPWARDS PAIRED ARROWS
+  , ("urcorn"                                 , Left 0x0231D               ) -- TOP RIGHT CORNER
+  , ("urcorner"                               , Left 0x0231D               ) -- TOP RIGHT CORNER
+  , ("urcrop"                                 , Left 0x0230E               ) -- TOP RIGHT CROP
+  , ("uring"                                  , Left 0x0016F               ) -- LATIN SMALL LETTER U WITH RING ABOVE
+  , ("urtri"                                  , Left 0x025F9               ) -- UPPER RIGHT TRIANGLE
+  , ("uscr"                                   , Left 0x1D4CA               ) -- MATHEMATICAL SCRIPT SMALL U
+  , ("utdot"                                  , Left 0x022F0               ) -- UP RIGHT DIAGONAL ELLIPSIS
+  , ("utilde"                                 , Left 0x00169               ) -- LATIN SMALL LETTER U WITH TILDE
+  , ("utri"                                   , Left 0x025B5               ) -- WHITE UP-POINTING SMALL TRIANGLE
+  , ("utrif"                                  , Left 0x025B4               ) -- BLACK UP-POINTING SMALL TRIANGLE
+  , ("uuarr"                                  , Left 0x021C8               ) -- UPWARDS PAIRED ARROWS
+  , ("uuml"                                   , Left 0x000FC               ) -- LATIN SMALL LETTER U WITH DIAERESIS
+  , ("uwangle"                                , Left 0x029A7               ) -- OBLIQUE ANGLE OPENING DOWN
+  , ("vArr"                                   , Left 0x021D5               ) -- UP DOWN DOUBLE ARROW
+  , ("vBar"                                   , Left 0x02AE8               ) -- SHORT UP TACK WITH UNDERBAR
+  , ("vBarv"                                  , Left 0x02AE9               ) -- SHORT UP TACK ABOVE SHORT DOWN TACK
+  , ("vDash"                                  , Left 0x022A8               ) -- TRUE
+  , ("vangrt"                                 , Left 0x0299C               ) -- RIGHT ANGLE VARIANT WITH SQUARE
+  , ("varepsilon"                             , Left 0x003F5               ) -- GREEK LUNATE EPSILON SYMBOL
+  , ("varkappa"                               , Left 0x003F0               ) -- GREEK KAPPA SYMBOL
+  , ("varnothing"                             , Left 0x02205               ) -- EMPTY SET
+  , ("varphi"                                 , Left 0x003D5               ) -- GREEK PHI SYMBOL
+  , ("varpi"                                  , Left 0x003D6               ) -- GREEK PI SYMBOL
+  , ("varpropto"                              , Left 0x0221D               ) -- PROPORTIONAL TO
+  , ("varr"                                   , Left 0x02195               ) -- UP DOWN ARROW
+  , ("varrho"                                 , Left 0x003F1               ) -- GREEK RHO SYMBOL
+  , ("varsigma"                               , Left 0x003C2               ) -- GREEK SMALL LETTER FINAL SIGMA
+  , ("varsubsetneq"                           , Right [ 0x0228A, 0x0FE00 ] ) -- SUBSET OF WITH NOT EQUAL TO - variant with stroke through bottom members
+  , ("varsubsetneqq"                          , Right [ 0x02ACB, 0x0FE00 ] ) -- SUBSET OF ABOVE NOT EQUAL TO - variant with stroke through bottom members
+  , ("varsupsetneq"                           , Right [ 0x0228B, 0x0FE00 ] ) -- SUPERSET OF WITH NOT EQUAL TO - variant with stroke through bottom members
+  , ("varsupsetneqq"                          , Right [ 0x02ACC, 0x0FE00 ] ) -- SUPERSET OF ABOVE NOT EQUAL TO - variant with stroke through bottom members
+  , ("vartheta"                               , Left 0x003D1               ) -- GREEK THETA SYMBOL
+  , ("vartriangleleft"                        , Left 0x022B2               ) -- NORMAL SUBGROUP OF
+  , ("vartriangleright"                       , Left 0x022B3               ) -- CONTAINS AS NORMAL SUBGROUP
+  , ("vcy"                                    , Left 0x00432               ) -- CYRILLIC SMALL LETTER VE
+  , ("vdash"                                  , Left 0x022A2               ) -- RIGHT TACK
+  , ("vee"                                    , Left 0x02228               ) -- LOGICAL OR
+  , ("veebar"                                 , Left 0x022BB               ) -- XOR
+  , ("veeeq"                                  , Left 0x0225A               ) -- EQUIANGULAR TO
+  , ("vellip"                                 , Left 0x022EE               ) -- VERTICAL ELLIPSIS
+  , ("verbar"                                 , Left 0x0007C               ) -- VERTICAL LINE
+  , ("vert"                                   , Left 0x0007C               ) -- VERTICAL LINE
+  , ("vfr"                                    , Left 0x1D533               ) -- MATHEMATICAL FRAKTUR SMALL V
+  , ("vltri"                                  , Left 0x022B2               ) -- NORMAL SUBGROUP OF
+  , ("vnsub"                                  , Right [ 0x02282, 0x020D2 ] ) -- SUBSET OF with vertical line
+  , ("vnsup"                                  , Right [ 0x02283, 0x020D2 ] ) -- SUPERSET OF with vertical line
+  , ("vopf"                                   , Left 0x1D567               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL V
+  , ("vprop"                                  , Left 0x0221D               ) -- PROPORTIONAL TO
+  , ("vrtri"                                  , Left 0x022B3               ) -- CONTAINS AS NORMAL SUBGROUP
+  , ("vscr"                                   , Left 0x1D4CB               ) -- MATHEMATICAL SCRIPT SMALL V
+  , ("vsubnE"                                 , Right [ 0x02ACB, 0x0FE00 ] ) -- SUBSET OF ABOVE NOT EQUAL TO - variant with stroke through bottom members
+  , ("vsubne"                                 , Right [ 0x0228A, 0x0FE00 ] ) -- SUBSET OF WITH NOT EQUAL TO - variant with stroke through bottom members
+  , ("vsupnE"                                 , Right [ 0x02ACC, 0x0FE00 ] ) -- SUPERSET OF ABOVE NOT EQUAL TO - variant with stroke through bottom members
+  , ("vsupne"                                 , Right [ 0x0228B, 0x0FE00 ] ) -- SUPERSET OF WITH NOT EQUAL TO - variant with stroke through bottom members
+  , ("vzigzag"                                , Left 0x0299A               ) -- VERTICAL ZIGZAG LINE
+  , ("wcirc"                                  , Left 0x00175               ) -- LATIN SMALL LETTER W WITH CIRCUMFLEX
+  , ("wedbar"                                 , Left 0x02A5F               ) -- LOGICAL AND WITH UNDERBAR
+  , ("wedge"                                  , Left 0x02227               ) -- LOGICAL AND
+  , ("wedgeq"                                 , Left 0x02259               ) -- ESTIMATES
+  , ("weierp"                                 , Left 0x02118               ) -- SCRIPT CAPITAL P
+  , ("wfr"                                    , Left 0x1D534               ) -- MATHEMATICAL FRAKTUR SMALL W
+  , ("wopf"                                   , Left 0x1D568               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL W
+  , ("wp"                                     , Left 0x02118               ) -- SCRIPT CAPITAL P
+  , ("wr"                                     , Left 0x02240               ) -- WREATH PRODUCT
+  , ("wreath"                                 , Left 0x02240               ) -- WREATH PRODUCT
+  , ("wscr"                                   , Left 0x1D4CC               ) -- MATHEMATICAL SCRIPT SMALL W
+  , ("xcap"                                   , Left 0x022C2               ) -- N-ARY INTERSECTION
+  , ("xcirc"                                  , Left 0x025EF               ) -- LARGE CIRCLE
+  , ("xcup"                                   , Left 0x022C3               ) -- N-ARY UNION
+  , ("xdtri"                                  , Left 0x025BD               ) -- WHITE DOWN-POINTING TRIANGLE
+  , ("xfr"                                    , Left 0x1D535               ) -- MATHEMATICAL FRAKTUR SMALL X
+  , ("xgr"                                    , Left 0x003BE               ) -- GREEK SMALL LETTER XI
+  , ("xhArr"                                  , Left 0x027FA               ) -- LONG LEFT RIGHT DOUBLE ARROW
+  , ("xharr"                                  , Left 0x027F7               ) -- LONG LEFT RIGHT ARROW
+  , ("xi"                                     , Left 0x003BE               ) -- GREEK SMALL LETTER XI
+  , ("xlArr"                                  , Left 0x027F8               ) -- LONG LEFTWARDS DOUBLE ARROW
+  , ("xlarr"                                  , Left 0x027F5               ) -- LONG LEFTWARDS ARROW
+  , ("xmap"                                   , Left 0x027FC               ) -- LONG RIGHTWARDS ARROW FROM BAR
+  , ("xnis"                                   , Left 0x022FB               ) -- CONTAINS WITH VERTICAL BAR AT END OF HORIZONTAL STROKE
+  , ("xodot"                                  , Left 0x02A00               ) -- N-ARY CIRCLED DOT OPERATOR
+  , ("xopf"                                   , Left 0x1D569               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL X
+  , ("xoplus"                                 , Left 0x02A01               ) -- N-ARY CIRCLED PLUS OPERATOR
+  , ("xotime"                                 , Left 0x02A02               ) -- N-ARY CIRCLED TIMES OPERATOR
+  , ("xrArr"                                  , Left 0x027F9               ) -- LONG RIGHTWARDS DOUBLE ARROW
+  , ("xrarr"                                  , Left 0x027F6               ) -- LONG RIGHTWARDS ARROW
+  , ("xscr"                                   , Left 0x1D4CD               ) -- MATHEMATICAL SCRIPT SMALL X
+  , ("xsqcup"                                 , Left 0x02A06               ) -- N-ARY SQUARE UNION OPERATOR
+  , ("xuplus"                                 , Left 0x02A04               ) -- N-ARY UNION OPERATOR WITH PLUS
+  , ("xutri"                                  , Left 0x025B3               ) -- WHITE UP-POINTING TRIANGLE
+  , ("xvee"                                   , Left 0x022C1               ) -- N-ARY LOGICAL OR
+  , ("xwedge"                                 , Left 0x022C0               ) -- N-ARY LOGICAL AND
+  , ("yacute"                                 , Left 0x000FD               ) -- LATIN SMALL LETTER Y WITH ACUTE
+  , ("yacy"                                   , Left 0x0044F               ) -- CYRILLIC SMALL LETTER YA
+  , ("ycirc"                                  , Left 0x00177               ) -- LATIN SMALL LETTER Y WITH CIRCUMFLEX
+  , ("ycy"                                    , Left 0x0044B               ) -- CYRILLIC SMALL LETTER YERU
+  , ("yen"                                    , Left 0x000A5               ) -- YEN SIGN
+  , ("yfr"                                    , Left 0x1D536               ) -- MATHEMATICAL FRAKTUR SMALL Y
+  , ("yicy"                                   , Left 0x00457               ) -- CYRILLIC SMALL LETTER YI
+  , ("yopf"                                   , Left 0x1D56A               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL Y
+  , ("yscr"                                   , Left 0x1D4CE               ) -- MATHEMATICAL SCRIPT SMALL Y
+  , ("yucy"                                   , Left 0x0044E               ) -- CYRILLIC SMALL LETTER YU
+  , ("yuml"                                   , Left 0x000FF               ) -- LATIN SMALL LETTER Y WITH DIAERESIS
+  , ("zacute"                                 , Left 0x0017A               ) -- LATIN SMALL LETTER Z WITH ACUTE
+  , ("zcaron"                                 , Left 0x0017E               ) -- LATIN SMALL LETTER Z WITH CARON
+  , ("zcy"                                    , Left 0x00437               ) -- CYRILLIC SMALL LETTER ZE
+  , ("zdot"                                   , Left 0x0017C               ) -- LATIN SMALL LETTER Z WITH DOT ABOVE
+  , ("zeetrf"                                 , Left 0x02128               ) -- BLACK-LETTER CAPITAL Z
+  , ("zeta"                                   , Left 0x003B6               ) -- GREEK SMALL LETTER ZETA
+  , ("zfr"                                    , Left 0x1D537               ) -- MATHEMATICAL FRAKTUR SMALL Z
+  , ("zgr"                                    , Left 0x003B6               ) -- GREEK SMALL LETTER ZETA
+  , ("zhcy"                                   , Left 0x00436               ) -- CYRILLIC SMALL LETTER ZHE
+  , ("zigrarr"                                , Left 0x021DD               ) -- RIGHTWARDS SQUIGGLE ARROW
+  , ("zopf"                                   , Left 0x1D56B               ) -- MATHEMATICAL DOUBLE-STRUCK SMALL Z
+  , ("zscr"                                   , Left 0x1D4CF               ) -- MATHEMATICAL SCRIPT SMALL Z
+  , ("zwj"                                    , Left 0x0200D               ) -- ZERO WIDTH JOINER
+  , ("zwnj"                                   , Left 0x0200C               ) -- ZERO WIDTH NON-JOINER
+  ]
 
 
 -- entityENum = [ ("Aacute"                          , Left 0x000C1)
