@@ -1,10 +1,11 @@
 {-# Language
     AllowAmbiguousTypes
   , ExistentialQuantification
+  , NegativeLiterals
   , ScopedTypeVariables
   , TypeApplications
 #-}
-{-| Time-stamp: <2022-04-21 13:53:37 CDT>
+{-| Time-stamp: <2022-04-21 17:09:11 CDT>
 
 Module      : Main
 Copyright   : Robert Lee, © 2017-2022
@@ -160,10 +161,10 @@ multiplier = 100 -- This should be determined by an environment variable or comm
 
 tests :: [TestTree]
 tests =
-  [ testGroup "\n\n---------------------- MultiTest QC Tests ----------------------"    multiTests
+  [ testGroup "\n\n---------------------- FiniteBits Unit tests ----------------------" finiteBitsTests
+  , testGroup "\n\n---------------------- MultiTest QC Tests ----------------------"    multiTests
   , testGroup "\n\n---------------------- Value QC tests ----------------------"        valTests
   , testGroup "\n\n---------------------- Integer Unit tests ----------------------"    integerTests
-  , testGroup "\n\n---------------------- FiniteBits Unit tests ----------------------" finiteBitsTests
   ]
 
 -- scTests :: [TestTree]
@@ -215,7 +216,7 @@ valTests =
 -- Set the suffixP bool to False in calls to multi if xmlSuffix tests may result in errors. ⚡
 
 multiTests :: [TestTree]
-multiTests = join
+multiTests = asum
   [ [qctests 1 "Vacuous" True]
   , multi 1000    10 defT  "Base64Binary"      gen_64_legal                gen_64_illegal                (fac :: Text -> Maybe Base64Binary      )
   , multi 100    100 defT  "Boolean"           gen_boolean_legal           gen_boolean_illegal           (fac :: Text -> Maybe Boolean           )
@@ -568,7 +569,7 @@ gen_language_legal = do
     eight_alpha = QC.resize 8 (QC.listOf1 gen_alpha)
 
     more :: QC.Gen String
-    more = QC.listOf (eight >>= pure . ('-' :)) >>= pure . join
+    more = QC.listOf (eight >>= pure . ('-' :)) >>= pure . asum
 
 gen_language_illegal :: QC.Gen Text
 gen_language_illegal = QC.oneof [ doA, doB, doC ]
@@ -594,7 +595,7 @@ gen_language_illegal = QC.oneof [ doA, doB, doC ]
     nine_alpha = QC.suchThat (QC.resize 30 (QC.listOf1 gen_alpha)) ((8 <) . length)
 
     more :: QC.Gen String
-    more = QC.listOf (nine >>= pure . ('-' :)) >>= pure . join
+    more = QC.listOf (nine >>= pure . ('-' :)) >>= pure . asum
 
 gen_token_legal :: QC.Gen Text
 gen_token_legal = do
@@ -841,77 +842,77 @@ nameNotChars = QC.listOf1 nameNotChar
 
 finiteBitsTests :: [TestTree]
 finiteBitsTests =
-  [ testCase "UnsignedByte Legal Text"                  (finiteLegalText                  @UnsignedByte  @Word8)
-  , testCase "UnsignedByte Legal Text With WS"          (finiteLegalTextWithWS            @UnsignedByte  @Word8)
-  , testCase "UnsignedByte Legal Text With Plus"        (finiteLegalTextWithPlus          @UnsignedByte  @Word8)
-  , testCase "UnsignedByte Legal Text With Minus"       (finiteLegalTextWithMinus         @UnsignedByte  @Word8)
-  , testCase "UnsignedByte Legal Text Idempotent"       (finiteIdempotent                 @UnsignedByte  @Word8)
-  , testCase "UnsignedByte Illegal Text Range"          (finiteIllegalTextRange           @UnsignedByte  @Word8)
-  , testCase "UnsignedByte Illegal Text Range With WS"  (finiteIllegalTextRangeWithWS     @UnsignedByte  @Word8)
-  , testCase "UnsignedByte Illegal Text With Other"     (finiteIllegalTextRangeWithOther  @UnsignedByte  @Word8)
+  [ testCase "UnsignedByte Legal Text"                  (finiteLegalText                 @UnsignedByte @Word8)
+  , testCase "UnsignedByte Legal Text With WS"          (finiteLegalTextWithWS           @UnsignedByte @Word8)
+  , testCase "UnsignedByte Legal Text With Plus"        (finiteLegalTextWithPlus         @UnsignedByte @Word8)
+  , testCase "UnsignedByte Legal Text With Minus"       (finiteLegalTextWithMinus        @UnsignedByte @Word8)
+  , testCase "UnsignedByte Legal Text Idempotent"       (finiteIdempotent                @UnsignedByte @Word8)
+  , testCase "UnsignedByte Illegal Text Range"          (finiteIllegalTextRange          @UnsignedByte @Word8)
+  , testCase "UnsignedByte Illegal Text Range With WS"  (finiteIllegalTextRangeWithWS    @UnsignedByte @Word8)
+  , testCase "UnsignedByte Illegal Text With Other"     (finiteIllegalTextRangeWithOther @UnsignedByte @Word8)
 
-  , testCase "UnsignedShort Legal Text"                 (finiteLegalText                  @UnsignedShort  @Word16)
-  , testCase "UnsignedShort Legal Text With WS"         (finiteLegalTextWithWS            @UnsignedShort  @Word16)
-  , testCase "UnsignedShort Legal Text With Plus"       (finiteLegalTextWithPlus          @UnsignedShort  @Word16)
-  , testCase "UnsignedShort Legal Text With Minus"      (finiteLegalTextWithMinus         @UnsignedShort  @Word16)
-  , testCase "UnsignedShort Legal Text Idempotent"      (finiteIdempotent                 @UnsignedShort  @Word16)
-  , testCase "UnsignedShort Illegal Text Range"         (finiteIllegalTextRange           @UnsignedShort  @Word16)
-  , testCase "UnsignedShort Illegal Text Range With WS" (finiteIllegalTextRangeWithWS     @UnsignedShort  @Word16)
-  , testCase "UnsignedShort Illegal Text With Other"    (finiteIllegalTextRangeWithOther  @UnsignedShort  @Word16)
+  , testCase "UnsignedShort Legal Text"                 (finiteLegalText                 @UnsignedShort @Word16)
+  , testCase "UnsignedShort Legal Text With WS"         (finiteLegalTextWithWS           @UnsignedShort @Word16)
+  , testCase "UnsignedShort Legal Text With Plus"       (finiteLegalTextWithPlus         @UnsignedShort @Word16)
+  , testCase "UnsignedShort Legal Text With Minus"      (finiteLegalTextWithMinus        @UnsignedShort @Word16)
+  , testCase "UnsignedShort Legal Text Idempotent"      (finiteIdempotent                @UnsignedShort @Word16)
+  , testCase "UnsignedShort Illegal Text Range"         (finiteIllegalTextRange          @UnsignedShort @Word16)
+  , testCase "UnsignedShort Illegal Text Range With WS" (finiteIllegalTextRangeWithWS    @UnsignedShort @Word16)
+  , testCase "UnsignedShort Illegal Text With Other"    (finiteIllegalTextRangeWithOther @UnsignedShort @Word16)
 
-  , testCase "UnsignedInt Legal Text"                   (finiteLegalText                  @UnsignedInt    @Word32)
-  , testCase "UnsignedInt Legal Text With WS"           (finiteLegalTextWithWS            @UnsignedInt    @Word32)
-  , testCase "UnsignedInt Legal Text With Plus"         (finiteLegalTextWithPlus          @UnsignedInt    @Word32)
-  , testCase "UnsignedInt Legal Text With Minus"        (finiteLegalTextWithMinus         @UnsignedInt    @Word32)
-  , testCase "UnsignedInt Legal Text Idempotent"        (finiteIdempotent                 @UnsignedInt    @Word32)
-  , testCase "UnsignedInt Illegal Text Range"           (finiteIllegalTextRange           @UnsignedInt    @Word32)
-  , testCase "UnsignedInt Illegal Text Range With WS"   (finiteIllegalTextRangeWithWS     @UnsignedInt    @Word32)
-  , testCase "UnsignedInt Illegal Text With Other"      (finiteIllegalTextRangeWithOther  @UnsignedInt    @Word32)
+  , testCase "UnsignedInt Legal Text"                   (finiteLegalText                 @UnsignedInt @Word32)
+  , testCase "UnsignedInt Legal Text With WS"           (finiteLegalTextWithWS           @UnsignedInt @Word32)
+  , testCase "UnsignedInt Legal Text With Plus"         (finiteLegalTextWithPlus         @UnsignedInt @Word32)
+  , testCase "UnsignedInt Legal Text With Minus"        (finiteLegalTextWithMinus        @UnsignedInt @Word32)
+  , testCase "UnsignedInt Legal Text Idempotent"        (finiteIdempotent                @UnsignedInt @Word32)
+  , testCase "UnsignedInt Illegal Text Range"           (finiteIllegalTextRange          @UnsignedInt @Word32)
+  , testCase "UnsignedInt Illegal Text Range With WS"   (finiteIllegalTextRangeWithWS    @UnsignedInt @Word32)
+  , testCase "UnsignedInt Illegal Text With Other"      (finiteIllegalTextRangeWithOther @UnsignedInt @Word32)
 
-  , testCase "UnsignedLong Legal Text"                  (finiteLegalText                  @UnsignedLong   @Word64)
-  , testCase "UnsignedLong Legal Text With WS"          (finiteLegalTextWithWS            @UnsignedLong   @Word64)
-  , testCase "UnsignedLong Legal Text With Plus"        (finiteLegalTextWithPlus          @UnsignedLong   @Word64)
-  , testCase "UnsignedLong Legal Text With Minus"       (finiteLegalTextWithMinus         @UnsignedLong   @Word64)
-  , testCase "UnsignedLong Legal Text Idempotent"       (finiteIdempotent                 @UnsignedLong   @Word64)
-  , testCase "UnsignedLong Illegal Text Range"          (finiteIllegalTextRange           @UnsignedLong   @Word64)
-  , testCase "UnsignedLong Illegal Text Range With WS"  (finiteIllegalTextRangeWithWS     @UnsignedLong   @Word64)
-  , testCase "UnsignedLong Illegal Text With Other"     (finiteIllegalTextRangeWithOther  @UnsignedLong   @Word64)
+  , testCase "UnsignedLong Legal Text"                  (finiteLegalText                 @UnsignedLong @Word64)
+  , testCase "UnsignedLong Legal Text With WS"          (finiteLegalTextWithWS           @UnsignedLong @Word64)
+  , testCase "UnsignedLong Legal Text With Plus"        (finiteLegalTextWithPlus         @UnsignedLong @Word64)
+  , testCase "UnsignedLong Legal Text With Minus"       (finiteLegalTextWithMinus        @UnsignedLong @Word64)
+  , testCase "UnsignedLong Legal Text Idempotent"       (finiteIdempotent                @UnsignedLong @Word64)
+  , testCase "UnsignedLong Illegal Text Range"          (finiteIllegalTextRange          @UnsignedLong @Word64)
+  , testCase "UnsignedLong Illegal Text Range With WS"  (finiteIllegalTextRangeWithWS    @UnsignedLong @Word64)
+  , testCase "UnsignedLong Illegal Text With Other"     (finiteIllegalTextRangeWithOther @UnsignedLong @Word64)
 
-  , testCase "Byte Legal Text"                          (finiteLegalText                  @Byte  @Int8)
-  , testCase "Byte Legal Text With WS"                  (finiteLegalTextWithWS            @Byte  @Int8)
-  , testCase "Byte Legal Text With Plus"                (finiteLegalTextWithPlus          @Byte  @Int8)
-  , testCase "Byte Legal Text With Minus"               (finiteLegalTextWithMinus         @Byte  @Int8)
-  , testCase "Byte Legal Text Idempotent"               (finiteIdempotent                 @Byte  @Int8)
-  , testCase "Byte Illegal Text Range"                  (finiteIllegalTextRange           @Byte  @Int8)
-  , testCase "Byte Illegal Text Range With WS"          (finiteIllegalTextRangeWithWS     @Byte  @Int8)
-  , testCase "Byte Illegal Text With Other"             (finiteIllegalTextRangeWithOther  @Byte  @Int8)
+  , testCase "Byte Legal Text"                          (finiteLegalText                 @Byte @Int8)
+  , testCase "Byte Legal Text With WS"                  (finiteLegalTextWithWS           @Byte @Int8)
+  , testCase "Byte Legal Text With Plus"                (finiteLegalTextWithPlus         @Byte @Int8)
+  , testCase "Byte Legal Text With Minus"               (finiteLegalTextWithMinus        @Byte @Int8)
+  , testCase "Byte Legal Text Idempotent"               (finiteIdempotent                @Byte @Int8)
+  , testCase "Byte Illegal Text Range"                  (finiteIllegalTextRange          @Byte @Int8)
+  , testCase "Byte Illegal Text Range With WS"          (finiteIllegalTextRangeWithWS    @Byte @Int8)
+  , testCase "Byte Illegal Text With Other"             (finiteIllegalTextRangeWithOther @Byte @Int8)
 
-  , testCase "Short Legal Text"                         (finiteLegalText                  @Short  @Int16)
-  , testCase "Short Legal Text With WS"                 (finiteLegalTextWithWS            @Short  @Int16)
-  , testCase "Short Legal Text With Plus"               (finiteLegalTextWithPlus          @Short  @Int16)
-  , testCase "Short Legal Text With Minus"              (finiteLegalTextWithMinus         @Short  @Int16)
-  , testCase "Short Legal Text Idempotent"              (finiteIdempotent                 @Short  @Int16)
-  , testCase "Short Illegal Text Range"                 (finiteIllegalTextRange           @Short  @Int16)
-  , testCase "Short Illegal Text Range With WS"         (finiteIllegalTextRangeWithWS     @Short  @Int16)
-  , testCase "Short Illegal Text With Other"            (finiteIllegalTextRangeWithOther  @Short  @Int16)
+  , testCase "Short Legal Text"                         (finiteLegalText                 @Short @Int16)
+  , testCase "Short Legal Text With WS"                 (finiteLegalTextWithWS           @Short @Int16)
+  , testCase "Short Legal Text With Plus"               (finiteLegalTextWithPlus         @Short @Int16)
+  , testCase "Short Legal Text With Minus"              (finiteLegalTextWithMinus        @Short @Int16)
+  , testCase "Short Legal Text Idempotent"              (finiteIdempotent                @Short @Int16)
+  , testCase "Short Illegal Text Range"                 (finiteIllegalTextRange          @Short @Int16)
+  , testCase "Short Illegal Text Range With WS"         (finiteIllegalTextRangeWithWS    @Short @Int16)
+  , testCase "Short Illegal Text With Other"            (finiteIllegalTextRangeWithOther @Short @Int16)
 
-  , testCase "Intxs Legal Text"                         (finiteLegalText                  @Intxs  @Int32)
-  , testCase "Intxs Legal Text With WS"                 (finiteLegalTextWithWS            @Intxs  @Int32)
-  , testCase "Intxs Legal Text With Plus"               (finiteLegalTextWithPlus          @Intxs  @Int32)
-  , testCase "Intxs Legal Text With Minus"              (finiteLegalTextWithMinus         @Intxs  @Int32)
-  , testCase "Intxs Legal Text Idempotent"              (finiteIdempotent                 @Intxs  @Int32)
-  , testCase "Intxs Illegal Text Range"                 (finiteIllegalTextRange           @Intxs  @Int32)
-  , testCase "Intxs Illegal Text Range With WS"         (finiteIllegalTextRangeWithWS     @Intxs  @Int32)
-  , testCase "Intxs Illegal Text With Other"            (finiteIllegalTextRangeWithOther  @Intxs  @Int32)
+  , testCase "Intxs Legal Text"                         (finiteLegalText                 @Intxs @Int32)
+  , testCase "Intxs Legal Text With WS"                 (finiteLegalTextWithWS           @Intxs @Int32)
+  , testCase "Intxs Legal Text With Plus"               (finiteLegalTextWithPlus         @Intxs @Int32)
+  , testCase "Intxs Legal Text With Minus"              (finiteLegalTextWithMinus        @Intxs @Int32)
+  , testCase "Intxs Legal Text Idempotent"              (finiteIdempotent                @Intxs @Int32)
+  , testCase "Intxs Illegal Text Range"                 (finiteIllegalTextRange          @Intxs @Int32)
+  , testCase "Intxs Illegal Text Range With WS"         (finiteIllegalTextRangeWithWS    @Intxs @Int32)
+  , testCase "Intxs Illegal Text With Other"            (finiteIllegalTextRangeWithOther @Intxs @Int32)
 
-  , testCase "Long Legal Text"                          (finiteLegalText                  @Long  @Int64)
-  , testCase "Long Legal Text With WS"                  (finiteLegalTextWithWS            @Long  @Int64)
-  , testCase "Long Legal Text With Plus"                (finiteLegalTextWithPlus          @Long  @Int64)
-  , testCase "Long Legal Text With Minus"               (finiteLegalTextWithMinus         @Long  @Int64)
-  , testCase "Long Legal Text Idempotent"               (finiteIdempotent                 @Long  @Int64)
-  , testCase "Long Illegal Text Range"                  (finiteIllegalTextRange           @Long  @Int64)
-  , testCase "Long Illegal Text Range With WS"          (finiteIllegalTextRangeWithWS     @Long  @Int64)
-  , testCase "Long Illegal Text With Other"             (finiteIllegalTextRangeWithOther  @Long  @Int64)
+  , testCase "Long Legal Text"                          (finiteLegalText                 @Long @Int64)
+  , testCase "Long Legal Text With WS"                  (finiteLegalTextWithWS           @Long @Int64)
+  , testCase "Long Legal Text With Plus"                (finiteLegalTextWithPlus         @Long @Int64)
+  , testCase "Long Legal Text With Minus"               (finiteLegalTextWithMinus        @Long @Int64)
+  , testCase "Long Legal Text Idempotent"               (finiteIdempotent                @Long @Int64)
+  , testCase "Long Illegal Text Range"                  (finiteIllegalTextRange          @Long @Int64)
+  , testCase "Long Illegal Text Range With WS"          (finiteIllegalTextRangeWithWS    @Long @Int64)
+  , testCase "Long Illegal Text With Other"             (finiteIllegalTextRangeWithOther @Long @Int64)
   ]
 
 class FiniteTest a where
@@ -920,119 +921,129 @@ class FiniteTest a where
   integerOut  :: Integer
 
 instance FiniteTest UnsignedByte where
-  assertText  = "Not All UnsignedBytes"
+  assertText  = "UnsignedBytes"
   finiteRange = range ( fromIntegral (minBound :: Word8)
                       , fromIntegral (maxBound :: Word8)
                       )
   integerOut  = fromIntegral (maxBound :: Word8) + 1
 
+-- byteNonNegativeIntegers :: [] Integer
+-- byteNonNegativeIntegers = range (fromIntegral (minBound :: Word8), fromIntegral (maxBound :: Word8))
+
+-- byteNonNegativeIntegerOut :: Integer
+-- byteNonNegativeIntegerOut = fromIntegral (maxBound :: Word8) + 1
+
 instance FiniteTest UnsignedShort where
-  assertText  = "Not All UnsignedShorts"
+  assertText  = "UnsignedShorts"
   finiteRange = range ( fromIntegral (minBound :: Word16)
                       , fromIntegral (maxBound :: Word16)
                       )
   integerOut  = fromIntegral (maxBound :: Word16) + 1
 
 instance FiniteTest UnsignedInt where
-  assertText  = "Not All UnsignedInts"
-  finiteRange = range ( fromIntegral (minBound :: Word32)
-                      , fromIntegral (maxBound :: Word8)
-                      ) -- Shorten the range or wait forever
-             ++ range ( fromIntegral (maxBound :: Word32) - fromIntegral (maxBound :: Word8)
-                      , fromIntegral (maxBound :: Word32)
-                      )
+  assertText  = "UnsignedInts"
+  finiteRange =
+    asum [ range ( fromIntegral (minBound :: Word32)
+                 , fromIntegral (maxBound :: Word8)
+                 ) -- Shorten the range or wait forever
+         , range ( fromIntegral (maxBound :: Word32) - fromIntegral (maxBound :: Word8)
+                 , fromIntegral (maxBound :: Word32)
+                 )
+         ]
   integerOut  = fromIntegral (maxBound :: Word32) + 1
 
 instance FiniteTest UnsignedLong where
-  assertText  = "Not All UnsignedLongs"
-  finiteRange = range ( fromIntegral (minBound :: Word64)
-                      , fromIntegral (maxBound :: Word8)
-                      ) -- Shorten the range or wait forever
-             ++ range ( fromIntegral (maxBound :: Word64) - fromIntegral (maxBound :: Word8)
-                      , fromIntegral (maxBound :: Word64)
-                      )
+  assertText  = "UnsignedLongs"
+  finiteRange =
+    asum [ range ( fromIntegral (minBound :: Word64)
+                 , fromIntegral (maxBound :: Word8)
+                 ) -- Shorten the range or wait forever
+         , range ( fromIntegral (maxBound :: Word64) - fromIntegral (maxBound :: Word8)
+                 , fromIntegral (maxBound :: Word64)
+                 )
+         ]
   integerOut  = fromIntegral (maxBound :: Word64) + 1
 
 instance FiniteTest Byte where
-  assertText  = "Not All Bytes"
-  finiteRange = range (fromIntegral (minBound :: Int8), fromIntegral (maxBound :: Int8))
+  assertText  = "Bytes"
+  finiteRange = range ( fromIntegral (minBound :: Int8)
+                      , fromIntegral (maxBound :: Int8)
+                      )
   integerOut  = fromIntegral (minBound :: Int8) - 1
 
 instance FiniteTest Short where
-  assertText  = "Not All Shorts"
-  finiteRange = range (fromIntegral (minBound :: Int16), fromIntegral (maxBound :: Int16))
+  assertText  = "Shorts"
+  finiteRange = range ( fromIntegral (minBound :: Int16)
+                      , fromIntegral (maxBound :: Int16)
+                      )
   integerOut  = fromIntegral (minBound :: Int16) - 1
 
 instance FiniteTest Intxs where
-  assertText  = "Not All Intxs"
-  finiteRange = join
-                [ range ( fromIntegral (minBound :: Int32)
-                        , fromIntegral (minBound :: Int32) + fromIntegral (maxBound :: Int8)
-                        )
-                , range ( fromIntegral (minBound :: Int8)
-                        , fromIntegral (maxBound :: Int8)
-                        ) -- Cover the -int8 to +int8 range 0 must be covered
-                , range ( fromIntegral (maxBound :: Int32) - fromIntegral (maxBound :: Int8)
-                        , fromIntegral (maxBound :: Int32)
-                        )
-                ]
+  assertText  = "Intxs"
+  finiteRange =
+    asum
+    [ range ( fromIntegral (minBound :: Int32)
+            , fromIntegral (minBound :: Int32) + fromIntegral (maxBound :: Int8)
+            )
+    , range ( fromIntegral (minBound :: Int8)
+            , fromIntegral (maxBound :: Int8)
+            ) -- Cover the -int8 to +int8 range 0 must be covered
+    , range ( fromIntegral (maxBound :: Int32) - fromIntegral (maxBound :: Int8)
+            , fromIntegral (maxBound :: Int32)
+            )
+    ]
   integerOut  = fromIntegral (minBound :: Int32) - 1
 
 instance FiniteTest Long where
-  assertText  = "Not All Long"
-  finiteRange = range ( fromIntegral (minBound :: Int64)
-                      , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8)
-                      )
-             ++ range ( fromIntegral (minBound :: Int8)
-                      , fromIntegral (maxBound :: Int8)
-                      ) -- Cover the -int8 to +int8 range 0 must be covered
-             ++ range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8)
-                      , fromIntegral (maxBound :: Int64)
-                      )
+  assertText  = "Long"
+  finiteRange =
+    asum
+    [ range ( fromIntegral (minBound :: Int64)
+            , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8)
+            )
+    , range ( fromIntegral (minBound :: Int8)
+            , fromIntegral (maxBound :: Int8)
+            ) -- Cover the -int8 to +int8 range 0 must be covered
+    , range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8)
+            , fromIntegral (maxBound :: Int64)
+            )
+    ]
   integerOut  = fromIntegral (minBound :: Int64) - 1
 
-finiteLegalText :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
-                => Assertion
-finiteLegalText =
-  assertBool (assertText @a) (and $ map f (finiteRange @a))
+finiteLegalText
+  :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
+finiteLegalText = finiteLegalText' @a @b tshow
+
+finiteLegalTextWithWS
+  :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
+finiteLegalTextWithWS = finiteLegalText' @a @b f
+  where
+    f integer = T.concat ["\n\r\t", tshow integer, "\t  \r\n  "]
+
+finiteLegalTextWithPlus
+  :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
+finiteLegalTextWithPlus = finiteLegalText' @a @b f
+  where
+    f integer | integer >= 0 = T.append "+" (tshow integer)
+              | otherwise = tshow integer
+
+finiteLegalText'
+  :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => (Integer -> Text) -> Assertion
+finiteLegalText' textF =
+  assertBool ("Not all succeeded for: " ++ (assertText @a))
+             (and $ map f (finiteRange @a))
   where
     f :: Integer -> Bool
-    f n = let text = tshow n
+    f n = let text = textF n
               mFiniteType = fac @a text
           in case mFiniteType of
                Nothing -> False
                Just w -> fromIntegral @b (redde w) == n
 
-finiteLegalTextWithWS :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
-                      => Assertion
-finiteLegalTextWithWS =
-  assertBool (assertText @a) (and $ map f (finiteRange @a))
-  where
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mFiniteType = fac @a textWS
-          in case mFiniteType of
-               Nothing -> False
-               Just w -> fromIntegral @b (redde w) == n
-
-finiteLegalTextWithPlus :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
-                        => Assertion
-finiteLegalTextWithPlus =
-  assertBool (assertText @a) (and $ map f (finiteRange @a))
-  where
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textPlus = n >= 0 ? T.append "+" text $ text
-              mFiniteType = fac @a textPlus
-          in case mFiniteType of
-               Nothing -> False
-               Just w -> fromIntegral @b (redde w) == n
-
-finiteLegalTextWithMinus :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
-                         => Assertion
+finiteLegalTextWithMinus
+  :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
 finiteLegalTextWithMinus =
-  assertBool "-0 Test Failed" minusTest
+  assertBool ("-0 test Failed for: " ++ (assertText @a)) minusTest
   where
     text = "-0"
     mFiniteType = fac @a text
@@ -1040,10 +1051,11 @@ finiteLegalTextWithMinus =
                   Nothing -> False
                   Just w -> fromIntegral @b (redde w) == 0
 
-finiteIdempotent :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
-                 => Assertion
+finiteIdempotent
+  :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
 finiteIdempotent =
-  assertBool (assertText @a) (and $ map f (finiteRange @a))
+  assertBool ("Not all succeeded for: " ++ (assertText @a))
+             (and $ map f (finiteRange @a))
   where
     f :: Integer -> Bool
     f n = let text = tshow n
@@ -1057,52 +1069,36 @@ finiteIdempotent =
                         Just w' -> fromIntegral @b (redde w') == n
                  else False
 
-finiteIllegalTextRange :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+finiteIllegalTextRange :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
                        => Assertion
-finiteIllegalTextRange =
-  -- assertBool (assertText @a) (and $ map f (finiteRange @a))
-  assertBool "Some" (not . any id $ map f (finiteRange @a))
-  where
-    testRange = (map (\n -> (n + 1) * (integerOut @a)) $ (finiteRange @a))
-                ++
-                (map (\n -> (n + 1) * (-1)) $ (finiteRange @a))
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mFiniteType = fac @a text
-          in case mFiniteType of
-               Nothing -> False
-               Just w -> fromIntegral @b (redde w) == n
+finiteIllegalTextRange = finiteIllegalTextRange' @a @b id
 
-finiteIllegalTextRangeWithWS :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+finiteIllegalTextRangeWithWS :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
                              => Assertion
-finiteIllegalTextRangeWithWS =
-  -- assertBool (assertText @a) (and $ map f (finiteRange @a))
-  assertBool "Some" (not . any id $ map f (finiteRange @a))
+finiteIllegalTextRangeWithWS = finiteIllegalTextRange' @a @b f
   where
-    testRange = (map (\n -> (n + 1) * (integerOut @a)) $ (finiteRange @a))
-                ++
-                (map (\n -> (n + 1) * (-1)) $ (finiteRange @a))
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mFiniteType = fac @a textWS
-          in case mFiniteType of
-               Nothing -> False
-               Just w -> fromIntegral @b (redde w) == n
+    f text = T.concat ["\n\r\t", text, "\t  \r\n  "]
 
-finiteIllegalTextRangeWithOther :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+finiteIllegalTextRangeWithOther :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
                                 => Assertion
-finiteIllegalTextRangeWithOther =
-  -- assertBool (assertText @a) (and $ map f (finiteRange @a))
-  assertBool "Some" (not . any id $ map f (finiteRange @a))
+finiteIllegalTextRangeWithOther = finiteIllegalTextRange' @a @b f
   where
-    testRange = (map (\n -> (n + 1) * (integerOut @a)) $ (finiteRange @a))
-                ++
-                (map (\n -> (n + 1) * (-1)) $ (finiteRange @a))
+    f text = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
+
+finiteIllegalTextRange' :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
+                        => (Text -> Text) -> Assertion
+finiteIllegalTextRange' textF =
+  assertBool ("Not all succeeded for: " ++ (assertText @a))
+             (not . any id $ map f testRange)
+  where
+    testRange = minBound @b < 0 ? signedTestRange $ unsignedTestRange
+    unsignedTestRange = (map (\n -> (n + 1) * (integerOut @a)) (finiteRange @a))
+                     ++ (map (\n -> (n + 1) * -1             ) (finiteRange @a))
+    signedTestRange = map (* (integerOut @a)) $ filter (/= 0) (finiteRange @a)
+
     f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mFiniteType = fac @a textWS
+    f n = let text = textF $ tshow n
+              mFiniteType = fac @a text
           in case mFiniteType of
                Nothing -> False
                Just w -> fromIntegral @b (redde w) == n
@@ -1156,15 +1152,17 @@ integerTests = [ testCase "Integer Legal Text"                            case_I
                ]
 
 integers :: [] Integer -- The integers range is arbitrary since Integer is unbounded.
-integers = range ( fromIntegral (minBound :: Int64)
-                 , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8)
-                 )
-        ++ range ( fromIntegral (minBound :: Int8)
-                 , fromIntegral (maxBound :: Int8)
-                 ) -- Cover the -int8 to +int8 range 0 must be covered
-        ++ range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8)
-                 , fromIntegral (maxBound :: Int64)
-                 )
+integers =
+  asum [ range ( fromIntegral (minBound :: Int64)
+               , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8)
+               )
+       , range ( fromIntegral (minBound :: Int8)
+               , fromIntegral (maxBound :: Int8)
+               ) -- Cover the -int8 to +int8 range 0 must be covered
+       , range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8)
+               , fromIntegral (maxBound :: Int64)
+               )
+       ]
 
 case_Integer_LegalText :: Assertion
 case_Integer_LegalText =
@@ -1324,7 +1322,7 @@ case_NonPositiveInteger_IllegalTextRange :: Assertion
 case_NonPositiveInteger_IllegalTextRange =
   assertBool "Some" (not . any id $ map f testRange)
   where
-    testRange = (map (\n -> n * (-1)) $ filter (/= 0) nonPositiveIntegers)
+    testRange = (map (\n -> n * -1) $ filter (/= 0) nonPositiveIntegers)
     f :: Integer -> Bool
     f n = let text = tshow n
               mNonPositiveInteger :: Maybe NonPositiveInteger
@@ -1336,7 +1334,7 @@ case_NonPositiveInteger_IllegalTextRange =
 case_NonPositiveInteger_IllegalTextRangeWithWS :: Assertion
 case_NonPositiveInteger_IllegalTextRangeWithWS = assertBool "Some" (not . any id $ map f testRange)
   where
-    testRange = (map (\n -> n * (-1)) $ filter (/= 0) nonPositiveIntegers)
+    testRange = (map (\n -> n * -1) $ filter (/= 0) nonPositiveIntegers)
     f :: Integer -> Bool
     f n = let text = tshow n
               textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
@@ -1435,7 +1433,7 @@ case_NegativeInteger_IllegalTextRange :: Assertion
 case_NegativeInteger_IllegalTextRange =
   assertBool "Some" (not . any id $ map f testRange)
   where
-    testRange = (map (\n -> n * (-1)) $ filter (/= 0) negativeIntegers)
+    testRange = (map (\n -> n * -1) $ filter (/= 0) negativeIntegers)
     f :: Integer -> Bool
     f n = let text = tshow n
               mNegativeInteger :: Maybe NegativeInteger
@@ -1448,7 +1446,7 @@ case_NegativeInteger_IllegalTextRangeWithWS :: Assertion
 case_NegativeInteger_IllegalTextRangeWithWS =
   assertBool "Some" (not . any id $ map f testRange)
   where
-    testRange = (map (\n -> n * (-1)) $ filter (/= 0) negativeIntegers)
+    testRange = (map (\n -> n * -1) $ filter (/= 0) negativeIntegers)
     f :: Integer -> Bool
     f n = let text = tshow n
               textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
@@ -1547,7 +1545,7 @@ case_NonNegativeInteger_IllegalTextRange :: Assertion
 case_NonNegativeInteger_IllegalTextRange =
   assertBool "Some" (not . any id $ map f testRange)
   where
-    testRange = (map (\n -> n * (-1)) $ filter (/= 0) nonNegativeIntegers)
+    testRange = (map (\n -> n * -1) $ filter (/= 0) nonNegativeIntegers)
     f :: Integer -> Bool
     f n = let text = tshow n
               mNonNegativeInteger :: Maybe NonNegativeInteger
@@ -1560,7 +1558,7 @@ case_NonNegativeInteger_IllegalTextRangeWithWS :: Assertion
 case_NonNegativeInteger_IllegalTextRangeWithWS =
   assertBool "Some" (not . any id $ map f testRange)
   where
-    testRange = (map (\n -> n * (-1)) $ filter (/= 0) nonNegativeIntegers)
+    testRange = (map (\n -> n * -1) $ filter (/= 0) nonNegativeIntegers)
     f :: Integer -> Bool
     f n = let text = tshow n
               textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
@@ -1658,7 +1656,7 @@ case_PositiveInteger_Idempotent =
 case_PositiveInteger_IllegalTextRange :: Assertion
 case_PositiveInteger_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
   where
-    testRange = (map (\n -> n * (-1)) $ filter (/= 0) positiveIntegers)
+    testRange = (map (\n -> n * -1) $ filter (/= 0) positiveIntegers)
     f :: Integer -> Bool
     f n = let text = tshow n
               mPositiveInteger :: Maybe PositiveInteger
@@ -1671,7 +1669,7 @@ case_PositiveInteger_IllegalTextRangeWithWS :: Assertion
 case_PositiveInteger_IllegalTextRangeWithWS =
   assertBool "Some" (not . any id $ map f testRange)
   where
-    testRange = (map (\n -> n * (-1)) $ filter (/= 0) positiveIntegers)
+    testRange = (map (\n -> n * -1) $ filter (/= 0) positiveIntegers)
     f :: Integer -> Bool
     f n = let text = tshow n
               textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]

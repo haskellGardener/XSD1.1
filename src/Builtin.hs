@@ -2173,14 +2173,14 @@ instance Res GYear (Int, Maybe H.TimezoneOffset)
 
 yearTx :: Int -> Text
 yearTx year
-  | year < 0  = T.pack $ '-' : preFillWith '0' 4 (year * (-1))
+  | year < 0  = T.pack $ '-' : preFillWith '0' 4 (year * -1)
   | otherwise = T.pack $       preFillWith '0' 4 year
 
 -- | tzTx is equivalent to ·timezoneCanonicalFragmentMap· (t) → timezoneFrag in E.3.6 Canonical Mappings.
 tzTx :: Int -> Text
 tzTx 0 = "Z" -- This is canonical. See ·timezoneCanonicalFragmentMap· in E.3.6 Canonical Mappings.
 tzTx tzMinutes
-  | tzMinutes < 0 = T.append "-" . T.drop 1 $ tzTx (tzMinutes * (-1))
+  | tzMinutes < 0 = T.append "-" . T.drop 1 $ tzTx (tzMinutes * -1)
   | otherwise =
       let (h,m) = quotRem tzMinutes 60
           hs = preFillWith '0' 2 h
