@@ -1,5 +1,10 @@
-{-# Language ExistentialQuantification #-}
-{-| Time-stamp: <2022-04-20 16:40:40 CDT>
+{-# Language
+    AllowAmbiguousTypes
+  , ExistentialQuantification
+  , ScopedTypeVariables
+  , TypeApplications
+#-}
+{-| Time-stamp: <2022-04-21 13:53:37 CDT>
 
 Module      : Main
 Copyright   : Robert Lee, © 2017-2022
@@ -99,6 +104,7 @@ infixr 0  $, $!, ‘seq‘
 -- Local Imports
 
 import Builtin
+import Lading
 
 -- Explicit Imports
 
@@ -137,12 +143,6 @@ import Test.Tasty.Runners
 -- End of Imports
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 
-(?) :: Bool -> a -> a -> a
-(?) True t _ = t
-(?) False _ f = f
-
-infixl 1 ?
-
 nrpt :: anytype
 nrpt = error "NRPT"
 
@@ -178,8 +178,12 @@ tests =
 
 -- NB: forAll :: (Show a, Testable prop) => Gen a -> (a -> prop) -> Property
 
-prop_legal_val :: (Transformatio a, Show a, Eq a) => QC.Gen (Text, a) -> (Text -> Maybe a) -> QC.Property
-prop_legal_val gen fac_base = QC.forAll gen $ \(t,a) -> fac_base t == Just a
+prop_legal_val :: (Transformatio a, Show a, Eq a)
+               => QC.Gen (Text, a)
+               -> (Text -> Maybe a)
+               -> QC.Property
+prop_legal_val gen fac_base =
+  QC.forAll gen $ \(t,a) -> fac_base t == Just a
 
 prop_legal :: (Transformatio a, Eq a) => QC.Gen Text -> (Text -> Maybe a) -> QC.Property
 prop_legal gen fac_base = QC.forAll gen (isJust . fac_base)
@@ -188,12 +192,15 @@ prop_illegal :: (Transformatio a, Eq a) => QC.Gen Text -> (Text -> Maybe a) -> Q
 prop_illegal gen fac_base = QC.forAll gen (isNothing . fac_base)
 
 idempotent :: (Transformatio a, Eq a) => (a -> Text) -> Text -> Maybe a
-idempotent toText candidate = case fac candidate of
-                                j@(Just entity) -> j == fac (toText entity) ? j $ Nothing
-                                Nothing -> Nothing
+idempotent toText candidate =
+  case fac candidate of
+    j@(Just entity) -> j == fac (toText entity) ? j $ Nothing
+    Nothing -> Nothing
 
 qctests :: QC.Testable testable => Int -> String -> testable -> TestTree
-qctests i label tree = PlusTestOptions (TO.setOption (QC.QuickCheckTests $ ramp i)) $ QC.testProperty label tree
+qctests i label tree
+  = PlusTestOptions (TO.setOption (QC.QuickCheckTests $ ramp i))
+  $ QC.testProperty label tree
 
 valTests :: [TestTree]
 valTests =
@@ -204,8 +211,8 @@ valTests =
   , qctests 100 "Boolean Idempotent WS" (prop_legal_val gen_boolean_legal_WS  (idempotent scribe :: Text -> Maybe Boolean ))
   ]
 
--- Illegal generators must be capable of generating at least one non-xmlWhite char or the illegal suffix test will not halt.
--- Set the suffixP bool to False in calls to multi if xmlSuffix tests may result in errors.
+-- Illegal generators must be capable of generating at least one non-xmlWhite char or the illegal suffix test will not halt. ⚡
+-- Set the suffixP bool to False in calls to multi if xmlSuffix tests may result in errors. ⚡
 
 multiTests :: [TestTree]
 multiTests = join
@@ -830,1059 +837,275 @@ nameNotChars = QC.listOf1 nameNotChar
                            ]
 
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
--- This section contains the FiniteBits types tests. Boilerplate world. Could use some love.
+-- This section contains the FiniteBits types tests.
 
 finiteBitsTests :: [TestTree]
 finiteBitsTests =
-  [ testCase "UnsignedByte Legal Text"                  case_UnsignedByte_LegalText
-  , testCase "UnsignedByte Legal Text With WS"          case_UnsignedByte_LegalTextWithWS
-  , testCase "UnsignedByte Legal Text With Plus"        case_UnsignedByte_LegalTextWithPlus
-  , testCase "UnsignedByte Legal Text With Minus"       case_UnsignedByte_LegalTextWithMinus
-  , testCase "UnsignedByte Legal Text Idempotent"       case_UnsignedByte_Idempotent
-  , testCase "UnsignedByte Illegal Text Range"          case_UnsignedByte_IllegalTextRange
-  , testCase "UnsignedByte Illegal Text Range With WS"  case_UnsignedByte_IllegalTextRangeWithWS
-  , testCase "UnsignedByte Illegal Text With Other"     case_UnsignedByte_IllegalTextWithOther
+  [ testCase "UnsignedByte Legal Text"                  (finiteLegalText                  @UnsignedByte  @Word8)
+  , testCase "UnsignedByte Legal Text With WS"          (finiteLegalTextWithWS            @UnsignedByte  @Word8)
+  , testCase "UnsignedByte Legal Text With Plus"        (finiteLegalTextWithPlus          @UnsignedByte  @Word8)
+  , testCase "UnsignedByte Legal Text With Minus"       (finiteLegalTextWithMinus         @UnsignedByte  @Word8)
+  , testCase "UnsignedByte Legal Text Idempotent"       (finiteIdempotent                 @UnsignedByte  @Word8)
+  , testCase "UnsignedByte Illegal Text Range"          (finiteIllegalTextRange           @UnsignedByte  @Word8)
+  , testCase "UnsignedByte Illegal Text Range With WS"  (finiteIllegalTextRangeWithWS     @UnsignedByte  @Word8)
+  , testCase "UnsignedByte Illegal Text With Other"     (finiteIllegalTextRangeWithOther  @UnsignedByte  @Word8)
 
-  , testCase "UnsignedShort Legal Text"                 case_UnsignedShort_LegalText
-  , testCase "UnsignedShort Legal Text With WS"         case_UnsignedShort_LegalTextWithWS
-  , testCase "UnsignedShort Legal Text With Plus"       case_UnsignedShort_LegalTextWithPlus
-  , testCase "UnsignedShort Legal Text With Minus"      case_UnsignedShort_LegalTextWithMinus
-  , testCase "UnsignedShort Legal Text Idempotent"      case_UnsignedShort_Idempotent
-  , testCase "UnsignedShort Illegal Text Range"         case_UnsignedShort_IllegalTextRange
-  , testCase "UnsignedShort Illegal Text Range With WS" case_UnsignedShort_IllegalTextRangeWithWS
-  , testCase "UnsignedShort Illegal Text With Other"    case_UnsignedShort_IllegalTextWithOther
+  , testCase "UnsignedShort Legal Text"                 (finiteLegalText                  @UnsignedShort  @Word16)
+  , testCase "UnsignedShort Legal Text With WS"         (finiteLegalTextWithWS            @UnsignedShort  @Word16)
+  , testCase "UnsignedShort Legal Text With Plus"       (finiteLegalTextWithPlus          @UnsignedShort  @Word16)
+  , testCase "UnsignedShort Legal Text With Minus"      (finiteLegalTextWithMinus         @UnsignedShort  @Word16)
+  , testCase "UnsignedShort Legal Text Idempotent"      (finiteIdempotent                 @UnsignedShort  @Word16)
+  , testCase "UnsignedShort Illegal Text Range"         (finiteIllegalTextRange           @UnsignedShort  @Word16)
+  , testCase "UnsignedShort Illegal Text Range With WS" (finiteIllegalTextRangeWithWS     @UnsignedShort  @Word16)
+  , testCase "UnsignedShort Illegal Text With Other"    (finiteIllegalTextRangeWithOther  @UnsignedShort  @Word16)
 
-  , testCase "UnsignedInt Legal Text"                   case_UnsignedInt_LegalText
-  , testCase "UnsignedInt Legal Text With WS"           case_UnsignedInt_LegalTextWithWS
-  , testCase "UnsignedInt Legal Text With Plus"         case_UnsignedInt_LegalTextWithPlus
-  , testCase "UnsignedInt Legal Text With Minus"        case_UnsignedInt_LegalTextWithMinus
-  , testCase "UnsignedInt Legal Text Idempotent"        case_UnsignedInt_Idempotent
-  , testCase "UnsignedInt Illegal Text Range"           case_UnsignedInt_IllegalTextRange
-  , testCase "UnsignedInt Illegal Text Range With WS"   case_UnsignedInt_IllegalTextRangeWithWS
-  , testCase "UnsignedInt Illegal Text With Other"      case_UnsignedInt_IllegalTextWithOther
+  , testCase "UnsignedInt Legal Text"                   (finiteLegalText                  @UnsignedInt    @Word32)
+  , testCase "UnsignedInt Legal Text With WS"           (finiteLegalTextWithWS            @UnsignedInt    @Word32)
+  , testCase "UnsignedInt Legal Text With Plus"         (finiteLegalTextWithPlus          @UnsignedInt    @Word32)
+  , testCase "UnsignedInt Legal Text With Minus"        (finiteLegalTextWithMinus         @UnsignedInt    @Word32)
+  , testCase "UnsignedInt Legal Text Idempotent"        (finiteIdempotent                 @UnsignedInt    @Word32)
+  , testCase "UnsignedInt Illegal Text Range"           (finiteIllegalTextRange           @UnsignedInt    @Word32)
+  , testCase "UnsignedInt Illegal Text Range With WS"   (finiteIllegalTextRangeWithWS     @UnsignedInt    @Word32)
+  , testCase "UnsignedInt Illegal Text With Other"      (finiteIllegalTextRangeWithOther  @UnsignedInt    @Word32)
 
-  , testCase "UnsignedLong Legal Text"                  case_UnsignedLong_LegalText
-  , testCase "UnsignedLong Legal Text With WS"          case_UnsignedLong_LegalTextWithWS
-  , testCase "UnsignedLong Legal Text With Plus"        case_UnsignedLong_LegalTextWithPlus
-  , testCase "UnsignedLong Legal Text With Minus"       case_UnsignedLong_LegalTextWithMinus
-  , testCase "UnsignedLong Legal Text Idempotent"       case_UnsignedLong_Idempotent
-  , testCase "UnsignedLong Illegal Text Range"          case_UnsignedLong_IllegalTextRange
-  , testCase "UnsignedLong Illegal Text Range With WS"  case_UnsignedLong_IllegalTextRangeWithWS
-  , testCase "UnsignedLong Illegal Text With Other"     case_UnsignedLong_IllegalTextWithOther
+  , testCase "UnsignedLong Legal Text"                  (finiteLegalText                  @UnsignedLong   @Word64)
+  , testCase "UnsignedLong Legal Text With WS"          (finiteLegalTextWithWS            @UnsignedLong   @Word64)
+  , testCase "UnsignedLong Legal Text With Plus"        (finiteLegalTextWithPlus          @UnsignedLong   @Word64)
+  , testCase "UnsignedLong Legal Text With Minus"       (finiteLegalTextWithMinus         @UnsignedLong   @Word64)
+  , testCase "UnsignedLong Legal Text Idempotent"       (finiteIdempotent                 @UnsignedLong   @Word64)
+  , testCase "UnsignedLong Illegal Text Range"          (finiteIllegalTextRange           @UnsignedLong   @Word64)
+  , testCase "UnsignedLong Illegal Text Range With WS"  (finiteIllegalTextRangeWithWS     @UnsignedLong   @Word64)
+  , testCase "UnsignedLong Illegal Text With Other"     (finiteIllegalTextRangeWithOther  @UnsignedLong   @Word64)
 
-  , testCase "Byte Legal Text"                          case_Byte_LegalText
-  , testCase "Byte Legal Text With WS"                  case_Byte_LegalTextWithWS
-  , testCase "Byte Legal Text With Plus"                case_Byte_LegalTextWithPlus
-  , testCase "Byte Legal Text With Minus"               case_Byte_LegalTextWithMinus
-  , testCase "Byte Legal Text Idempotent"               case_Byte_Idempotent
-  , testCase "Byte Illegal Text Range"                  case_Byte_IllegalTextRange
-  , testCase "Byte Illegal Text Range With WS"          case_Byte_IllegalTextRangeWithWS
-  , testCase "Byte Illegal Text With Other"             case_Byte_IllegalTextWithOther
+  , testCase "Byte Legal Text"                          (finiteLegalText                  @Byte  @Int8)
+  , testCase "Byte Legal Text With WS"                  (finiteLegalTextWithWS            @Byte  @Int8)
+  , testCase "Byte Legal Text With Plus"                (finiteLegalTextWithPlus          @Byte  @Int8)
+  , testCase "Byte Legal Text With Minus"               (finiteLegalTextWithMinus         @Byte  @Int8)
+  , testCase "Byte Legal Text Idempotent"               (finiteIdempotent                 @Byte  @Int8)
+  , testCase "Byte Illegal Text Range"                  (finiteIllegalTextRange           @Byte  @Int8)
+  , testCase "Byte Illegal Text Range With WS"          (finiteIllegalTextRangeWithWS     @Byte  @Int8)
+  , testCase "Byte Illegal Text With Other"             (finiteIllegalTextRangeWithOther  @Byte  @Int8)
 
-  , testCase "Short Legal Text"                         case_Short_LegalText
-  , testCase "Short Legal Text With WS"                 case_Short_LegalTextWithWS
-  , testCase "Short Legal Text With Plus"               case_Short_LegalTextWithPlus
-  , testCase "Short Legal Text With Minus"              case_Short_LegalTextWithMinus
-  , testCase "Short Legal Text Idempotent"              case_Short_Idempotent
-  , testCase "Short Illegal Text Range"                 case_Short_IllegalTextRange
-  , testCase "Short Illegal Text Range With WS"         case_Short_IllegalTextRangeWithWS
-  , testCase "Short Illegal Text With Other"            case_Short_IllegalTextWithOther
+  , testCase "Short Legal Text"                         (finiteLegalText                  @Short  @Int16)
+  , testCase "Short Legal Text With WS"                 (finiteLegalTextWithWS            @Short  @Int16)
+  , testCase "Short Legal Text With Plus"               (finiteLegalTextWithPlus          @Short  @Int16)
+  , testCase "Short Legal Text With Minus"              (finiteLegalTextWithMinus         @Short  @Int16)
+  , testCase "Short Legal Text Idempotent"              (finiteIdempotent                 @Short  @Int16)
+  , testCase "Short Illegal Text Range"                 (finiteIllegalTextRange           @Short  @Int16)
+  , testCase "Short Illegal Text Range With WS"         (finiteIllegalTextRangeWithWS     @Short  @Int16)
+  , testCase "Short Illegal Text With Other"            (finiteIllegalTextRangeWithOther  @Short  @Int16)
 
-  , testCase "Intxs Legal Text"                         case_Intxs_LegalText
-  , testCase "Intxs Legal Text With WS"                 case_Intxs_LegalTextWithWS
-  , testCase "Intxs Legal Text With Plus"               case_Intxs_LegalTextWithPlus
-  , testCase "Intxs Legal Text With Minus"              case_Intxs_LegalTextWithMinus
-  , testCase "Intxs Legal Text Idempotent"              case_Intxs_Idempotent
-  , testCase "Intxs Illegal Text Range"                 case_Intxs_IllegalTextRange
-  , testCase "Intxs Illegal Text Range With WS"         case_Intxs_IllegalTextRangeWithWS
-  , testCase "Intxs Illegal Text With Other"            case_Intxs_IllegalTextWithOther
+  , testCase "Intxs Legal Text"                         (finiteLegalText                  @Intxs  @Int32)
+  , testCase "Intxs Legal Text With WS"                 (finiteLegalTextWithWS            @Intxs  @Int32)
+  , testCase "Intxs Legal Text With Plus"               (finiteLegalTextWithPlus          @Intxs  @Int32)
+  , testCase "Intxs Legal Text With Minus"              (finiteLegalTextWithMinus         @Intxs  @Int32)
+  , testCase "Intxs Legal Text Idempotent"              (finiteIdempotent                 @Intxs  @Int32)
+  , testCase "Intxs Illegal Text Range"                 (finiteIllegalTextRange           @Intxs  @Int32)
+  , testCase "Intxs Illegal Text Range With WS"         (finiteIllegalTextRangeWithWS     @Intxs  @Int32)
+  , testCase "Intxs Illegal Text With Other"            (finiteIllegalTextRangeWithOther  @Intxs  @Int32)
 
-  , testCase "Long Legal Text"                          case_Long_LegalText
-  , testCase "Long Legal Text With WS"                  case_Long_LegalTextWithWS
-  , testCase "Long Legal Text With Plus"                case_Long_LegalTextWithPlus
-  , testCase "Long Legal Text With Minus"               case_Long_LegalTextWithMinus
-  , testCase "Long Legal Text Idempotent"               case_Long_Idempotent
-  , testCase "Long Illegal Text Range"                  case_Long_IllegalTextRange
-  , testCase "Long Illegal Text Range With WS"          case_Long_IllegalTextRangeWithWS
-  , testCase "Long Illegal Text With Other"             case_Long_IllegalTextWithOther
+  , testCase "Long Legal Text"                          (finiteLegalText                  @Long  @Int64)
+  , testCase "Long Legal Text With WS"                  (finiteLegalTextWithWS            @Long  @Int64)
+  , testCase "Long Legal Text With Plus"                (finiteLegalTextWithPlus          @Long  @Int64)
+  , testCase "Long Legal Text With Minus"               (finiteLegalTextWithMinus         @Long  @Int64)
+  , testCase "Long Legal Text Idempotent"               (finiteIdempotent                 @Long  @Int64)
+  , testCase "Long Illegal Text Range"                  (finiteIllegalTextRange           @Long  @Int64)
+  , testCase "Long Illegal Text Range With WS"          (finiteIllegalTextRangeWithWS     @Long  @Int64)
+  , testCase "Long Illegal Text With Other"             (finiteIllegalTextRangeWithOther  @Long  @Int64)
   ]
 
-byteNonNegativeIntegers :: [] Integer
-byteNonNegativeIntegers = range (fromIntegral (minBound :: Word8), fromIntegral (maxBound :: Word8))
+class FiniteTest a where
+  assertText  :: Chars
+  finiteRange :: [] Integer
+  integerOut  :: Integer
 
-byteNonNegativeIntegerOut :: Integer
-byteNonNegativeIntegerOut = fromIntegral (maxBound :: Word8) + 1
+instance FiniteTest UnsignedByte where
+  assertText  = "Not All UnsignedBytes"
+  finiteRange = range ( fromIntegral (minBound :: Word8)
+                      , fromIntegral (maxBound :: Word8)
+                      )
+  integerOut  = fromIntegral (maxBound :: Word8) + 1
 
-case_UnsignedByte_LegalText :: Assertion
-case_UnsignedByte_LegalText =
-  assertBool "Not All" (and $ map f testRange)
+instance FiniteTest UnsignedShort where
+  assertText  = "Not All UnsignedShorts"
+  finiteRange = range ( fromIntegral (minBound :: Word16)
+                      , fromIntegral (maxBound :: Word16)
+                      )
+  integerOut  = fromIntegral (maxBound :: Word16) + 1
+
+instance FiniteTest UnsignedInt where
+  assertText  = "Not All UnsignedInts"
+  finiteRange = range ( fromIntegral (minBound :: Word32)
+                      , fromIntegral (maxBound :: Word8)
+                      ) -- Shorten the range or wait forever
+             ++ range ( fromIntegral (maxBound :: Word32) - fromIntegral (maxBound :: Word8)
+                      , fromIntegral (maxBound :: Word32)
+                      )
+  integerOut  = fromIntegral (maxBound :: Word32) + 1
+
+instance FiniteTest UnsignedLong where
+  assertText  = "Not All UnsignedLongs"
+  finiteRange = range ( fromIntegral (minBound :: Word64)
+                      , fromIntegral (maxBound :: Word8)
+                      ) -- Shorten the range or wait forever
+             ++ range ( fromIntegral (maxBound :: Word64) - fromIntegral (maxBound :: Word8)
+                      , fromIntegral (maxBound :: Word64)
+                      )
+  integerOut  = fromIntegral (maxBound :: Word64) + 1
+
+instance FiniteTest Byte where
+  assertText  = "Not All Bytes"
+  finiteRange = range (fromIntegral (minBound :: Int8), fromIntegral (maxBound :: Int8))
+  integerOut  = fromIntegral (minBound :: Int8) - 1
+
+instance FiniteTest Short where
+  assertText  = "Not All Shorts"
+  finiteRange = range (fromIntegral (minBound :: Int16), fromIntegral (maxBound :: Int16))
+  integerOut  = fromIntegral (minBound :: Int16) - 1
+
+instance FiniteTest Intxs where
+  assertText  = "Not All Intxs"
+  finiteRange = join
+                [ range ( fromIntegral (minBound :: Int32)
+                        , fromIntegral (minBound :: Int32) + fromIntegral (maxBound :: Int8)
+                        )
+                , range ( fromIntegral (minBound :: Int8)
+                        , fromIntegral (maxBound :: Int8)
+                        ) -- Cover the -int8 to +int8 range 0 must be covered
+                , range ( fromIntegral (maxBound :: Int32) - fromIntegral (maxBound :: Int8)
+                        , fromIntegral (maxBound :: Int32)
+                        )
+                ]
+  integerOut  = fromIntegral (minBound :: Int32) - 1
+
+instance FiniteTest Long where
+  assertText  = "Not All Long"
+  finiteRange = range ( fromIntegral (minBound :: Int64)
+                      , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8)
+                      )
+             ++ range ( fromIntegral (minBound :: Int8)
+                      , fromIntegral (maxBound :: Int8)
+                      ) -- Cover the -int8 to +int8 range 0 must be covered
+             ++ range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8)
+                      , fromIntegral (maxBound :: Int64)
+                      )
+  integerOut  = fromIntegral (minBound :: Int64) - 1
+
+finiteLegalText :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                => Assertion
+finiteLegalText =
+  assertBool (assertText @a) (and $ map f (finiteRange @a))
   where
-    testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
     f n = let text = tshow n
-              mUnsignedByte :: Maybe UnsignedByte
-              mUnsignedByte = fac text
-          in case mUnsignedByte of
+              mFiniteType = fac @a text
+          in case mFiniteType of
                Nothing -> False
-               Just (UnsignedByte word8) -> fromIntegral word8 == n
+               Just w -> fromIntegral @b (redde w) == n
 
-case_UnsignedByte_LegalTextWithWS :: Assertion
-case_UnsignedByte_LegalTextWithWS =
-  assertBool "Not All" (and $ map f testRange)
+finiteLegalTextWithWS :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                      => Assertion
+finiteLegalTextWithWS =
+  assertBool (assertText @a) (and $ map f (finiteRange @a))
   where
-    testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
     f n = let text = tshow n
               textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mUnsignedByte :: Maybe UnsignedByte
-              mUnsignedByte = fac textWS
-          in case mUnsignedByte of
+              mFiniteType = fac @a textWS
+          in case mFiniteType of
                Nothing -> False
-               Just (UnsignedByte word8) -> fromIntegral word8 == n
+               Just w -> fromIntegral @b (redde w) == n
 
-case_UnsignedByte_LegalTextWithPlus :: Assertion
-case_UnsignedByte_LegalTextWithPlus =
-  assertBool "Not All" (and $ map f testRange)
+finiteLegalTextWithPlus :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                        => Assertion
+finiteLegalTextWithPlus =
+  assertBool (assertText @a) (and $ map f (finiteRange @a))
   where
-    testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
     f n = let text = tshow n
-              textWS = T.append "+" text
-              mUnsignedByte :: Maybe UnsignedByte
-              mUnsignedByte = fac textWS
-          in case mUnsignedByte of
+              textPlus = n >= 0 ? T.append "+" text $ text
+              mFiniteType = fac @a textPlus
+          in case mFiniteType of
                Nothing -> False
-               Just (UnsignedByte word8) -> fromIntegral word8 == n
+               Just w -> fromIntegral @b (redde w) == n
 
-case_UnsignedByte_LegalTextWithMinus :: Assertion
-case_UnsignedByte_LegalTextWithMinus =
-  assertBool "Borked" minusTest
+finiteLegalTextWithMinus :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                         => Assertion
+finiteLegalTextWithMinus =
+  assertBool "-0 Test Failed" minusTest
   where
     text = "-0"
-    mUnsignedByte :: Maybe UnsignedByte
-    mUnsignedByte = fac text
-    minusTest = case mUnsignedByte of
+    mFiniteType = fac @a text
+    minusTest = case mFiniteType of
                   Nothing -> False
-                  Just (UnsignedByte word8) -> word8 == 0
+                  Just w -> fromIntegral @b (redde w) == 0
 
-case_UnsignedByte_Idempotent :: Assertion
-case_UnsignedByte_Idempotent =
-  assertBool "Not All" (and $ map f testRange)
+finiteIdempotent :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                 => Assertion
+finiteIdempotent =
+  assertBool (assertText @a) (and $ map f (finiteRange @a))
   where
-    testRange = byteNonNegativeIntegers
     f :: Integer -> Bool
     f n = let text = tshow n
-              mUnsignedByte = fac' text
-              fac' :: Text -> Maybe UnsignedByte
-              fac' = fac
-          in case mUnsignedByte of
+              mFiniteType = fac @a text
+          in case mFiniteType of
                Nothing -> False
-               Just ub@(UnsignedByte word8) ->
-                 if fromIntegral word8 == n
-                 then case fac' (canon ub) >>= fac' . canon of
+               Just w ->
+                 if fromIntegral @b (redde w) == n
+                 then case fac @a (canon w) >>= fac @a . canon of -- >>= is Maybe Monad!
                         Nothing -> False
-                        Just (UnsignedByte word8') -> fromIntegral word8' == n
+                        Just w' -> fromIntegral @b (redde w') == n
                  else False
 
-case_UnsignedByte_IllegalTextRange :: Assertion
-case_UnsignedByte_IllegalTextRange =
-  assertBool "Some" (not . any id $ map f testRange)
+finiteIllegalTextRange :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                       => Assertion
+finiteIllegalTextRange =
+  -- assertBool (assertText @a) (and $ map f (finiteRange @a))
+  assertBool "Some" (not . any id $ map f (finiteRange @a))
   where
-    testRange = (map (\n -> (n + 1) * byteNonNegativeIntegerOut) $ byteNonNegativeIntegers)
+    testRange = (map (\n -> (n + 1) * (integerOut @a)) $ (finiteRange @a))
                 ++
-                (map (\n -> (n + 1) * (-1)) $ byteNonNegativeIntegers)
+                (map (\n -> (n + 1) * (-1)) $ (finiteRange @a))
     f :: Integer -> Bool
     f n = let text = tshow n
-              mUnsignedByte :: Maybe UnsignedByte
-              mUnsignedByte = fac text
-          in case mUnsignedByte of
+              mFiniteType = fac @a text
+          in case mFiniteType of
                Nothing -> False
-               Just (UnsignedByte word8) -> fromIntegral word8 == n
+               Just w -> fromIntegral @b (redde w) == n
 
-case_UnsignedByte_IllegalTextRangeWithWS :: Assertion
-case_UnsignedByte_IllegalTextRangeWithWS =
-  assertBool "Some" (not . any id $ map f testRange)
+finiteIllegalTextRangeWithWS :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                             => Assertion
+finiteIllegalTextRangeWithWS =
+  -- assertBool (assertText @a) (and $ map f (finiteRange @a))
+  assertBool "Some" (not . any id $ map f (finiteRange @a))
   where
-    testRange = (map (\n -> (n + 1) * byteNonNegativeIntegerOut) $ byteNonNegativeIntegers)
+    testRange = (map (\n -> (n + 1) * (integerOut @a)) $ (finiteRange @a))
                 ++
-                (map (\n -> (n + 1) * (-1)) $ byteNonNegativeIntegers)
+                (map (\n -> (n + 1) * (-1)) $ (finiteRange @a))
     f :: Integer -> Bool
     f n = let text = tshow n
               textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mUnsignedByte :: Maybe UnsignedByte
-              mUnsignedByte = fac textWS
-          in case mUnsignedByte of
+              mFiniteType = fac @a textWS
+          in case mFiniteType of
                Nothing -> False
-               Just (UnsignedByte word8) -> fromIntegral word8 == n
+               Just w -> fromIntegral @b (redde w) == n
 
-case_UnsignedByte_IllegalTextWithOther :: Assertion
-case_UnsignedByte_IllegalTextWithOther =
-  assertBool "Some" (not . any id $ map f testRange)
+finiteIllegalTextRangeWithOther :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                                => Assertion
+finiteIllegalTextRangeWithOther =
+  -- assertBool (assertText @a) (and $ map f (finiteRange @a))
+  assertBool "Some" (not . any id $ map f (finiteRange @a))
   where
-    testRange = byteNonNegativeIntegers
+    testRange = (map (\n -> (n + 1) * (integerOut @a)) $ (finiteRange @a))
+                ++
+                (map (\n -> (n + 1) * (-1)) $ (finiteRange @a))
     f :: Integer -> Bool
     f n = let text = tshow n
               textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mUnsignedByte :: Maybe UnsignedByte
-              mUnsignedByte = fac textWS
-          in case mUnsignedByte of
+              mFiniteType = fac @a textWS
+          in case mFiniteType of
                Nothing -> False
-               Just (UnsignedByte word8) -> fromIntegral word8 == n
-
-shortNonNegativeIntegers :: [] Integer
-shortNonNegativeIntegers = range (fromIntegral (minBound :: Word16), fromIntegral (maxBound :: Word16))
-
-shortNonNegativeIntegerOut :: Integer
-shortNonNegativeIntegerOut = fromIntegral (maxBound :: Word16) + 1
-
-case_UnsignedShort_LegalText :: Assertion
-case_UnsignedShort_LegalText =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = shortNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedShort :: Maybe UnsignedShort
-              mUnsignedShort = fac text
-          in case mUnsignedShort of
-               Nothing -> False
-               Just (UnsignedShort word16) -> fromIntegral word16 == n
-
-case_UnsignedShort_LegalTextWithWS :: Assertion
-case_UnsignedShort_LegalTextWithWS =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = shortNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mUnsignedShort :: Maybe UnsignedShort
-              mUnsignedShort = fac textWS
-          in case mUnsignedShort of
-               Nothing -> False
-               Just (UnsignedShort word16) -> fromIntegral word16 == n
-
-case_UnsignedShort_LegalTextWithPlus :: Assertion
-case_UnsignedShort_LegalTextWithPlus =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = shortNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.append "+" text
-              mUnsignedShort :: Maybe UnsignedShort
-              mUnsignedShort = fac textWS
-          in case mUnsignedShort of
-               Nothing -> False
-               Just (UnsignedShort word16) -> fromIntegral word16 == n
-
-case_UnsignedShort_LegalTextWithMinus :: Assertion
-case_UnsignedShort_LegalTextWithMinus =
-  assertBool "Borked" minusTest
-  where
-    text = "-0"
-    mUnsignedShort :: Maybe UnsignedShort
-    mUnsignedShort = fac text
-    minusTest = case mUnsignedShort of
-                  Nothing -> False
-                  Just (UnsignedShort word16) -> word16 == 0
-
-case_UnsignedShort_Idempotent :: Assertion
-case_UnsignedShort_Idempotent =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = shortNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedShort = fac' text
-              fac' :: Text -> Maybe UnsignedShort
-              fac' = fac
-          in case mUnsignedShort of
-               Nothing -> False
-               Just ub@(UnsignedShort word16) -> if fromIntegral word16 == n
-                                                 then case fac' (canon ub) >>= fac' . canon of
-                                                        Nothing -> False
-                                                        Just (UnsignedShort word16') -> fromIntegral word16' == n
-                                                 else False
-
-case_UnsignedShort_IllegalTextRange :: Assertion
-case_UnsignedShort_IllegalTextRange =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (\n -> (n + 1) * shortNonNegativeIntegerOut) $ shortNonNegativeIntegers)
-                ++
-                (map (\n -> (n + 1) * (-1)) $ shortNonNegativeIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedShort :: Maybe UnsignedShort
-              mUnsignedShort = fac text
-          in case mUnsignedShort of
-               Nothing -> False
-               Just (UnsignedShort word16) -> fromIntegral word16 == n
-
-case_UnsignedShort_IllegalTextRangeWithWS :: Assertion
-case_UnsignedShort_IllegalTextRangeWithWS =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (\n -> (n + 1) * shortNonNegativeIntegerOut) $ shortNonNegativeIntegers)
-                ++
-                (map (\n -> (n + 1) * (-1)) $ shortNonNegativeIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mUnsignedShort :: Maybe UnsignedShort
-              mUnsignedShort = fac textWS
-          in case mUnsignedShort of
-               Nothing -> False
-               Just (UnsignedShort word16) -> fromIntegral word16 == n
-
-case_UnsignedShort_IllegalTextWithOther :: Assertion
-case_UnsignedShort_IllegalTextWithOther =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = shortNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mUnsignedShort :: Maybe UnsignedShort
-              mUnsignedShort = fac textWS
-          in case mUnsignedShort of
-               Nothing -> False
-               Just (UnsignedShort word16) -> fromIntegral word16 == n
-
-intNonNegativeIntegers :: [] Integer
-intNonNegativeIntegers =
-  range (fromIntegral (minBound :: Word32), fromIntegral (maxBound :: Word8)) -- Shorten the range or wait forever
-  ++
-  range ( fromIntegral (maxBound :: Word32) - fromIntegral (maxBound :: Word8)
-        , fromIntegral (maxBound :: Word32)
-        )
-
-intNonNegativeIntegerOut :: Integer
-intNonNegativeIntegerOut = fromIntegral (maxBound :: Word32) + 1
-
-case_UnsignedInt_LegalText :: Assertion
-case_UnsignedInt_LegalText =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = intNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedInt :: Maybe UnsignedInt
-              mUnsignedInt = fac text
-          in case mUnsignedInt of
-               Nothing -> False
-               Just (UnsignedInt word32) -> fromIntegral word32 == n
-
-case_UnsignedInt_LegalTextWithWS :: Assertion
-case_UnsignedInt_LegalTextWithWS =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = intNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mUnsignedInt :: Maybe UnsignedInt
-              mUnsignedInt = fac textWS
-          in case mUnsignedInt of
-               Nothing -> False
-               Just (UnsignedInt word32) -> fromIntegral word32 == n
-
-case_UnsignedInt_LegalTextWithPlus :: Assertion
-case_UnsignedInt_LegalTextWithPlus =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = intNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.append "+" text
-              mUnsignedInt :: Maybe UnsignedInt
-              mUnsignedInt = fac textWS
-          in case mUnsignedInt of
-               Nothing -> False
-               Just (UnsignedInt word32) -> fromIntegral word32 == n
-
-case_UnsignedInt_LegalTextWithMinus :: Assertion
-case_UnsignedInt_LegalTextWithMinus =
-  assertBool "Borked" minusTest
-  where
-    text = "-0"
-    mUnsignedInt :: Maybe UnsignedInt
-    mUnsignedInt = fac text
-    minusTest = case mUnsignedInt of
-                  Nothing -> False
-                  Just (UnsignedInt word32) -> word32 == 0
-
-case_UnsignedInt_Idempotent :: Assertion
-case_UnsignedInt_Idempotent =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = intNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedInt = fac' text
-              fac' :: Text -> Maybe UnsignedInt
-              fac' = fac
-          in case mUnsignedInt of
-               Nothing -> False
-               Just ub@(UnsignedInt word32) ->
-                 if fromIntegral word32 == n
-                 then case fac' (canon ub) >>= fac' . canon of
-                        Nothing -> False
-                        Just (UnsignedInt word32') -> fromIntegral word32' == n
-                 else False
-
-case_UnsignedInt_IllegalTextRange :: Assertion
-case_UnsignedInt_IllegalTextRange =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (\n -> (n + 1) * intNonNegativeIntegerOut) $ intNonNegativeIntegers)
-                ++
-                (map (\n -> (n + 1) * (-1)) $ intNonNegativeIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedInt :: Maybe UnsignedInt
-              mUnsignedInt = fac text
-          in case mUnsignedInt of
-               Nothing -> False
-               Just (UnsignedInt word32) -> fromIntegral word32 == n
-
-case_UnsignedInt_IllegalTextRangeWithWS :: Assertion
-case_UnsignedInt_IllegalTextRangeWithWS =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (\n -> (n + 1) * intNonNegativeIntegerOut) $ intNonNegativeIntegers)
-                ++
-                (map (\n -> (n + 1) * (-1)) $ intNonNegativeIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mUnsignedInt :: Maybe UnsignedInt
-              mUnsignedInt = fac textWS
-          in case mUnsignedInt of
-               Nothing -> False
-               Just (UnsignedInt word32) -> fromIntegral word32 == n
-
-case_UnsignedInt_IllegalTextWithOther :: Assertion
-case_UnsignedInt_IllegalTextWithOther =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = intNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mUnsignedInt :: Maybe UnsignedInt
-              mUnsignedInt = fac textWS
-          in case mUnsignedInt of
-               Nothing -> False
-               Just (UnsignedInt word32) -> fromIntegral word32 == n
-
-longNonNegativeIntegers :: [] Integer
-longNonNegativeIntegers =
-  range (fromIntegral (minBound :: Word64), fromIntegral (maxBound :: Word8)) -- Shorten the range or wait forever
-  ++
-  range (fromIntegral (maxBound :: Word64) - fromIntegral (maxBound :: Word8), fromIntegral (maxBound :: Word64))
-
-longNonNegativeIntegerOut :: Integer
-longNonNegativeIntegerOut = fromIntegral (maxBound :: Word64) + 1
-
-case_UnsignedLong_LegalText :: Assertion
-case_UnsignedLong_LegalText =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = longNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedLong :: Maybe UnsignedLong
-              mUnsignedLong = fac text
-          in case mUnsignedLong of
-               Nothing -> False
-               Just (UnsignedLong word64) -> fromIntegral word64 == n
-
-case_UnsignedLong_LegalTextWithWS :: Assertion
-case_UnsignedLong_LegalTextWithWS =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = longNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mUnsignedLong :: Maybe UnsignedLong
-              mUnsignedLong = fac textWS
-          in case mUnsignedLong of
-               Nothing -> False
-               Just (UnsignedLong word64) -> fromIntegral word64 == n
-
-case_UnsignedLong_LegalTextWithPlus :: Assertion
-case_UnsignedLong_LegalTextWithPlus =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = longNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.append "+" text
-              mUnsignedLong :: Maybe UnsignedLong
-              mUnsignedLong = fac textWS
-          in case mUnsignedLong of
-               Nothing -> False
-               Just (UnsignedLong word64) -> fromIntegral word64 == n
-
-case_UnsignedLong_LegalTextWithMinus :: Assertion
-case_UnsignedLong_LegalTextWithMinus =
-  assertBool "Borked" minusTest
-  where
-    text = "-0"
-    mUnsignedLong :: Maybe UnsignedLong
-    mUnsignedLong = fac text
-    minusTest = case mUnsignedLong of
-                  Nothing -> False
-                  Just (UnsignedLong word64) -> word64 == 0
-
-case_UnsignedLong_Idempotent :: Assertion
-case_UnsignedLong_Idempotent =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = longNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedLong = fac' text
-              fac' :: Text -> Maybe UnsignedLong
-              fac' = fac
-          in case mUnsignedLong of
-               Nothing -> False
-               Just ub@(UnsignedLong word64) ->
-                 if fromIntegral word64 == n
-                 then case fac' (canon ub) >>= fac' . canon of
-                        Nothing -> False
-                        Just (UnsignedLong word64') -> fromIntegral word64' == n
-                 else False
-
-case_UnsignedLong_IllegalTextRange :: Assertion
-case_UnsignedLong_IllegalTextRange =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (\n -> (n + 1) * longNonNegativeIntegerOut) $ longNonNegativeIntegers)
-                ++
-                (map (\n -> (n + 1) * (-1)) $ longNonNegativeIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mUnsignedLong :: Maybe UnsignedLong
-              mUnsignedLong = fac text
-          in case mUnsignedLong of
-               Nothing -> False
-               Just (UnsignedLong word64) -> fromIntegral word64 == n
-
-case_UnsignedLong_IllegalTextRangeWithWS :: Assertion
-case_UnsignedLong_IllegalTextRangeWithWS =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (\n -> (n + 1) * longNonNegativeIntegerOut) $ longNonNegativeIntegers)
-                ++
-                (map (\n -> (n + 1) * (-1)) $ longNonNegativeIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mUnsignedLong :: Maybe UnsignedLong
-              mUnsignedLong = fac textWS
-          in case mUnsignedLong of
-               Nothing -> False
-               Just (UnsignedLong word64) -> fromIntegral word64 == n
-
-case_UnsignedLong_IllegalTextWithOther :: Assertion
-case_UnsignedLong_IllegalTextWithOther =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = longNonNegativeIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mUnsignedLong :: Maybe UnsignedLong
-              mUnsignedLong = fac textWS
-          in case mUnsignedLong of
-               Nothing -> False
-               Just (UnsignedLong word64) -> fromIntegral word64 == n
-
-byteIntegers :: [] Integer
-byteIntegers = range (fromIntegral (minBound :: Int8), fromIntegral (maxBound :: Int8))
-
-byteIntegerOut :: Integer
-byteIntegerOut = fromIntegral (minBound :: Int8) - 1
-
-case_Byte_LegalText :: Assertion
-case_Byte_LegalText = assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = byteIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mByte :: Maybe Byte
-              mByte = fac text
-          in case mByte of
-               Nothing -> False
-               Just (Byte int8) -> fromIntegral int8 == n
-
-case_Byte_LegalTextWithWS :: Assertion
-case_Byte_LegalTextWithWS =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = byteIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mByte :: Maybe Byte
-              mByte = fac textWS
-          in case mByte of
-               Nothing -> False
-               Just (Byte int8) -> fromIntegral int8 == n
-
-case_Byte_LegalTextWithPlus :: Assertion
-case_Byte_LegalTextWithPlus =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = byteIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = if n >= 0
-                       then T.append "+" text
-                       else text
-              mByte :: Maybe Byte
-              mByte = fac textWS
-          in case mByte of
-               Nothing -> False
-               Just (Byte int8) -> fromIntegral int8 == n
-
-case_Byte_LegalTextWithMinus :: Assertion
-case_Byte_LegalTextWithMinus =
-  assertBool "Borked" minusTest
-  where
-    text = "-0"
-    mByte :: Maybe Byte
-    mByte = fac text
-    minusTest = case mByte of
-                  Nothing -> False
-                  Just (Byte int8) -> int8 == 0
-
-case_Byte_Idempotent :: Assertion
-case_Byte_Idempotent =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = byteIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mByte = fac' text
-              fac' :: Text -> Maybe Byte
-              fac' = fac
-          in case mByte of
-               Nothing -> False
-               Just ub@(Byte int8) ->
-                 if fromIntegral int8 == n
-                 then case fac' (canon ub) >>= fac' . canon of
-                        Nothing -> False
-                        Just (Byte int8') -> fromIntegral int8' == n
-                 else False
-
-case_Byte_IllegalTextRange :: Assertion
-case_Byte_IllegalTextRange =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = map (* byteIntegerOut) $ filter (/= 0) byteIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mByte :: Maybe Byte
-              mByte = fac text
-          in case mByte of
-               Nothing -> False
-               Just (Byte int8) -> fromIntegral int8 == n
-
-case_Byte_IllegalTextRangeWithWS :: Assertion
-case_Byte_IllegalTextRangeWithWS =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (* byteIntegerOut) $ filter (/= 0) byteIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mByte :: Maybe Byte
-              mByte = fac textWS
-          in case mByte of
-               Nothing -> False
-               Just (Byte int8) -> fromIntegral int8 == n
-
-case_Byte_IllegalTextWithOther :: Assertion
-case_Byte_IllegalTextWithOther =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = byteIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mByte :: Maybe Byte
-              mByte = fac textWS
-          in case mByte of
-               Nothing -> False
-               Just (Byte int8) -> fromIntegral int8 == n
-
-shortIntegers :: [] Integer
-shortIntegers = range (fromIntegral (minBound :: Int16), fromIntegral (maxBound :: Int16))
-
-shortIntegerOut :: Integer
-shortIntegerOut = fromIntegral (minBound :: Int16) - 1
-
-case_Short_LegalText :: Assertion
-case_Short_LegalText =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = shortIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mShort :: Maybe Short
-              mShort = fac text
-          in case mShort of
-               Nothing -> False
-               Just (Short int16) -> fromIntegral int16 == n
-
-case_Short_LegalTextWithWS :: Assertion
-case_Short_LegalTextWithWS = assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = shortIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mShort :: Maybe Short
-              mShort = fac textWS
-          in case mShort of
-               Nothing -> False
-               Just (Short int16) -> fromIntegral int16 == n
-
-case_Short_LegalTextWithPlus :: Assertion
-case_Short_LegalTextWithPlus =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = shortIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = if n >= 0
-                       then T.append "+" text
-                       else text
-              mShort :: Maybe Short
-              mShort = fac textWS
-          in case mShort of
-               Nothing -> False
-               Just (Short int16) -> fromIntegral int16 == n
-
-case_Short_LegalTextWithMinus :: Assertion
-case_Short_LegalTextWithMinus = assertBool "Borked" minusTest
-  where
-    text = "-0"
-    mShort :: Maybe Short
-    mShort = fac text
-    minusTest = case mShort of
-                  Nothing -> False
-                  Just (Short int16) -> int16 == 0
-
-case_Short_Idempotent :: Assertion
-case_Short_Idempotent =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = shortIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mShort = fac' text
-              fac' :: Text -> Maybe Short
-              fac' = fac
-          in case mShort of
-               Nothing -> False
-               Just ub@(Short int16) ->
-                 if fromIntegral int16 == n
-                 then case fac' (canon ub) >>= fac' . canon of
-                        Nothing -> False
-                        Just (Short int16') -> fromIntegral int16' == n
-                 else False
-
-case_Short_IllegalTextRange :: Assertion
-case_Short_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = map (* shortIntegerOut) $ filter (/= 0) shortIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mShort :: Maybe Short
-              mShort = fac text
-          in case mShort of
-               Nothing -> False
-               Just (Short int16) -> fromIntegral int16 == n
-
-case_Short_IllegalTextRangeWithWS :: Assertion
-case_Short_IllegalTextRangeWithWS =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (* shortIntegerOut) $ filter (/= 0) shortIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mShort :: Maybe Short
-              mShort = fac textWS
-          in case mShort of
-               Nothing -> False
-               Just (Short int16) -> fromIntegral int16 == n
-
-case_Short_IllegalTextWithOther :: Assertion
-case_Short_IllegalTextWithOther =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = shortIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mShort :: Maybe Short
-              mShort = fac textWS
-          in case mShort of
-               Nothing -> False
-               Just (Short int16) -> fromIntegral int16 == n
-
-intxsIntegers :: [] Integer
-intxsIntegers = join
-  [ range ( fromIntegral (minBound :: Int32)
-          , fromIntegral (minBound :: Int32) + fromIntegral (maxBound :: Int8)
-          )
-  , byteIntegers -- Cover the -int8 to +int8 range 0 must be covered
-  , range ( fromIntegral (maxBound :: Int32) - fromIntegral (maxBound :: Int8)
-          , fromIntegral (maxBound :: Int32)
-          )
-  ]
-
-intxsIntegerOut :: Integer
-intxsIntegerOut = fromIntegral (minBound :: Int32) - 1
-
-case_Intxs_LegalText :: Assertion
-case_Intxs_LegalText =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = intxsIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mIntxs :: Maybe Intxs
-              mIntxs = fac text
-          in case mIntxs of
-               Nothing -> False
-               Just (Intxs int32) -> fromIntegral int32 == n
-
-case_Intxs_LegalTextWithWS :: Assertion
-case_Intxs_LegalTextWithWS =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = intxsIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mIntxs :: Maybe Intxs
-              mIntxs = fac textWS
-          in case mIntxs of
-               Nothing -> False
-               Just (Intxs int32) -> fromIntegral int32 == n
-
-case_Intxs_LegalTextWithPlus :: Assertion
-case_Intxs_LegalTextWithPlus =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = intxsIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = if n >= 0
-                       then T.append "+" text
-                       else text
-              mIntxs :: Maybe Intxs
-              mIntxs = fac textWS
-          in case mIntxs of
-               Nothing -> False
-               Just (Intxs int32) -> fromIntegral int32 == n
-
-case_Intxs_LegalTextWithMinus :: Assertion
-case_Intxs_LegalTextWithMinus = assertBool "Borked" minusTest
-  where
-    text = "-0"
-    mIntxs :: Maybe Intxs
-    mIntxs = fac text
-    minusTest = case mIntxs of
-                  Nothing -> False
-                  Just (Intxs int32) -> int32 == 0
-
-case_Intxs_Idempotent :: Assertion
-case_Intxs_Idempotent =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = intxsIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mIntxs = fac' text
-              fac' :: Text -> Maybe Intxs
-              fac' = fac
-          in case mIntxs of
-               Nothing -> False
-               Just ub@(Intxs int32) -> if fromIntegral int32 == n
-                                        then case fac' (canon ub) >>= fac' . canon of
-                                               Nothing -> False
-                                               Just (Intxs int32') -> fromIntegral int32' == n
-                                        else False
-
-case_Intxs_IllegalTextRange :: Assertion
-case_Intxs_IllegalTextRange =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = map (* intxsIntegerOut) $ filter (/= 0) intxsIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mIntxs :: Maybe Intxs
-              mIntxs = fac text
-          in case mIntxs of
-               Nothing -> False
-               Just (Intxs int32) -> fromIntegral int32 == n
-
-case_Intxs_IllegalTextRangeWithWS :: Assertion
-case_Intxs_IllegalTextRangeWithWS =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (* intxsIntegerOut) $ filter (/= 0) intxsIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mIntxs :: Maybe Intxs
-              mIntxs = fac textWS
-          in case mIntxs of
-               Nothing -> False
-               Just (Intxs int32) -> fromIntegral int32 == n
-
-case_Intxs_IllegalTextWithOther :: Assertion
-case_Intxs_IllegalTextWithOther =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = intxsIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mIntxs :: Maybe Intxs
-              mIntxs = fac textWS
-          in case mIntxs of
-               Nothing -> False
-               Just (Intxs int32) -> fromIntegral int32 == n
-
-longIntegers :: [] Integer
-longIntegers = range (fromIntegral (minBound :: Int64), fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8))
-               ++
-               byteIntegers -- Cover the -int8 to +int8 range 0 must be covered
-               ++
-               range (fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8), fromIntegral (maxBound :: Int64))
-
-longIntegerOut :: Integer
-longIntegerOut = fromIntegral (minBound :: Int64) - 1
-
-case_Long_LegalText :: Assertion
-case_Long_LegalText =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = longIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mLong :: Maybe Long
-              mLong = fac text
-          in case mLong of
-               Nothing -> False
-               Just (Long int64) -> fromIntegral int64 == n
-
-case_Long_LegalTextWithWS :: Assertion
-case_Long_LegalTextWithWS =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = longIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mLong :: Maybe Long
-              mLong = fac textWS
-          in case mLong of
-               Nothing -> False
-               Just (Long int64) -> fromIntegral int64 == n
-
-case_Long_LegalTextWithPlus :: Assertion
-case_Long_LegalTextWithPlus = assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = longIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = n >= 0 ? T.append "+" text $ text
-              mLong :: Maybe Long
-              mLong = fac textWS
-          in case mLong of
-               Nothing -> False
-               Just (Long int64) -> fromIntegral int64 == n
-
-case_Long_LegalTextWithMinus :: Assertion
-case_Long_LegalTextWithMinus =
-  assertBool "Borked" minusTest
-  where
-    text = "-0"
-    mLong :: Maybe Long
-    mLong = fac text
-    minusTest = case mLong of
-                  Nothing -> False
-                  Just (Long int64) -> int64 == 0
-
-case_Long_Idempotent :: Assertion
-case_Long_Idempotent =
-  assertBool "Not All" (and $ map f testRange)
-  where
-    testRange = longIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mLong = fac' text
-              fac' :: Text -> Maybe Long
-              fac' = fac
-          in case mLong of
-               Nothing -> False
-               Just ub@(Long int64) ->
-                 if fromIntegral int64 == n
-                 then case fac' (canon ub) >>= fac' . canon of
-                        Nothing -> False
-                        Just (Long int64') -> fromIntegral int64' == n
-                 else False
-
-case_Long_IllegalTextRange :: Assertion
-case_Long_IllegalTextRange = assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = map (* longIntegerOut) $ filter (/= 0) longIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              mLong :: Maybe Long
-              mLong = fac text
-          in case mLong of
-               Nothing -> False
-               Just (Long int64) -> fromIntegral int64 == n
-
-case_Long_IllegalTextRangeWithWS :: Assertion
-case_Long_IllegalTextRangeWithWS =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = (map (* longIntegerOut) $ filter (/= 0) longIntegers)
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "\t  \r\n  "]
-              mLong :: Maybe Long
-              mLong = fac textWS
-          in case mLong of
-               Nothing -> False
-               Just (Long int64) -> fromIntegral int64 == n
-
-case_Long_IllegalTextWithOther :: Assertion
-case_Long_IllegalTextWithOther =
-  assertBool "Some" (not . any id $ map f testRange)
-  where
-    testRange = longIntegers
-    f :: Integer -> Bool
-    f n = let text = tshow n
-              textWS = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
-              mLong :: Maybe Long
-              mLong = fac textWS
-          in case mLong of
-               Nothing -> False
-               Just (Long int64) -> fromIntegral int64 == n
+               Just w -> fromIntegral @b (redde w) == n
 
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
 -- This section contains the Integer types tests. Boilerplate world. Could use some love.
@@ -1933,11 +1156,15 @@ integerTests = [ testCase "Integer Legal Text"                            case_I
                ]
 
 integers :: [] Integer -- The integers range is arbitrary since Integer is unbounded.
-integers = range (fromIntegral (minBound :: Int64), fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8))
-           ++
-           byteIntegers -- Cover the -int8 to +int8 range 0 must be covered
-           ++
-           range (fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8), fromIntegral (maxBound :: Int64))
+integers = range ( fromIntegral (minBound :: Int64)
+                 , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8)
+                 )
+        ++ range ( fromIntegral (minBound :: Int8)
+                 , fromIntegral (maxBound :: Int8)
+                 ) -- Cover the -int8 to +int8 range 0 must be covered
+        ++ range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8)
+                 , fromIntegral (maxBound :: Int64)
+                 )
 
 case_Integer_LegalText :: Assertion
 case_Integer_LegalText =
