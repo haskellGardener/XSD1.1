@@ -5,7 +5,7 @@
   , ScopedTypeVariables
   , TypeApplications
 #-}
-{-| Time-stamp: <2022-04-21 17:09:11 CDT>
+{-| Time-stamp: <2022-04-21 18:37:59 CDT>
 
 Module      : Main
 Copyright   : Robert Lee, © 2017-2022
@@ -162,9 +162,9 @@ multiplier = 100 -- This should be determined by an environment variable or comm
 tests :: [TestTree]
 tests =
   [ testGroup "\n\n---------------------- FiniteBits Unit tests ----------------------" finiteBitsTests
+  , testGroup "\n\n---------------------- Integer Unit tests ----------------------"    integerTests
   , testGroup "\n\n---------------------- MultiTest QC Tests ----------------------"    multiTests
   , testGroup "\n\n---------------------- Value QC tests ----------------------"        valTests
-  , testGroup "\n\n---------------------- Integer Unit tests ----------------------"    integerTests
   ]
 
 -- scTests :: [TestTree]
@@ -324,7 +324,7 @@ gen_DuraOrder_legal = do                                                        
       start = min start_candidate T_do
   if start == T_do && end == T_do
   then gen_DuraOrder_legal                                                                                                                           -- ↺
-  else pure $ range (start, end == T_do ? succ(T_do) $ end)                                                                                          -- 🔚
+  else pure $ range (start, end == T_do ? succ T_do $ end)                                                                                           -- 🔚
 
 gen_duration_where :: ([] DuraOrder -> Bool) -> (DuraOrder -> QC.Gen Int) -> QC.Gen Text
 gen_duration_where f genIntF = do
@@ -335,7 +335,7 @@ gen_duration_where f genIntF = do
   where
     mF T_do = pure "T"
     mF S_do = do
-      ns <- QC.choose ((0,999999999) :: (Word64, Word64))
+      ns <- QC.choose (0 :: Word64, maxBound @Word64)
       zs <- QC.elements [T.replicate x "0" | x <- [0..7]]
       n  <- genIntF S_do
       pure $ T.concat [tshow n, ".", T.take 9 (T.append zs (tshow ns)), doShow S_do]
@@ -456,17 +456,18 @@ gen_DayTimeDuration_illegal = QC.oneof [ simples, dura, dura, dura, dura ]
 gen_Floatxs_legal :: QC.Gen Text
 gen_Floatxs_legal = QC.oneof [ gen_Decimal_legal, simples, decimalPlus]
   where
-    simples = QC.elements
-              [ "0.0", "0.", "0", ".0", "+0.0", "+0.", "+0", "+.0", "-0.0", "-0.", "-0", "-.0"
-              , "0.0e0", "0.e0", "0e0", ".0e0", "+0.0e0", "+0.e0", "+0e0", "+.0e0", "-0.0e0", "-0.e0", "-0e0", "-.0e0"
-              , "0.0e-0", "0.e-0", "0e-0", ".0e-0", "+0.0e-0", "+0.e-0", "+0e-0", "+.0e-0", "-0.0e-0", "-0.e-0", "-0e-0", "-.0e-0"
-              , "00.00", "00.", "00", ".00", "+00.00", "+00.", "+00", "+.00", "-00.00", "-00.", "-00", "-.00"
-              , "00.00e00", "00.e00", "00e00", ".00e00", "+00.00e00", "+00.e00", "+00e00", "+.00e00", "-00.00e00", "-00.e00"
-              , "-00e00", "-.00e00"
-              , "00.00e-00", "00.e-00", "00e-00", ".00e-00", "+00.00e-00", "+00.e-00", "+00e-00", "+.00e-00", "-00.00e-00"
-              , "-00.e-00", "-00e-00", "-.00e-00"
-              , "INF", "+INF", "-INF"
-              ]
+    simples =
+      QC.elements
+      [ "0.0", "0.", "0", ".0", "+0.0", "+0.", "+0", "+.0", "-0.0", "-0.", "-0", "-.0"
+      , "0.0e0", "0.e0", "0e0", ".0e0", "+0.0e0", "+0.e0", "+0e0", "+.0e0", "-0.0e0", "-0.e0", "-0e0", "-.0e0"
+      , "0.0e-0", "0.e-0", "0e-0", ".0e-0", "+0.0e-0", "+0.e-0", "+0e-0", "+.0e-0", "-0.0e-0", "-0.e-0", "-0e-0", "-.0e-0"
+      , "00.00", "00.", "00", ".00", "+00.00", "+00.", "+00", "+.00", "-00.00", "-00.", "-00", "-.00"
+      , "00.00e00", "00.e00", "00e00", ".00e00", "+00.00e00", "+00.e00", "+00e00", "+.00e00", "-00.00e00", "-00.e00"
+      , "-00e00", "-.00e00"
+      , "00.00e-00", "00.e-00", "00e-00", ".00e-00", "+00.00e-00", "+00.e-00", "+00e-00", "+.00e-00", "-00.00e-00"
+      , "-00.e-00", "-00e-00", "-.00e-00"
+      , "INF", "+INF", "-INF"
+      ]
     decimalPlus = do
       legal    <- gen_Decimal_legal
       expo     <- QC.elements ["e", "E"]
@@ -477,27 +478,28 @@ gen_Floatxs_legal = QC.oneof [ gen_Decimal_legal, simples, decimalPlus]
 gen_Floatxs_illegal :: QC.Gen Text
 gen_Floatxs_illegal = QC.oneof [ gen_Decimal_illegal, simples ]
   where
-    simples = QC.elements
-              [ "0..0", "0..", "..0", "+0..0", "+0..", "+..0", "-0..0", "-0..", "-..0"
-              , "0..0e0", "0..e0", "..0e0", "+0..0e0", "+0..e0", "+..0e0", "-0..0e0", "-0..e0", "-..0e0"
-              , "0..0e-0", "0..e-0", "..0e-0", "+0..0e-0", "+0..e-0", "+..0e-0", "-0..0e-0", "-0..e-0", "-..0e-0"
-              , "00..00", "00..", "..00", "+00..00", "+00..", "+..00", "-00..00", "-00..", "-..00"
-              , "00..00e00", "00..e00", "..00e00", "+00..00e00", "+00..e00", "+..00e00", "-00..00e00", "-00..e00"
-              , "-..00e00"
-              , "00..00e-00", "00..e-00", "..00e-00", "+00..00e-00", "+00..e-00", "+..00e-00", "-00..00e-00"
-              , "-00..e-00", "-..00e-00"
-              , "0.0ee0", "0.ee0", "0ee0", ".0ee0", "+0.0ee0", "+0.ee0", "+0ee0", "+.0ee0", "-0.0ee0", "-0.ee0", "-0ee0", "-.0ee0"
-              , "0.0ee-0", "0.ee-0", "0ee-0", ".0ee-0", "+0.0ee-0", "+0.ee-0", "+0ee-0", "+.0ee-0", "-0.0ee-0", "-0.ee-0", "-0ee-0"
-              , "-.0ee-0"
-              , "00.00ee00", "00.ee00", "00ee00", ".00ee00", "+00.00ee00", "+00.ee00", "+00ee00", "+.00ee00", "-00.00ee00", "-00.ee00"
-              , "-00ee00", "-.00ee00"
-              , "00.00ee-00", "00.ee-00", "00ee-00", ".00ee-00", "+00.00ee-00", "+00.ee-00", "+00ee-00", "+.00ee-00", "-00.00ee-00"
-              , "-00.ee-00", "-00ee-00", "-.00ee-00"
-              , "INF0", "++INF", "--INF", "+-INF", "-+INF", "0INF", "INF+", "INF-", "+INF-", "-INF+"
-              , "0.0e", "0.e", "0e", ".0e", "+0.0e", "+0.e", "+0e", "+.0e", "-0.0e", "-0.e", "-0e", "-.0e"
-              , "-", "+", "--", "++", "-+", "+-"
-              , "e", "E", "e+", "E+", "e-", "E-", "+e", "-E"
-              ]
+    simples =
+      QC.elements
+      [ "0..0", "0..", "..0", "+0..0", "+0..", "+..0", "-0..0", "-0..", "-..0"
+      , "0..0e0", "0..e0", "..0e0", "+0..0e0", "+0..e0", "+..0e0", "-0..0e0", "-0..e0", "-..0e0"
+      , "0..0e-0", "0..e-0", "..0e-0", "+0..0e-0", "+0..e-0", "+..0e-0", "-0..0e-0", "-0..e-0", "-..0e-0"
+      , "00..00", "00..", "..00", "+00..00", "+00..", "+..00", "-00..00", "-00..", "-..00"
+      , "00..00e00", "00..e00", "..00e00", "+00..00e00", "+00..e00", "+..00e00", "-00..00e00", "-00..e00"
+      , "-..00e00"
+      , "00..00e-00", "00..e-00", "..00e-00", "+00..00e-00", "+00..e-00", "+..00e-00", "-00..00e-00"
+      , "-00..e-00", "-..00e-00"
+      , "0.0ee0", "0.ee0", "0ee0", ".0ee0", "+0.0ee0", "+0.ee0", "+0ee0", "+.0ee0", "-0.0ee0", "-0.ee0", "-0ee0", "-.0ee0"
+      , "0.0ee-0", "0.ee-0", "0ee-0", ".0ee-0", "+0.0ee-0", "+0.ee-0", "+0ee-0", "+.0ee-0", "-0.0ee-0", "-0.ee-0", "-0ee-0"
+      , "-.0ee-0"
+      , "00.00ee00", "00.ee00", "00ee00", ".00ee00", "+00.00ee00", "+00.ee00", "+00ee00", "+.00ee00", "-00.00ee00", "-00.ee00"
+      , "-00ee00", "-.00ee00"
+      , "00.00ee-00", "00.ee-00", "00ee-00", ".00ee-00", "+00.00ee-00", "+00.ee-00", "+00ee-00", "+.00ee-00", "-00.00ee-00"
+      , "-00.ee-00", "-00ee-00", "-.00ee-00"
+      , "INF0", "++INF", "--INF", "+-INF", "-+INF", "0INF", "INF+", "INF-", "+INF-", "-INF+"
+      , "0.0e", "0.e", "0e", ".0e", "+0.0e", "+0.e", "+0e", "+.0e", "-0.0e", "-0.e", "-0e", "-.0e"
+      , "-", "+", "--", "++", "-+", "+-"
+      , "e", "E", "e+", "E+", "e-", "E-", "+e", "-E"
+      ]
 
 gen_Decimal_legal :: QC.Gen Text
 gen_Decimal_legal = do
@@ -815,30 +817,44 @@ nameNotStartChar = QC.oneof ranges
 nameNotChars :: QC.Gen [Char]
 nameNotChars = QC.listOf1 nameNotChar
   where
-    nameNotChar = QC.oneof [ QC.choose ( chr 0x0     , chr 0x8      )
-                           , QC.choose ( chr 0xE     , chr 0x1F     )
-                           , QC.choose ( chr 0x21    , chr 0x2C     )
-                           , QC.choose ( chr 0x2F    , chr 0x2F     )
-                           , QC.choose ( chr 0x3B    , chr 0x40     )
-                           , QC.choose ( chr 0x5B    , chr 0x5E     )
-                           , QC.choose ( chr 0x60    , chr 0x60     )
-                           , QC.choose ( chr 0x7B    , chr 0xB6     )
-                           , QC.choose ( chr 0xB8    , chr 0xBF     )
-                           , QC.choose ( chr 0xD7    , chr 0xD7     )
-                           , QC.choose ( chr 0xF7    , chr 0xF7     )
-                           , QC.choose ( chr 0x37E   , chr 0x37E    )
-                           , QC.choose ( chr 0x2000  , chr 0x200B   )
-                           , QC.choose ( chr 0x200E  , chr 0x2039   )
-                           , QC.choose ( chr 0x2190  , chr 0x2BFF   )
-                           , QC.choose ( chr 0x2FFF  , chr 0x3000   )
-                           , QC.choose ( chr 0xE000  , chr 0xF8FF   )
-                           , QC.choose ( chr 0xFDD0  , chr 0xFDEF   )
-                           , QC.choose ( chr 0xFFFE  , chr 0xFFFF   )
-                           , QC.choose ( chr 0xF0000 , chr 0x10FFFF )
-                           ]
+    nameNotChar =
+      QC.oneof [ QC.choose ( chr 0x0     , chr 0x8      )
+               , QC.choose ( chr 0xE     , chr 0x1F     )
+               , QC.choose ( chr 0x21    , chr 0x2C     )
+               , QC.choose ( chr 0x2F    , chr 0x2F     )
+               , QC.choose ( chr 0x3B    , chr 0x40     )
+               , QC.choose ( chr 0x5B    , chr 0x5E     )
+               , QC.choose ( chr 0x60    , chr 0x60     )
+               , QC.choose ( chr 0x7B    , chr 0xB6     )
+               , QC.choose ( chr 0xB8    , chr 0xBF     )
+               , QC.choose ( chr 0xD7    , chr 0xD7     )
+               , QC.choose ( chr 0xF7    , chr 0xF7     )
+               , QC.choose ( chr 0x37E   , chr 0x37E    )
+               , QC.choose ( chr 0x2000  , chr 0x200B   )
+               , QC.choose ( chr 0x200E  , chr 0x2039   )
+               , QC.choose ( chr 0x2190  , chr 0x2BFF   )
+               , QC.choose ( chr 0x2FFF  , chr 0x3000   )
+               , QC.choose ( chr 0xE000  , chr 0xF8FF   )
+               , QC.choose ( chr 0xFDD0  , chr 0xFDEF   )
+               , QC.choose ( chr 0xFFFE  , chr 0xFFFF   )
+               , QC.choose ( chr 0xF0000 , chr 0x10FFFF )
+               ]
 
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------
--- This section contains the FiniteBits types tests.
+{- | This section contains tests for finite integral types.
+
+     All finite integral tests use Integer as the basis for creating
+     textual representations for testing each individual type.
+
+     Integer was chosen because it can construct values that
+     fully range across finite integral types, and beyond.
+
+     When a test for an illegal numeric value is needed, the test
+     creates an Integer that is either too large or too small
+     for the given finite integral type.
+
+     No randomization is employed, only carefully selected test ranges.
+-}
 
 finiteBitsTests :: [TestTree]
 finiteBitsTests =
@@ -927,12 +943,6 @@ instance FiniteTest UnsignedByte where
                       )
   integerOut  = fromIntegral (maxBound :: Word8) + 1
 
--- byteNonNegativeIntegers :: [] Integer
--- byteNonNegativeIntegers = range (fromIntegral (minBound :: Word8), fromIntegral (maxBound :: Word8))
-
--- byteNonNegativeIntegerOut :: Integer
--- byteNonNegativeIntegerOut = fromIntegral (maxBound :: Word8) + 1
-
 instance FiniteTest UnsignedShort where
   assertText  = "UnsignedShorts"
   finiteRange = range ( fromIntegral (minBound :: Word16)
@@ -944,9 +954,9 @@ instance FiniteTest UnsignedInt where
   assertText  = "UnsignedInts"
   finiteRange =
     asum [ range ( fromIntegral (minBound :: Word32)
-                 , fromIntegral (maxBound :: Word8)
+                 , fromIntegral (maxBound :: Word16)
                  ) -- Shorten the range or wait forever
-         , range ( fromIntegral (maxBound :: Word32) - fromIntegral (maxBound :: Word8)
+         , range ( fromIntegral (maxBound :: Word32) - fromIntegral (maxBound :: Word16)
                  , fromIntegral (maxBound :: Word32)
                  )
          ]
@@ -955,13 +965,14 @@ instance FiniteTest UnsignedInt where
 instance FiniteTest UnsignedLong where
   assertText  = "UnsignedLongs"
   finiteRange =
-    asum [ range ( fromIntegral (minBound :: Word64)
-                 , fromIntegral (maxBound :: Word8)
-                 ) -- Shorten the range or wait forever
-         , range ( fromIntegral (maxBound :: Word64) - fromIntegral (maxBound :: Word8)
-                 , fromIntegral (maxBound :: Word64)
-                 )
-         ]
+    asum
+    [ range ( fromIntegral (minBound :: Word64)
+            , fromIntegral (maxBound :: Word16)
+            ) -- Shorten the range or wait forever
+    , range ( fromIntegral (maxBound :: Word64) - fromIntegral (maxBound :: Word16)
+            , fromIntegral (maxBound :: Word64)
+            )
+    ]
   integerOut  = fromIntegral (maxBound :: Word64) + 1
 
 instance FiniteTest Byte where
@@ -983,12 +994,12 @@ instance FiniteTest Intxs where
   finiteRange =
     asum
     [ range ( fromIntegral (minBound :: Int32)
-            , fromIntegral (minBound :: Int32) + fromIntegral (maxBound :: Int8)
+            , fromIntegral (minBound :: Int32) + fromIntegral (maxBound :: Int16)
             )
     , range ( fromIntegral (minBound :: Int8)
             , fromIntegral (maxBound :: Int8)
             ) -- Cover the -int8 to +int8 range 0 must be covered
-    , range ( fromIntegral (maxBound :: Int32) - fromIntegral (maxBound :: Int8)
+    , range ( fromIntegral (maxBound :: Int32) - fromIntegral (maxBound :: Int16)
             , fromIntegral (maxBound :: Int32)
             )
     ]
@@ -999,19 +1010,18 @@ instance FiniteTest Long where
   finiteRange =
     asum
     [ range ( fromIntegral (minBound :: Int64)
-            , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8)
+            , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int16)
             )
     , range ( fromIntegral (minBound :: Int8)
             , fromIntegral (maxBound :: Int8)
             ) -- Cover the -int8 to +int8 range 0 must be covered
-    , range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8)
+    , range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int16)
             , fromIntegral (maxBound :: Int64)
             )
     ]
   integerOut  = fromIntegral (minBound :: Int64) - 1
 
-finiteLegalText
-  :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
+finiteLegalText :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
 finiteLegalText = finiteLegalText' @a @b tshow
 
 finiteLegalTextWithWS
@@ -1027,8 +1037,8 @@ finiteLegalTextWithPlus = finiteLegalText' @a @b f
     f integer | integer >= 0 = T.append "+" (tshow integer)
               | otherwise = tshow integer
 
-finiteLegalText'
-  :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a) => (Integer -> Text) -> Assertion
+finiteLegalText' :: forall a b. (Integral b, FiniteTest a, Res a b, Transformatio a)
+                 => (Integer -> Text) -> Assertion
 finiteLegalText' textF =
   assertBool ("Not all succeeded for: " ++ (assertText @a))
              (and $ map f (finiteRange @a))
@@ -1069,24 +1079,25 @@ finiteIdempotent =
                         Just w' -> fromIntegral @b (redde w') == n
                  else False
 
-finiteIllegalTextRange :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
-                       => Assertion
+finiteIllegalTextRange
+  :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
 finiteIllegalTextRange = finiteIllegalTextRange' @a @b id
 
-finiteIllegalTextRangeWithWS :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
-                             => Assertion
+finiteIllegalTextRangeWithWS
+  :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
 finiteIllegalTextRangeWithWS = finiteIllegalTextRange' @a @b f
   where
     f text = T.concat ["\n\r\t", text, "\t  \r\n  "]
 
-finiteIllegalTextRangeWithOther :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
-                                => Assertion
+finiteIllegalTextRangeWithOther
+  :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a) => Assertion
 finiteIllegalTextRangeWithOther = finiteIllegalTextRange' @a @b f
   where
     f text = T.concat ["\n\r\t", text, "✓\t  \r\n  "]
 
-finiteIllegalTextRange' :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
-                        => (Text -> Text) -> Assertion
+finiteIllegalTextRange'
+  :: forall a b. (Bounded b, Integral b, FiniteTest a, Res a b, Transformatio a)
+  => (Text -> Text) -> Assertion
 finiteIllegalTextRange' textF =
   assertBool ("Not all succeeded for: " ++ (assertText @a))
              (not . any id $ map f testRange)
@@ -1107,62 +1118,64 @@ finiteIllegalTextRange' textF =
 -- This section contains the Integer types tests. Boilerplate world. Could use some love.
 
 integerTests :: [TestTree]
-integerTests = [ testCase "Integer Legal Text"                            case_Integer_LegalText
-               , testCase "Integer Legal Text With WS"                    case_Integer_LegalTextWithWS
-               , testCase "Integer Legal Text With Plus"                  case_Integer_LegalTextWithPlus
-               , testCase "Integer Legal Text With Minus"                 case_Integer_LegalTextWithMinus
-               , testCase "Integer Legal Text Idempotent"                 case_Integer_Idempotent
-               , testCase "Integer Illegal Text With Other"               case_Integer_IllegalTextWithOther
+integerTests =
+  [ testCase "Integer Legal Text"                            case_Integer_LegalText
+  , testCase "Integer Legal Text With WS"                    case_Integer_LegalTextWithWS
+  , testCase "Integer Legal Text With Plus"                  case_Integer_LegalTextWithPlus
+  , testCase "Integer Legal Text With Minus"                 case_Integer_LegalTextWithMinus
+  , testCase "Integer Legal Text Idempotent"                 case_Integer_Idempotent
+  , testCase "Integer Illegal Text With Other"               case_Integer_IllegalTextWithOther
 
-               , testCase "NonPositiveInteger Legal Text"                 case_NonPositiveInteger_LegalText
-               , testCase "NonPositiveInteger Legal Text With WS"         case_NonPositiveInteger_LegalTextWithWS
-               , testCase "NonPositiveInteger Legal Text With Plus"       case_NonPositiveInteger_LegalTextWithPlus
-               , testCase "NonPositiveInteger Legal Text With Minus"      case_NonPositiveInteger_LegalTextWithMinus
-               , testCase "NonPositiveInteger Legal Text Idempotent"      case_NonPositiveInteger_Idempotent
-               , testCase "NonPositiveInteger Illegal Text Range"         case_NonPositiveInteger_IllegalTextRange
-               , testCase "NonPositiveInteger Illegal Text Range With WS" case_NonPositiveInteger_IllegalTextRangeWithWS
-               , testCase "NonPositiveInteger Illegal Text With Other"    case_NonPositiveInteger_IllegalTextWithOther
+  , testCase "NonPositiveInteger Legal Text"                 case_NonPositiveInteger_LegalText
+  , testCase "NonPositiveInteger Legal Text With WS"         case_NonPositiveInteger_LegalTextWithWS
+  , testCase "NonPositiveInteger Legal Text With Plus"       case_NonPositiveInteger_LegalTextWithPlus
+  , testCase "NonPositiveInteger Legal Text With Minus"      case_NonPositiveInteger_LegalTextWithMinus
+  , testCase "NonPositiveInteger Legal Text Idempotent"      case_NonPositiveInteger_Idempotent
+  , testCase "NonPositiveInteger Illegal Text Range"         case_NonPositiveInteger_IllegalTextRange
+  , testCase "NonPositiveInteger Illegal Text Range With WS" case_NonPositiveInteger_IllegalTextRangeWithWS
+  , testCase "NonPositiveInteger Illegal Text With Other"    case_NonPositiveInteger_IllegalTextWithOther
 
-               , testCase "NegativeInteger Legal Text"                    case_NegativeInteger_LegalText
-               , testCase "NegativeInteger Legal Text With WS"            case_NegativeInteger_LegalTextWithWS
-               , testCase "NegativeInteger Legal Text With Plus"          case_NegativeInteger_LegalTextWithPlus
-               , testCase "NegativeInteger Legal Text With Minus"         case_NegativeInteger_LegalTextWithMinus
-               , testCase "NegativeInteger Legal Text Idempotent"         case_NegativeInteger_Idempotent
-               , testCase "NegativeInteger Illegal Text Range"            case_NegativeInteger_IllegalTextRange
-               , testCase "NegativeInteger Illegal Text Range With WS"    case_NegativeInteger_IllegalTextRangeWithWS
-               , testCase "NegativeInteger Illegal Text With Other"       case_NegativeInteger_IllegalTextWithOther
+  , testCase "NegativeInteger Legal Text"                    case_NegativeInteger_LegalText
+  , testCase "NegativeInteger Legal Text With WS"            case_NegativeInteger_LegalTextWithWS
+  , testCase "NegativeInteger Legal Text With Plus"          case_NegativeInteger_LegalTextWithPlus
+  , testCase "NegativeInteger Legal Text With Minus"         case_NegativeInteger_LegalTextWithMinus
+  , testCase "NegativeInteger Legal Text Idempotent"         case_NegativeInteger_Idempotent
+  , testCase "NegativeInteger Illegal Text Range"            case_NegativeInteger_IllegalTextRange
+  , testCase "NegativeInteger Illegal Text Range With WS"    case_NegativeInteger_IllegalTextRangeWithWS
+  , testCase "NegativeInteger Illegal Text With Other"       case_NegativeInteger_IllegalTextWithOther
 
-               , testCase "NonNegativeInteger Legal Text"                 case_NonNegativeInteger_LegalText
-               , testCase "NonNegativeInteger Legal Text With WS"         case_NonNegativeInteger_LegalTextWithWS
-               , testCase "NonNegativeInteger Legal Text With Plus"       case_NonNegativeInteger_LegalTextWithPlus
-               , testCase "NonNegativeInteger Legal Text With Minus"      case_NonNegativeInteger_LegalTextWithMinus
-               , testCase "NonNegativeInteger Legal Text Idempotent"      case_NonNegativeInteger_Idempotent
-               , testCase "NonNegativeInteger Illegal Text Range"         case_NonNegativeInteger_IllegalTextRange
-               , testCase "NonNegativeInteger Illegal Text Range With WS" case_NonNegativeInteger_IllegalTextRangeWithWS
-               , testCase "NonNegativeInteger Illegal Text With Other"    case_NonNegativeInteger_IllegalTextWithOther
+  , testCase "NonNegativeInteger Legal Text"                 case_NonNegativeInteger_LegalText
+  , testCase "NonNegativeInteger Legal Text With WS"         case_NonNegativeInteger_LegalTextWithWS
+  , testCase "NonNegativeInteger Legal Text With Plus"       case_NonNegativeInteger_LegalTextWithPlus
+  , testCase "NonNegativeInteger Legal Text With Minus"      case_NonNegativeInteger_LegalTextWithMinus
+  , testCase "NonNegativeInteger Legal Text Idempotent"      case_NonNegativeInteger_Idempotent
+  , testCase "NonNegativeInteger Illegal Text Range"         case_NonNegativeInteger_IllegalTextRange
+  , testCase "NonNegativeInteger Illegal Text Range With WS" case_NonNegativeInteger_IllegalTextRangeWithWS
+  , testCase "NonNegativeInteger Illegal Text With Other"    case_NonNegativeInteger_IllegalTextWithOther
 
-               , testCase "PositiveInteger Legal Text"                    case_PositiveInteger_LegalText
-               , testCase "PositiveInteger Legal Text With WS"            case_PositiveInteger_LegalTextWithWS
-               , testCase "PositiveInteger Legal Text With Plus"          case_PositiveInteger_LegalTextWithPlus
-               , testCase "PositiveInteger Legal Text With Minus"         case_PositiveInteger_LegalTextWithMinus
-               , testCase "PositiveInteger Legal Text Idempotent"         case_PositiveInteger_Idempotent
-               , testCase "PositiveInteger Illegal Text Range"            case_PositiveInteger_IllegalTextRange
-               , testCase "PositiveInteger Illegal Text Range With WS"    case_PositiveInteger_IllegalTextRangeWithWS
-               , testCase "PositiveInteger Illegal Text With Other"       case_PositiveInteger_IllegalTextWithOther
-               ]
+  , testCase "PositiveInteger Legal Text"                    case_PositiveInteger_LegalText
+  , testCase "PositiveInteger Legal Text With WS"            case_PositiveInteger_LegalTextWithWS
+  , testCase "PositiveInteger Legal Text With Plus"          case_PositiveInteger_LegalTextWithPlus
+  , testCase "PositiveInteger Legal Text With Minus"         case_PositiveInteger_LegalTextWithMinus
+  , testCase "PositiveInteger Legal Text Idempotent"         case_PositiveInteger_Idempotent
+  , testCase "PositiveInteger Illegal Text Range"            case_PositiveInteger_IllegalTextRange
+  , testCase "PositiveInteger Illegal Text Range With WS"    case_PositiveInteger_IllegalTextRangeWithWS
+  , testCase "PositiveInteger Illegal Text With Other"       case_PositiveInteger_IllegalTextWithOther
+  ]
 
 integers :: [] Integer -- The integers range is arbitrary since Integer is unbounded.
 integers =
-  asum [ range ( fromIntegral (minBound :: Int64)
-               , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int8)
-               )
-       , range ( fromIntegral (minBound :: Int8)
-               , fromIntegral (maxBound :: Int8)
-               ) -- Cover the -int8 to +int8 range 0 must be covered
-       , range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int8)
-               , fromIntegral (maxBound :: Int64)
-               )
-       ]
+  asum
+  [ range ( fromIntegral (minBound :: Int64)
+          , fromIntegral (minBound :: Int64) + fromIntegral (maxBound :: Int16)
+          )
+  , range ( fromIntegral (minBound :: Int16)
+          , fromIntegral (maxBound :: Int16)
+          ) -- Cover the -int16 to +int16 range 0 must be covered
+  , range ( fromIntegral (maxBound :: Int64) - fromIntegral (maxBound :: Int16)
+          , fromIntegral (maxBound :: Int64)
+          )
+  ]
 
 case_Integer_LegalText :: Assertion
 case_Integer_LegalText =
